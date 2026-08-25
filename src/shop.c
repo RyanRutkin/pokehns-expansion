@@ -41,6 +41,7 @@
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "data/battle_frontier/battle_frontier_exchange_corner.h"
+#include "data/shop_custom_prices.h"
 #if IS_HNS
 #include "constants/flags.h"
 #include "event_data.h"
@@ -145,6 +146,7 @@ static EWRAM_DATA u16 sKurtCurrentBerry = ITEM_NONE;
 static EWRAM_DATA u8 sBerryIconSpriteId = 0;
 static EWRAM_DATA u8 sQuantityBerryIconSpriteId = 0;
 static EWRAM_DATA const struct BPShopEntry *sBPShopEntries = NULL;
+static EWRAM_DATA const struct ShopPriceOverride *sActivePriceOverrides = NULL;
 EWRAM_DATA struct ItemSlot gMartPurchaseHistory[SMARTSHOPPER_NUM_ITEMS] = {0};
 
 static void Task_ShopMenu(u8 taskId);
@@ -343,6 +345,35 @@ static u16 GetBPCostForItem(u16 itemId)
         i++;
     }
     return 0;
+}
+
+// Returns TRUE and writes the override price to *price if the currently active shop
+// (set via SetShopPriceOverrides) has a custom price for itemId, otherwise returns FALSE.
+static bool8 GetPriceOverrideForItem(u16 itemId, u32 *price)
+{
+    u16 i = 0;
+    if (sActivePriceOverrides == NULL)
+        return FALSE;
+    while (sActivePriceOverrides[i].item != ITEM_NONE)
+    {
+        if (sActivePriceOverrides[i].item == itemId)
+        {
+            *price = sActivePriceOverrides[i].price;
+            return TRUE;
+        }
+        i++;
+    }
+    return FALSE;
+}
+
+// Used for MART_TYPE_NORMAL price lookups. Prefers a per-shop override (see
+// SetShopPriceOverrides) over the item's own global price.
+static u32 GetShopItemPrice(u16 itemId)
+{
+    u32 price;
+    if (GetPriceOverrideForItem(itemId, &price))
+        return price;
+    return GetItemPrice(itemId) >> IsPokeNewsActive(POKENEWS_SLATEPORT);
 }
 
 static void PrintBPAmountInMoneyBox(u8 windowId, u32 bp, u8 speed)
@@ -1299,7 +1330,7 @@ static void BuyMenuPrintPriceInList(u8 windowId, u32 itemId, u8 y)
         {
             ConvertIntToDecimalStringN(
                 gStringVar1,
-                GetItemPrice(itemId) >> IsPokeNewsActive(POKENEWS_SLATEPORT),
+                GetShopItemPrice(itemId),
                 STR_CONV_MODE_LEFT_ALIGN,
                 6);
         }
@@ -1704,7 +1735,7 @@ static void Task_BuyMenu(u8 taskId)
             BuyMenuPrintCursor(tListTaskId, COLORID_GRAY_CURSOR);
 
             if (sMartInfo.martType == MART_TYPE_NORMAL)
-                sShopData->totalCost = (GetItemPrice(itemId) >> IsPokeNewsActive(POKENEWS_SLATEPORT));
+                sShopData->totalCost = GetShopItemPrice(itemId);
             else if (sMartInfo.martType == MART_TYPE_KURT)
                 sShopData->totalCost = 1;
             else if (sMartInfo.martType == MART_TYPE_BP
@@ -1788,7 +1819,7 @@ static void Task_BuyMenu(u8 taskId)
                         ConvertIntToDecimalStringN(gStringVar2, sShopData->totalCost, STR_CONV_MODE_LEFT_ALIGN, 6);
                         StringExpandPlaceholders(gStringVar4, gText_YouWantedVar1ThatllBeVar2);
                         tItemCount = 1;
-                        sShopData->totalCost = (GetItemPrice(tItemId) >> IsPokeNewsActive(POKENEWS_SLATEPORT)) * tItemCount;
+                        sShopData->totalCost = GetShopItemPrice(tItemId) * tItemCount;
                         BuyMenuDisplayMessage(taskId, gStringVar4, BuyMenuConfirmPurchase);
                     }
                     else if (GetItemPocket(itemId) == POCKET_TM_HM)
@@ -1868,7 +1899,7 @@ static void Task_BuyHowManyDialogueHandleInput(u8 taskId)
         else if (sMartInfo.martType == MART_TYPE_BP)
             sShopData->totalCost = GetBPCostForItem(tItemId) * tItemCount;
         else
-            sShopData->totalCost = (GetItemPrice(tItemId) >> IsPokeNewsActive(POKENEWS_SLATEPORT)) * tItemCount;
+            sShopData->totalCost = GetShopItemPrice(tItemId) * tItemCount;
         BuyMenuPrintItemQuantityAndPrice(taskId);
     }
     else
@@ -2171,6 +2202,7 @@ static void Task_ExitBuyMenu(u8 taskId)
         else
             RemoveMoneyLabelObject();
         BuyMenuFreeMemory();
+        sActivePriceOverrides = NULL;
         SetMainCallback2(CB2_ReturnToField);
 
         if (sMartInfo.martType == MART_TYPE_KURT
@@ -2231,6 +2263,16 @@ void CreatePokemartMenu(const u16 *itemsForSale)
     SetShopItemsForSale(itemsForSale);
     ClearItemPurchases();
     SetShopMenuCallback(ScriptContext_Enable);
+}
+
+// Installs a per-item price override table that applies to the very next MART_TYPE_NORMAL
+// pokemart opened (see GetShopItemPrice). Call this via `special` immediately before the
+// `pokemart` script command for any shop that needs custom pricing on one or more of its
+// items; shops that never call this are completely unaffected. Automatically cleared when
+// the buy menu is exited, so it never leaks into an unrelated later shop.
+void SetShopPriceOverrides(const struct ShopPriceOverride *overrides)
+{
+    sActivePriceOverrides = overrides;
 }
 
 void CreateDecorationShop1Menu(const u16 *itemsForSale)

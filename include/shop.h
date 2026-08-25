@@ -3,9 +3,12 @@
 
 extern struct ItemSlot gMartPurchaseHistory[3];
 
+struct ShopPriceOverride;
+
 void CreatePokemartMenu(const u16 *itemsForSale);
 void CreateDecorationShop1Menu(const u16 *itemsForSale);
 void CreateDecorationShop2Menu(const u16 *itemsForSale);
+void SetShopPriceOverrides(const struct ShopPriceOverride *overrides);
 void CB2_ExitSellMenu(void);
 
 void CreateBPVitaminShop(void);

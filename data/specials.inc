@@ -488,6 +488,8 @@ gSpecials::
 	def_special CreateBPHoldItemShop2
 	def_special CreateBPPowerShop
 	def_special CreateKurtBallShop
+	def_special SetGoldenrodEvoItemShopPrices
+	def_special SetSafariZoneGateVitaminGuruPrices
 	def_special DisplayBerryPowderVendorMenu
 	def_special RemoveBerryPowderVendorMenu
 	def_special HasEnoughBerryPowder

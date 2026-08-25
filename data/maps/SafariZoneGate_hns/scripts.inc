@@ -148,6 +148,7 @@ SafariZoneGate_EventScript_VitaminGuru::
 	faceplayer
 	message SafariZoneGate_Text_VitaminGuruSellWhatYouNeed
 	waitmessage
+	special SetSafariZoneGateVitaminGuruPrices
 	pokemart SafariZoneGate_Pokemart_VitaminGuru
 	msgbox gText_PleaseComeAgain, MSGBOX_DEFAULT
 	release
