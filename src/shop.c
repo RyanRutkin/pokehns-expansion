@@ -147,6 +147,7 @@ static EWRAM_DATA u8 sBerryIconSpriteId = 0;
 static EWRAM_DATA u8 sQuantityBerryIconSpriteId = 0;
 static EWRAM_DATA const struct BPShopEntry *sBPShopEntries = NULL;
 static EWRAM_DATA const struct ShopPriceOverride *sActivePriceOverrides = NULL;
+static EWRAM_DATA const struct ShopPriceOverride *sActiveSellPriceOverrides = NULL;
 EWRAM_DATA struct ItemSlot gMartPurchaseHistory[SMARTSHOPPER_NUM_ITEMS] = {0};
 
 static void Task_ShopMenu(u8 taskId);
@@ -347,18 +348,18 @@ static u16 GetBPCostForItem(u16 itemId)
     return 0;
 }
 
-// Returns TRUE and writes the override price to *price if the currently active shop
-// (set via SetShopPriceOverrides) has a custom price for itemId, otherwise returns FALSE.
-static bool8 GetPriceOverrideForItem(u16 itemId, u32 *price)
+// Returns TRUE and writes the override price to *price if the given override table is set
+// and has a custom price for itemId, otherwise returns FALSE.
+static bool8 GetOverridePrice(const struct ShopPriceOverride *overrides, u16 itemId, u32 *price)
 {
     u16 i = 0;
-    if (sActivePriceOverrides == NULL)
+    if (overrides == NULL)
         return FALSE;
-    while (sActivePriceOverrides[i].item != ITEM_NONE)
+    while (overrides[i].item != ITEM_NONE)
     {
-        if (sActivePriceOverrides[i].item == itemId)
+        if (overrides[i].item == itemId)
         {
-            *price = sActivePriceOverrides[i].price;
+            *price = overrides[i].price;
             return TRUE;
         }
         i++;
@@ -371,7 +372,7 @@ static bool8 GetPriceOverrideForItem(u16 itemId, u32 *price)
 static u32 GetShopItemPrice(u16 itemId)
 {
     u32 price;
-    if (GetPriceOverrideForItem(itemId, &price))
+    if (GetOverridePrice(sActivePriceOverrides, itemId, &price))
         return price;
     return GetItemPrice(itemId) >> IsPokeNewsActive(POKENEWS_SLATEPORT);
 }
@@ -2203,6 +2204,7 @@ static void Task_ExitBuyMenu(u8 taskId)
             RemoveMoneyLabelObject();
         BuyMenuFreeMemory();
         sActivePriceOverrides = NULL;
+        sActiveSellPriceOverrides = NULL;
         SetMainCallback2(CB2_ReturnToField);
 
         if (sMartInfo.martType == MART_TYPE_KURT
@@ -2273,6 +2275,26 @@ void CreatePokemartMenu(const u16 *itemsForSale)
 void SetShopPriceOverrides(const struct ShopPriceOverride *overrides)
 {
     sActivePriceOverrides = overrides;
+}
+
+// Installs a per-item sell price override table that applies for as long as the player
+// remains in the shop that set it (both the Buy and Sell sub-menus). Call this via `special`
+// immediately before the `pokemart` script command, same as SetShopPriceOverrides. Items not
+// listed in the table fall back to the normal GetItemSellPrice() amount. Automatically
+// cleared when the buy menu is exited, so it never leaks into an unrelated later shop.
+void SetShopSellPriceOverrides(const struct ShopPriceOverride *overrides)
+{
+    sActiveSellPriceOverrides = overrides;
+}
+
+// Used by the Sell menu (see item_menu.c) in place of GetItemSellPrice() so a shop can
+// override how much it pays for specific items, set via SetShopSellPriceOverrides.
+u32 GetShopItemSellPrice(u16 itemId)
+{
+    u32 price;
+    if (GetOverridePrice(sActiveSellPriceOverrides, itemId, &price))
+        return price;
+    return GetItemSellPrice(itemId);
 }
 
 void CreateDecorationShop1Menu(const u16 *itemsForSale)

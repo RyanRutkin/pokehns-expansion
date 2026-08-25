@@ -453,6 +453,7 @@ GoldenrodCity_UndergroundTunnel_EventScript_EvolutionItemClerk::
 	message GoldenrodCity_UndergroundTunnel_Text_EvoItemClerkWelcome
 	waitmessage
 	special SetGoldenrodEvoItemShopPrices
+	special SetGoldenrodEvoItemShopSellPrices
 	pokemart GoldenrodCity_UndergroundTunnel_EvoItemPokemart
 	msgbox GoldenrodCity_UndergroundTunnel_Text_EvoItemClerkGoodbye, MSGBOX_DEFAULT
 	release
