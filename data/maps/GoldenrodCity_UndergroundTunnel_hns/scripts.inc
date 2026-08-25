@@ -445,3 +445,35 @@ GoldenrodUnderground_Text_KeyOpenedDoor:
 
 GoldenrodUnderground_Text_NoEntry:
     .string "NO ENTRY BEYOND THIS POINT$"
+
+@ Evolution item dealer, sells rare evolution items at a custom shop price
+GoldenrodCity_UndergroundTunnel_EventScript_EvolutionItemClerk::
+	lock
+	faceplayer
+	message GoldenrodCity_UndergroundTunnel_Text_EvoItemClerkWelcome
+	waitmessage
+	special SetGoldenrodEvoItemShopPrices
+	special SetGoldenrodEvoItemShopSellPrices
+	pokemart GoldenrodCity_UndergroundTunnel_EvoItemPokemart
+	msgbox GoldenrodCity_UndergroundTunnel_Text_EvoItemClerkGoodbye, MSGBOX_DEFAULT
+	release
+	end
+
+	.align 2
+GoldenrodCity_UndergroundTunnel_EvoItemPokemart:
+	.2byte ITEM_AUSPICIOUS_ARMOR
+	.2byte ITEM_MALICIOUS_ARMOR
+	.2byte ITEM_TM_DRAGON_CHEER
+	.2byte ITEM_BLUE_ORB
+	.2byte ITEM_RED_ORB
+	pokemartlistend
+
+GoldenrodCity_UndergroundTunnel_Text_EvoItemClerkWelcome:
+	.string "Psst… Looking for something to help\n"
+	.string "your POKéMON evolve?\p"
+	.string "I've got a few rare items, but\n"
+	.string "they'll cost you.$"
+
+GoldenrodCity_UndergroundTunnel_Text_EvoItemClerkGoodbye:
+	.string "Don't tell anyone I've got these, ok?$"
+

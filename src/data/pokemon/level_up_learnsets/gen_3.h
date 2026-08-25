@@ -16873,6 +16873,7 @@ static const struct LevelUpMove sDipplinLevelUpLearnset[] = {
     LEVEL_UP_MOVE(32, MOVE_DRAGON_PULSE),
     LEVEL_UP_MOVE(36, MOVE_RECOVER),
     LEVEL_UP_MOVE(40, MOVE_ENERGY_BALL),
+    LEVEL_UP_MOVE(40, MOVE_DRAGON_CHEER), // Required to evolve into Hydrapple but not naturally learned otherwise
     LEVEL_UP_MOVE(44, MOVE_SUBSTITUTE),
     LEVEL_UP_END
 };
