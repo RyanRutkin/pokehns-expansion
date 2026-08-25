@@ -1,0 +1,10 @@
+That is a very good plan. To answer your questions:
+- "Size" - I originally said this for the Pokemon's height/weight stat, but we should also consider the sprite scale/offset. If this value is numeric and not an enum, we should use the selector-percentage based on how many parents are holding the beserk gene. For example, if one parent is holding a beserk gene and it's sprite-scale (pA) is 10, and the other parent is not holding a beserk gene and it's sprite-scale (pB) is 5, the resulting sprite-scale would be `(pA * 0.68) + (pB * 0.32)` which, for this example, would result in `8.4`. That is, only use this calculation if the field is numeric. If not, prompt me again for the proper logic.
+
+- Legendary/"Undiscovered" egg group - yes, this should be bypassed in the daycare only if both Pokemon are holding a beserk gene
+
+- Egg groups > 2 after filtering - good point. Make a unique set of the parent's combined egg groups. If the set has a length of zero, assign the EGG_GROUP_NO_EGGS_DISCOVERED to the child. If the set has one egg group, use that one egg group for the child. If the set has two egg groups, use those two egg groups for the child. If the set has more than two egg groups, select this first egg group by using the beserk-gene-selection-percentage logic to select the parent pokemon, then randomly select an egg-group from their list. Repeat this step another time to get the second egg-group, making sure to not repeat the same egg-group twice on the child.
+
+- Ability storage width - yes, this is acceptable for now. Thank you for bringing this to my attention. Please continue to be conservative about storage space and let me know what areas take a fair amount of space.
+
+- Should traded/link-battle mons with a Berserk profile be blocked from trade, or is trading out of scope for this game entirely - traded/link-battle mons with a berserk profile should be allowed for battle and/or trade, though they should only be allowed when both players are using this same ROM, as these Pokemon would otherwise be incompatible.
