@@ -204,8 +204,29 @@ accordingly — read it as blended, not rolled.
    for level-up, existing array caps for egg/teachable). Teachable-move merging is a **union of
    both current species' teachable move lists** (not a capped/sampled subset like level-up/egg),
    still type-priority-sorted for display/relevance purposes.
-4. Ability / secondary ability / hidden ability — three independent binary rolls, one per slot;
-   store all three (not just the active one) since the child can breed again later.
+4. Ability / secondary ability / hidden ability — three independent binary rolls, one per slot
+   (`ability1`, `ability2`, `abilityHidden`), each picking gene-parent's value vs. other-parent's
+   value for that slot; store all three (not just the active one) since the child can breed
+   again later.
+
+   **Active-ability selection (new, closes a prior gap):** the three rolls above only determine
+   what *values* fill the three stored slots — a separate step is needed to pick which one the
+   child actually has as its live ability at birth. That selection is a single rarity-weighted
+   pick among `{ability1, ability2, abilityHidden}` (mostly ability1, less often ability2, hidden
+   uncommon — exact weighting TBD at implementation time, should read from/mirror whatever weights
+   the existing vanilla ability-assignment logic already uses, for consistency).
+
+   **Special case (updated): Flying-type-parent Levitate candidate.** Check: (a) the child's
+   *already-resolved* type (from steps 1-2 above) is **not** Flying in either slot, and (b) at
+   least one parent's effective type (primary or secondary) **is** Flying. If both hold,
+   **Levitate is injected as a fourth candidate** into the active-ability selection pool above
+   (i.e. the pool becomes `{ability1, ability2, abilityHidden, Levitate}` for this pick only) —
+   it is **not** a separate pre-roll step before the normal ability determination, it's folded
+   directly into the same weighted pick. If both parents are Flying-type, Levitate is still only
+   a single candidate in the pool (not two), to avoid double-counting. If Levitate wins the pick,
+   it also **overwrites the stored `ability1` slot** with Levitate (rather than being active-only
+   and unstored), so the child's own future breeding has a coherent value to potentially pass
+   down as an ability-inheritance candidate.
 5. Color — one binary roll.
 6. Shininess — reuse existing `shinyModifier` bit; if a shiny parent is selected by roll, force
    it; else fall back to standard shiny-roll code.
