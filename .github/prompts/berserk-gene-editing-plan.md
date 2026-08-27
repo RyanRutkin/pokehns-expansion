@@ -88,6 +88,16 @@ Fields (shape, to be bit-packed precisely at implementation time):
   fusion is derived from. Set at egg creation to the breeding parents' (effective) species, and
   updated in place (one side only) whenever the fusion evolves — this is what evolution reruns
   the whole trait pipeline against.
+- `potentialEvolutions[]` + count — **new**: fixed-size list of this fusion's currently available
+  **immediate next-stage** evolution entries only. Each entry must store enough to apply the
+  evolution later: target species, evolution method, method parameter/argument, any additional
+  `conditionSetId` needed by that method, and source parent side
+  (A/B) so the correct `parentSpeciesA`/`parentSpeciesB` slot can be replaced on evolution.
+  Do **not** store entire evolutionary lines or later-stage preview chains. Example: a Poliwag ×
+  Dratini fusion may store `Poliwhirl` and/or `Dragonair`, but not `Politoed`, `Poliwrath`, or
+  `Dragonite` until the relevant side actually reaches the stage where those become immediate
+  next evolutions. This field exists specifically to prevent repeated Berserk Gene breeding from
+  causing unbounded growth in available evolution options.
 - `geneHolderWeight:1` — **new**: records whether the original breeding had one gene holder
   (62%) or two (50%), persisted so ability/color/cry/sprite can be freshly re-rolled with the
   *same* weighting at each future evolution (the original parents are gone/inaccessible by then).
@@ -267,18 +277,96 @@ A Berserk-Gene-bred child is conceptually a standing "fusion" between two specif
 potential to evolve along *either* parent's evolutionary line, and each evolution re-derives most
 (not all) of its traits from the updated species pair.
 
-### Available evolutions = union of both current species' own evolutions
-The fusion's evolution options are the union of `GetSpeciesEvolutions(parentSpeciesA)` and
-`GetSpeciesEvolutions(parentSpeciesB)` for whatever the two *current* input species are (this
-recomputes after every evolution, since one side's species just changed). Example: an
-Eevee×Applin fusion has all ~8 Eevee branch evolutions (Water/Thunder/Fire/Leaf Stone, etc.)
-*and* Applin's own evolutions (Sweet/Tart/Syrupy Apple) simultaneously available. This needs a
-new `GetMonEvolutions(mon)` override-aware wrapper (per the Option A downstream-consumption
-pattern) that, for a fusion mon, returns this merged/union table instead of the (nominal, display)
-species' own single-species evolution table — likely requires a new fixed-size merged-evolution-
-entries array on the profile (variable count, capped at some max) rather than a scalar field,
-since the merged set size varies per species pair. Flagged as needing a concrete storage design
-at implementation time (open item, see below).
+### Available evolutions = stored immediate next-stage options only
+The old full-line/full-union wording is intentionally superseded: a fusion must **not** accumulate
+every possible future evolution branch from every fused ancestor across repeated daycare
+generations. That would make re-entering fusion mons into the daycare scale poorly and could
+produce children with absurdly large evolution menus. Instead, each fusion stores only a bounded
+list of **immediate next-stage** potential evolutions (`potentialEvolutions[]`).
+
+At child creation, build a weighted candidate pool of immediate next evolutions:
+- For a non-fusion parent, candidates are that parent's normal immediate next evolutions from its
+  current species/stage.
+- For a fusion parent being re-entered into daycare, candidates are **that parent's stored
+  `potentialEvolutions[]` entries**, not the full native evolution tables behind its
+  `parentSpeciesA`/`parentSpeciesB` ancestry. This is the key rule that prevents re-breeding
+  fusion parents from expanding the child's possible evolutions without bound.
+- Candidates remain tagged with which parent side they came from so that, if the child later uses
+  that evolution, the correct `parentSpeciesA`/`parentSpeciesB` side can be replaced with the
+  evolved species.
+
+Before selecting which entries are stored, determine how many potential-evolution slots this child
+gets:
+1. Let `highCount = max(parentAEvolutionCandidateCount, parentBEvolutionCandidateCount)`.
+2. Let `lowCount = min(parentAEvolutionCandidateCount, parentBEvolutionCandidateCount)`.
+3. Roll a random fixed-point value `r` in `[0, 1]`.
+4. `slotCount = ceil(lowCount + highCount * r)`.
+5. Clamp `slotCount` to the combined candidate-pool size and to the fixed
+  `MAX_FUSION_POTENTIAL_EVOLUTIONS = 8` cap.
+
+Example: Meowth has 1 immediate evolution and Eevee has 8. If `r = 0.5`, then
+`ceil(1 + 8 * 0.5) = 5`, so the child stores 5 potential next-stage evolutions selected from the
+combined Meowth+Eevee candidate pool.
+
+**Cap decision:** `MAX_FUSION_POTENTIAL_EVOLUTIONS` is fixed at **8**. This is the intended
+gameplay/storage cap for fusion mons, even if a future or edge-case species has more than 8 raw
+immediate evolution entries. Implementation-time data check found Milcery as a current outlier
+with many Alcremie form/method entries (72 literal entries / 63 unique targets), so oversized
+candidate pools must be sampled down to 8 rather than assuming the source table naturally fits.
+This keeps fusion profiles bounded and avoids special-case save growth for form-heavy species.
+
+After `slotCount` is known, select that many unique entries from the combined candidate pool using
+the existing 62%/50% gene-holder weighting: with one gene holder, candidates sourced from the
+gene-holding parent are weighted 62 and candidates from the other parent are weighted 38; with two
+gene holders, both parents' candidates are weighted 50/50. This gives each parent the **potential**
+to contribute evolutions, but does not guarantee either parent contributes one on any given child.
+The same two parents can therefore create children with different potential evolutions, just like
+they can create children with different moves, types, and other inherited traits.
+
+`GetMonEvolutions(mon)` for a fusion mon simply returns the stored `potentialEvolutions[]` list
+(filtered for the current context/method as normal), rather than recomputing from full species
+evolution lines.
+
+### Compact potential-evolution entry representation
+Each stored potential-evolution entry should be compact, but it needs enough information to behave
+exactly like a normal evolution entry when checked later:
+- `targetSpecies` — the species this source side will become if this evolution is taken.
+- `method` — the evolution method (`EVO_LEVEL`, `EVO_ITEM`, trade method, etc.).
+- `param` — the method parameter (level, item ID, move ID, mapsec, etc.).
+- `conditionSetId` — stable ID for the source evolution's extra `CONDITIONS(...)` set, with 0
+  meaning "no extra conditions." Do not store raw ROM pointers in save/profile data and do not
+  copy full condition structs into every profile entry. Resolve the ID through a ROM-backed lookup
+  table such as `gEvolutionConditionSets[conditionSetId]` when checking the evolution later. Do
+  not drop conditions, or form-heavy/special evolutions like Alcremie-style entries will become
+  incorrect.
+- `sourceParent` — A or B, identifying whether the evolution updates `parentSpeciesA` or
+  `parentSpeciesB`.
+
+**Condition storage decision:** use the condition-set-ID approach with a **build-time generated
+stable registry** (the preferred Option 2). Implementation must assign a stable ID to each unique
+static evolution condition set used by source data and keep those IDs stable across future releases
+once saves can contain them. Candidate-pool construction stores the ID, not the pointer; runtime
+evolution checks resolve the ID back to the existing immutable condition data.
+
+Careful implementation path for the registry:
+1. Audit all current evolution `CONDITIONS(...)` usage and report max conditions per evolution,
+  number of unique condition sets, and repeated/shared condition sets (Milcery/Alcremie-style
+  entries are the important stress case). **Completed initial audit:** 679 total evolution
+  entries; 220 condition-bearing entries; 104 unique non-empty condition sets; max 2 conditions
+  per evolution; most common condition set is friendship-threshold evolution (16 uses).
+2. Choose `u8` vs. `u16` for `conditionSetId` from the audit result. **Decision from initial
+  audit:** start with `u8 conditionSetId` (0 = none, 1-255 = registered condition sets), because
+  104 unique non-empty sets leaves comfortable headroom under 255.
+3. Add an append-only manifest (committed source data, likely JSON or a simple generated-friendly
+  table) mapping a normalized condition-set signature to a stable ID. Existing IDs must never be
+  renumbered once released saves may contain them.
+4. Add a generator that scans species evolution data, normalizes each `CONDITIONS(...)` set,
+  appends new signatures to the manifest with new IDs, and emits the ROM lookup table
+  `gEvolutionConditionSets[]` plus any helper metadata needed by candidate-pool construction.
+5. Add validation that fails the build/tests if generated condition-set output is stale, if an
+  evolution condition set is missing an ID, or if an existing manifest ID drifts.
+6. Unit-test candidate-pool construction with condition-bearing evolutions to ensure stored
+  `conditionSetId` values resolve back to the same behavior as the original evolution entries.
 
 ### On evolution: which side changes, what reruns, what's preserved
 Evolving via one of the available triggers evolves *one side only* — replace whichever of
@@ -291,7 +379,21 @@ After updating the changed side, **rerun the full Berserk Gene trait pipeline be
 species pair**, recalculating: base stats (still blended, per the updated formula above), height/
 weight/pokemonScale/pokemonOffset (blended), learnset (full re-merge using the two new-current
 species), color, cry, ability/secondary ability/hidden ability, sprite/identity, and the
-available-evolutions set (recomputed union, above).
+potential-evolutions list.
+
+Potential-evolution recalculation after evolution uses a rolling-pool update, not a full reset to
+both species' native evolution tables:
+1. Start with the fusion's existing `potentialEvolutions[]` entries.
+2. Remove every entry whose `sourceParent` matches the source parent side that just evolved. This
+  discards stale next-stage options for the side whose current species has changed.
+3. Add the immediate next evolutions of the newly evolved/fused-into species for that same source
+  parent side, preserving method/param/conditions and tagging those entries with that source
+  parent.
+4. Recalculate `slotCount` using the same `ceil(lowCount + highCount * r)` logic as at breeding,
+  with counts based on the updated per-parent candidate counts.
+5. Select the new stored `potentialEvolutions[]` list from the updated pool using the same
+  62%/50% weighting that was established at breeding (`geneHolderWeight`), so evolution can
+  reshuffle future options but still stays bounded at `MAX_FUSION_POTENTIAL_EVOLUTIONS = 8`.
 
 **Learnset rerun scope (decided):** matches vanilla evolution behavior exactly — recalculating
 the learnset on evolution only regenerates the **future** level-up and teachable/tutor move
@@ -336,15 +438,33 @@ the stored weight (62% chance of Jolteon if only Applin held the gene at breedin
 example). Update `spriteSourceParent` to whichever side is selected.
 
 ### Worked multi-step example (Eevee × Applin, for validation during implementation)
-1. Birth: Eevee×Applin fusion. Available evolutions = {Water/Thunder/Fire/Leaf/Sun/Moon/Dusk/Dawn
-   Stone or equivalent Eevee branch triggers} ∪ {Sweet Apple, Tart Apple, Syrupy Apple}.
+1. Birth: Eevee×Applin fusion. Candidate next-stage evolutions are Eevee's immediate branches
+  (Vaporeon/Jolteon/Flareon/etc.) plus Applin's immediate branches (Flapple/Appletun/Dipplin).
+  The child stores only the selected immediate next-stage entries. Example stored result:
+  {Thunder Stone → Jolteon, Syrupy Apple → Dipplin}. It does **not** store Hydrapple yet,
+  because Hydrapple is a later-stage evolution from Dipplin, not an immediate next stage from
+  Applin.
 2. Evolve via Thunder Stone (Eevee-side) → Jolteon×Applin fusion. Rerun stats/size/learnset/
    color/cry/ability/sprite between Jolteon and Applin; type slots re-read at their stored
-   provenance (only the Eevee-sourced slot changes, if any). Available evolutions recomputed =
-   {Flapple, Appletun, Dipplin} (Jolteon has no further evolutions; Applin's branches remain).
+  provenance (only the Eevee-sourced slot changes, if any). Potential evolutions are recalculated
+  from the updated immediate-next-stage pool: Jolteon contributes none, while Applin may newly
+  roll/store some subset of Flapple/Appletun/Dipplin.
 3. Evolve via Syrupy Apple (Applin-side) → Jolteon×Dipplin fusion. Rerun again. Available
-   evolutions recomputed = {Hydrapple} only (Dipplin's single remaining evolution; Jolteon
-   contributes none).
+  evolutions are recalculated from the updated immediate-next-stage pool: Jolteon contributes
+  none, while Dipplin may roll/store Hydrapple.
+
+### Worked re-breeding example (Poliwag × Dratini lineage)
+1. Birth: Poliwag×Dratini fusion. Candidate next-stage evolutions are {Poliwhirl, Dragonair}.
+  The child may store both, one, or neither depending on the slot-count roll and weighted
+  selection.
+2. If the child evolves via the Poliwag side into Poliwhirl×Dratini, the fusion reruns the trait
+  pipeline and recalculates potential evolutions from the updated immediate-next-stage pool:
+  Poliwhirl may contribute Poliwrath/Politoed-style options, and Dratini may contribute
+  Dragonair. It does **not** store Poliwhirl again because Poliwhirl is now the current side-A
+  species, not a next-stage option.
+3. If that fusion is later put back into daycare, it contributes only its currently stored
+  `potentialEvolutions[]` entries as evolution candidates for the next child, not all later
+  possibilities from the Poliwag or Dratini family trees.
 
 ## Fusion Pokédex display (new)
 
@@ -360,7 +480,7 @@ from the normal species-wide dex-entry code path:
   location).
 - **STATS tab**: populated from the profile's overridden base stats and merged learnset (not the
   nominal displayed species' own data).
-- **EVO tab**: populated from the profile's *current* merged/union evolution set (see
+- **EVO tab**: populated from the profile's currently stored `potentialEvolutions[]` list (see
   Evolutionary line handling above), not the nominal species' own single-line evolution table.
 - **CRY**: plays the profile's overridden cry, not the nominal species' cry.
 - **Size display**: uses the profile's overridden height/weight (and by extension
@@ -562,17 +682,22 @@ implementation, not just suggestions:
   (run the existing `test/daycare.c` suite unchanged after the change and diff results), not just
   an assumption.
 - **Phased, independently-buildable implementation order**, rather than one large diff:
-  1. Data model + side-table storage + save-version bump + `MON_DATA_*` accessors, with its own
-     unit tests (allocation/orphan lifecycle) — buildable and testable in total isolation before
-     any breeding logic exists.
-  2. Breeding-time profile creation pipeline (eligibility bypass, identity selection, the 14-step
+  1. Phase 1A: static/source-data audits before finalizing storage layout — condition-set audit
+    (already completed initially: `u8 conditionSetId` is sufficient), evolution-entry count audit
+    (`MAX_FUSION_POTENTIAL_EVOLUTIONS = 8` chosen despite Milcery outlier), and save-space/layout
+    budget check target.
+  2. Phase 1B: data model + side-table storage + save-version bump + `MON_DATA_*` accessors,
+    with its own unit tests (allocation/orphan lifecycle) — buildable and testable in total
+    isolation before any breeding logic exists.
+  3. Breeding-time profile creation pipeline (eligibility bypass, identity selection, the 14-step
      trait inheritance, egg-group/type-pool algorithms) — testable via `test/daycare.c` extensions
      without touching any downstream display/battle code yet.
-  3. Option A downstream-consumption wrappers (`GetMonX`/`GetBoxMonX`), converting the "must
+  4. Option A downstream-consumption wrappers (`GetMonX`/`GetBoxMonX`), converting the "must
      convert" checklist sites one at a time, each independently verifiable in-game.
-  4. Evolutionary line handling (union evolution set, rerun pipeline, sticky-type provenance).
-  5. Fusion Pokédex/Summary display branches.
-  6. Trade/link-battle compatibility gating.
+  5. Evolutionary line handling (stored potential-evolution list, rerun pipeline, sticky-type
+    provenance).
+  6. Fusion Pokédex/Summary display branches.
+  7. Trade/link-battle compatibility gating.
   Each phase should be built, tested, and confirmed working before starting the next — this
   bounds the blast radius of any single mistake and makes it much easier to identify which phase
   introduced a regression.
@@ -608,14 +733,17 @@ hadn't written it") — but that's a review-technique choice you can invoke at a
 capability gap that requires a dedicated agent to be configured up front.
 
 ## Additional open items from the evolutionary-line update
-- **Merged-evolution storage design**: how the union-of-both-current-species evolution set is
-  actually stored/represented on the profile (fixed-size array of `{species, method, param}`?
-  capped at how many entries? computed fresh on-demand from `parentSpeciesA`/`parentSpeciesB`
-  instead of stored at all, since it's fully derivable from the two current species and doesn't
-  need to persist separately?) — leaning toward **not storing it at all** and instead having
-  `GetMonEvolutions(mon)` compute the union on-the-fly from `GetSpeciesEvolutions(parentSpeciesA)`
-  ∪ `GetSpeciesEvolutions(parentSpeciesB)` each time it's needed, avoiding extra save storage
-  entirely — needs confirmation this is feasible perf/architecture-wise at implementation time.
+- **Potential-evolution storage packing**: target species, method, param, and source side A/B are
+  required fields, and extra evolution `CONDITIONS(...)` are represented by stable
+  `conditionSetId` values (0 = none) resolved through a ROM lookup table generated from an
+  append-only manifest. **Initial byte-packing direction:** start with the simple compact struct
+  option using `u8 conditionSetId` plus a reserved byte if needed for alignment/future flags
+  (`targetSpecies`, `param`, `method`, `conditionSetId`, `sourceParent`, `reserved`), because the
+  completed audit found only 104 unique non-empty condition sets. Revisit only if later source
+  data pushes unique condition sets near 255 or the final save-size budget forces denser packing.
+  The key invariant is that the profile stores only immediate next-stage evolution entries, never
+  full future lines; repeated daycare fusion can only inherit from a fusion parent's currently
+  stored next-stage entries, not from that parent's full ancestry.
 - **Evolution-trigger hook point**: need to find and patch the actual evolution-checking code
   (`GetSpeciesEvolutions`/`TryDoEvolution`-equivalent flow) to (a) use `GetMonEvolutions(mon)` for
   a fusion mon instead of its nominal species' own table, and (b) run the whole "rerun the
@@ -625,8 +753,8 @@ capability gap that requires a dedicated agent to be configured up front.
   `pokedex_plus_hgss.c` (and possibly `pokemon_summary_screen.c`'s "open Pokédex for this specific
   mon" entry point) responsible for each of INFO/AREA/STATS/EVO/CRY/size, to know where to branch
   on `hasProfile`.
-- Revised byte-budget for `BerserkGeneProfile` needs finalizing once the merged-evolution storage
-  question above is resolved.
+- Revised byte-budget for `BerserkGeneProfile` needs finalizing once the `potentialEvolutions[]`
+  entry representation is chosen, using the now-fixed `MAX_FUSION_POTENTIAL_EVOLUTIONS = 8` cap.
 
 ## Pre-implementation review (final pass before starting)
 
