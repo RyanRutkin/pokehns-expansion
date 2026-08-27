@@ -1,8 +1,28 @@
 # Berserk Gene Editing — Implementation Plan (finalized)
 
-Status: PLANNING COMPLETE, NOT YET IMPLEMENTED.
+Status: PHASE 1 STORAGE SKELETON STARTED, PAUSED BEFORE BREEDING BEHAVIOR.
 This file consolidates `berserk-gene-editing-prompt-1.md` and `beserk-gene-editing-prompt-1-answers.md`
 plus the resulting plan and decisions. Resume implementation from here when prompted.
+
+## Resume checkpoint (paused 2026-08-27)
+
+Implementation is intentionally paused after Phase 1 storage groundwork because the user is out of
+quota/credits until next month. Do **not** restart planning from scratch. Resume from this state:
+- Phase 1A audits are done: `u8 conditionSetId` is sufficient for current evolution conditions;
+  `MAX_FUSION_POTENTIAL_EVOLUTIONS = 8`; `MAX_BERSERK_GENE_PROFILES = 16` after profile packing.
+- Phase 1B storage skeleton is implemented: profile ID packed into existing encrypted
+  `PokemonSubstruct0` spare bits; side table stored in `PokemonStorage`; basic profile
+  allocate/free/get/clear helpers exist.
+- Last successful validation: `make hns -j24` passed; size probe measured `BoxPokemon = 80`,
+  `FusionPotentialEvolution = 6`, `BerserkGeneProfile = 92`, `PokemonStorage = 35708` against a
+  35712-byte Pokémon-storage budget.
+- Full `make check` remains blocked by the known unrelated `src/braille_puzzles.c` /
+  `FLAG_RECEIVED_TOGEPI_EGG` test-build issue.
+- Next step when resuming: finish Phase 1B orphan-prevention before implementing breeding logic.
+  Audit and wire cleanup for `BoxPokemon` deletion/overwrite paths (`ZeroBoxMonAt`, `SetBoxMonAt`,
+  `PurgeMonOrBoxMon`, `CompactPartySlots`, party `ZeroMonData`, PC multi-move operations, item
+  fusion copy/clear paths, and later trade paths). Keep all profile access behind storage helper
+  APIs so the confirmed future external-save migration remains feasible.
 
 ## Feature summary
 When Pokémon are bred in the daycare and one or both parents hold a Berserk Gene
@@ -38,12 +58,17 @@ a dedicated `gSpeciesInfo[` call-site sweep at the start of implementation.
 global array `struct Mail mail[MAIL_COUNT]` (`include/global.h`, `MAIL_COUNT = 10 + PARTY_SIZE`
 in `include/constants/global.h`) rather than the full mail message inline. `BerserkGeneProfile`
 follows the same shape:
-- `struct BoxPokemon` gains a small field, e.g. `u16 berserkGeneProfileId;` (0 = "no profile";
-  matches the `mail`-field convention of 0/none-sentinel rather than a separate flag bit).
-- A new fixed-size global array lives in the save data, e.g.
-  `struct BerserkGeneProfile gBerserkGeneProfiles[MAX_BERSERK_GENE_PROFILES];`, with
-  `MAX_BERSERK_GENE_PROFILES` a tunable compile-time constant (exact value TBD — pick after
-  checking actual remaining SaveBlock1/2 headroom; see Pre-implementation review below).
+- `struct BoxPokemon` stores `berserkGeneProfileId` in existing encrypted unused bits inside
+  `PokemonSubstruct0` (`unused_02`/`unused_04`/`unused_0A` repurposed as low/mid/high pieces),
+  with 0 = "no profile." This preserves `sizeof(struct BoxPokemon) == 80` and avoids expanding
+  every PC storage slot.
+- A new fixed-size side-table array lives in `struct PokemonStorage`:
+  `struct BerserkGeneProfile berserkGeneProfiles[MAX_BERSERK_GENE_PROFILES + 1];`. Initial Phase
+  1 storage audit originally started at 8, then was raised to `MAX_BERSERK_GENE_PROFILES = 16`
+  after compacting the profile. Slot 0 is reserved so profile IDs 1-16 are valid saved
+  references. This cap is driven by current Pokémon-storage sector headroom and can only be
+  raised further if a later save-layout audit frees/reallocates space or the profile is compressed
+  more aggressively.
 - Slot 0 of the array is unused/reserved (so index 0 can mean "none", consistent with the
   `mail`-field sentinel convention already used elsewhere) — valid profiles occupy indices 1..N.
 
@@ -132,16 +157,34 @@ Fields (shape, to be bit-packed precisely at implementation time):
 Shininess reuses the existing `shinyModifier` bit already on `BoxPokemon` — no new storage
 needed.
 
-**Save impact (revised for side-table design):** each individual `BerserkGeneProfile` entry is
-still ~24-30 bytes (same field list as before — unchanged by the storage-location decision), but
-that cost is now paid **only `MAX_BERSERK_GENE_PROFILES` times total**, not once per party/box/
-daycare slot. Every `BoxPokemon` (fusion or not) pays only the new `berserkGeneProfileId` field
-(~2 bytes). Total worst-case save cost = `MAX_BERSERK_GENE_PROFILES × ~28 bytes` (a known, fixed,
-deliberately-chosen budget) + `~2 bytes × ~428 slots` (≈0.85 KB) for the index fields — much
-smaller than the embed design's flat ~11 KB regardless of `MAX_BERSERK_GENE_PROFILES`'s exact
-value. Still requires a save-version bump (`saveVersionMagic` in `include/global.h`) so existing
-saves default cleanly to index 0 ("no profile", falls back to normal species-table behavior) and
-so the new `gBerserkGeneProfiles[]` array itself initializes to all-empty/unused on first load.
+**Save impact (Phase 1 measured):** after compacting the potential-evolution entry, each
+`FusionPotentialEvolution` is 6 bytes and the current `BerserkGeneProfile` is 92 bytes. Because
+the profile ID is packed into existing encrypted `BoxPokemon` spare bits,
+`sizeof(struct BoxPokemon)` remains 80 and non-fusion mons pay no per-slot size increase. With
+`MAX_BERSERK_GENE_PROFILES = 16`, `PokemonStorage` grows from 34144 to 35708 bytes and still fits
+within the 35712-byte storage sector budget, leaving only 4 bytes of Pokémon-storage headroom.
+`SaveBlock1` currently measures 15752 bytes in the Emerald test build and 15760 bytes in HNS
+against its 15872-byte budget, leaving too little headroom for the side table; do not add the
+side table there. Save version is bumped so old saves default cleanly to profile ID 0 ("no
+profile") and the new side table initializes empty on first load.
+
+**Cap-increase investigation result and roadmap decision:** with the current profile shape, the
+in-place PokémonStorage sector can support at most 16 profiles plus the reserved slot. Going higher
+requires a larger architectural move. **External/special save storage is a confirmed future goal**
+for this feature — it is not a should-we/should-we-not question, only a timing question. Phase 1
+will keep the internal PokémonStorage table for controlled implementation/testing, but all code
+must treat profile IDs abstractly and go through helper APIs (`GetBerserkGeneProfile`,
+`AllocBerserkGeneProfile`, `FreeBerserkGeneProfile`, future iterator/count helpers) so the backing
+store can migrate later without rewriting breeding/evolution/display logic. Do not let downstream
+feature code index `gPokemonStoragePtr->berserkGeneProfiles` directly.
+
+Deferring external storage is acceptable only while this remains internal/dev or while the 16-slot
+cap is explicitly tolerated for testing. Before a public release that is expected to support broad
+fusion experimentation, add a dedicated external-storage migration phase: design the special save
+area, preserve or migrate existing profile IDs 1-16, copy occupied internal profiles to the new
+store on save-version upgrade, and leave the old internal table harmless/ignored afterward. Do not
+raise `MAX_BERSERK_GENE_PROFILES` above 16 in the current in-place storage backend without a new
+save-layout audit and a fresh build/size probe.
 
 ## Breeding eligibility bypass (`GetDaycareCompatibilityScore`, `src/daycare.c`)
 - If at least one parent holds Berserk Gene, gender-match/genderless-without-Ditto restrictions
@@ -549,10 +592,11 @@ part.
 - Build via existing project toolchain (`make`) to confirm no size/layout regressions.
 
 ## Files likely touched (implementation phase)
-- `include/pokemon.h` — new struct, `BoxPokemon` index field (`berserkGeneProfileId`), new
-  `MON_DATA_*` accessors.
-- `include/global.h` — new `gBerserkGeneProfiles[MAX_BERSERK_GENE_PROFILES]` array declaration
-  (or wherever the Mail array lives, as the direct precedent) and save version bump.
+- `include/pokemon.h` — new structs, encrypted spare-bit `berserkGeneProfileId` storage in
+  `PokemonSubstruct0`, new `MON_DATA_*` accessor.
+- `include/pokemon_storage_system.h` — new
+  `berserkGeneProfiles[MAX_BERSERK_GENE_PROFILES + 1]` side table in `struct PokemonStorage`.
+- `include/save.h` — save version bump.
 - `include/constants/global.h` — `MAX_BERSERK_GENE_PROFILES` constant (Mail's `MAIL_COUNT` as
   the precedent for how/where this kind of constant is declared).
 - `src/daycare.c` — `GetDaycareCompatibilityScore`, `DetermineEggSpeciesAndParentSlots`,
@@ -736,11 +780,13 @@ capability gap that requires a dedicated agent to be configured up front.
 - **Potential-evolution storage packing**: target species, method, param, and source side A/B are
   required fields, and extra evolution `CONDITIONS(...)` are represented by stable
   `conditionSetId` values (0 = none) resolved through a ROM lookup table generated from an
-  append-only manifest. **Initial byte-packing direction:** start with the simple compact struct
-  option using `u8 conditionSetId` plus a reserved byte if needed for alignment/future flags
-  (`targetSpecies`, `param`, `method`, `conditionSetId`, `sourceParent`, `reserved`), because the
-  completed audit found only 104 unique non-empty condition sets. Revisit only if later source
-  data pushes unique condition sets near 255 or the final save-size budget forces denser packing.
+  append-only manifest. **Phase 1 packing result:** `FusionPotentialEvolution` is now a packed
+  6-byte entry (`targetSpecies`, `param`, `methodAndSourceParent`, `conditionSetId`), with
+  source parent encoded into the method byte because current `enum EvolutionMethods` easily fits
+  below 7 bits. The completed audit found only 104 unique non-empty condition sets, so
+  `u8 conditionSetId` remains sufficient. Revisit only if later source data pushes unique
+  condition sets near 255, if evolution methods approach 128 values, or if a future save-layout
+  redesign allows a larger/more explicit entry.
   The key invariant is that the profile stores only immediate next-stage evolution entries, never
   full future lines; repeated daycare fusion can only inherit from a fusion parent's currently
   stored next-stage entries, not from that parent's full ancestry.
@@ -753,10 +799,8 @@ capability gap that requires a dedicated agent to be configured up front.
   `pokedex_plus_hgss.c` (and possibly `pokemon_summary_screen.c`'s "open Pokédex for this specific
   mon" entry point) responsible for each of INFO/AREA/STATS/EVO/CRY/size, to know where to branch
   on `hasProfile`.
-- Revised byte-budget for `BerserkGeneProfile` needs finalizing once the `potentialEvolutions[]`
-  entry representation is chosen, using the now-fixed `MAX_FUSION_POTENTIAL_EVOLUTIONS = 8` cap.
-
-## Pre-implementation review (final pass before starting)
+- Current measured byte budget: `FusionPotentialEvolution = 6` bytes and `BerserkGeneProfile = 92`
+  bytes with `MAX_FUSION_POTENTIAL_EVOLUTIONS = 8`.
 
 ## Pre-implementation review (final pass before starting)
 
@@ -765,11 +809,12 @@ After comparing both designs, we're going with a **capped side table**, followin
 Mail precedent in this codebase (`BoxPokemon.mail` index → `gSaveBlock1Ptr->mail[MAIL_COUNT]`).
 See the Data model / storage section above for the finalized field/array shape. Key consequences
 accepted with this choice:
-- **Fusion count is now hard-capped** at `MAX_BERSERK_GENE_PROFILES` (exact value TBD, pending a
-  check of actual remaining SaveBlock1/2 headroom before implementation — Mail's own
-  `MAIL_COUNT = 10 + PARTY_SIZE = 16` is the closest in-repo precedent for how conservatively
-  this kind of cap tends to be sized, though Berserk Gene profiles are larger per-entry than Mail
-  so the exact number needs its own budget pass, not a copy of Mail's constant).
+- **Fusion count is now hard-capped** at `MAX_BERSERK_GENE_PROFILES = 16` from the Phase 1
+  storage audit and compact-entry pass. This matches Mail's `MAIL_COUNT = 10 + PARTY_SIZE = 16`,
+  but each Berserk Gene profile is much larger than a mail entry and current save headroom is now
+  effectively exhausted. This is the **Phase 1 internal-backend cap**, not the desired final
+  feature ceiling; moving profiles to external/special save storage is a confirmed future
+  milestone.
 - **Orphaned-slot cleanup is now the single biggest implementation risk** (promoted from a
   secondary concern under the old embed design, where it didn't apply at all). Every deletion/
   overwrite/discard path touching a `BoxPokemon` must explicitly free its referenced slot, or the
@@ -779,10 +824,28 @@ accepted with this choice:
   Gene child must be refused with the specific flavor-text message *"Your Pokémon simply won't
   go near each other. It seems like something is wrong."* rather than crashing, silently failing,
   or reusing the normal incompatibility message.
-- Non-fusion mons now cost only ~2 bytes each (the index field) instead of ~25-30 bytes, and the
-  total worst-case save cost is a small, deliberately-chosen, fixed budget
-  (`MAX_BERSERK_GENE_PROFILES × ~28 bytes`) rather than an unconditional tax on every slot in the
-  game — this was the deciding factor in moving away from the embed design.
+- Non-fusion mons do **not** increase `BoxPokemon` size because the profile ID is packed into
+  existing encrypted spare bits. The total worst-case save cost is the deliberately bounded side
+  table: `(MAX_BERSERK_GENE_PROFILES + 1) × 92 bytes = 1564 bytes`, rather than an unconditional
+  tax on every boxed mon — this was the deciding factor in moving away from the embed design.
+- **Migration-friendly access rule:** all gameplay/UI/link/daycare code must access profiles only
+  through centralized helper APIs. Direct reads/writes of `gPokemonStoragePtr->berserkGeneProfiles`
+  outside the storage module are forbidden so the backing store can later move to an external save
+  area with minimal behavioral-code churn.
+
+### Confirmed future storage migration
+External/special save storage is planned for a later phase. Risks of deferring are accepted for now
+because Phase 1 needs a small, testable storage backend before the breeding pipeline exists, but
+the implementation must avoid baking in the internal table as the permanent architecture. The later
+migration phase must include:
+- a concrete special-sector/external-save design and corruption/dual-save-slot handling;
+- migration from the internal 16-slot table to the external table on save-version upgrade;
+- preservation of existing profile IDs where practical, or a full scan/rewrite of all mons'
+  profile IDs if the ID scheme changes;
+- compatibility gating for link/trade if one build uses internal storage and another uses the
+  external backend;
+- tests proving old internal-table saves load, migrate, save, reload, and free/reuse profile slots
+  correctly after migration.
 
 ### Biggest concerns, ranked (revised for the side-table decision)
 1. **Orphaned side-table slots.** Now the top risk (see above) — requires an exhaustive sweep of

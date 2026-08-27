@@ -23,6 +23,7 @@
 #define P_FRIENDSHIP_EVO_THRESHOLD   GEN_3  // Since Gen 8, Pokémon that evolve by friendship evolve at or above 160 friendship instead of 220.
 
 // Breeding settings
+#define P_BERSERK_GENE_EDITING          TRUE                      // Enables Berserk Gene fusion behavior; save storage remains present either way.
 #define P_NIDORAN_M_DITTO_BREED        GEN_LATEST                // Since Gen 5, when Nidoran♂ breeds with Ditto it can produce Nidoran♀ offspring. Before, it would only yield male offspring. This change also applies to Volbeat.
 #define P_INCENSE_BREEDING             GEN_LATEST                // Since Gen 9, cross-generation Baby Pokémon don't require Incense being held by the parents to be obtained via breeding.
 #define P_EGG_HATCH_LEVEL              GEN_LATEST                // Since Gen 4, Pokémon will hatch from Eggs at level 1 instead of 5.

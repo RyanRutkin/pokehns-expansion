@@ -9648,6 +9648,58 @@ u32 GetAndCopyBoxMonDataAt(u8 boxId, u8 boxPosition, s32 request, void *dst)
         return 0;
 }
 
+struct BerserkGeneProfile *GetBerserkGeneProfile(u16 profileId)
+{
+    if (profileId == 0 || profileId > MAX_BERSERK_GENE_PROFILES)
+        return NULL;
+    if (!gPokemonStoragePtr->berserkGeneProfiles[profileId].inUse)
+        return NULL;
+
+    return &gPokemonStoragePtr->berserkGeneProfiles[profileId];
+}
+
+u16 AllocBerserkGeneProfile(void)
+{
+    u16 profileId;
+
+    for (profileId = 1; profileId <= MAX_BERSERK_GENE_PROFILES; profileId++)
+    {
+        struct BerserkGeneProfile *profile = &gPokemonStoragePtr->berserkGeneProfiles[profileId];
+        if (!profile->inUse)
+        {
+            memset(profile, 0, sizeof(*profile));
+            profile->inUse = TRUE;
+            return profileId;
+        }
+    }
+
+    return 0;
+}
+
+void FreeBerserkGeneProfile(u16 profileId)
+{
+    if (profileId == 0 || profileId > MAX_BERSERK_GENE_PROFILES)
+        return;
+
+    memset(&gPokemonStoragePtr->berserkGeneProfiles[profileId], 0, sizeof(gPokemonStoragePtr->berserkGeneProfiles[profileId]));
+}
+
+void ClearBoxMonBerserkGeneProfile(struct BoxPokemon *boxMon)
+{
+    u16 profileId;
+
+    if (boxMon == NULL)
+        return;
+
+    profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    if (profileId != 0)
+    {
+        u16 emptyProfileId = 0;
+        FreeBerserkGeneProfile(profileId);
+        SetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID, &emptyProfileId);
+    }
+}
+
 void SetBoxMonAt(u8 boxId, u8 boxPosition, struct BoxPokemon *src)
 {
     if (boxId < TOTAL_BOXES_COUNT && boxPosition < IN_BOX_COUNT)

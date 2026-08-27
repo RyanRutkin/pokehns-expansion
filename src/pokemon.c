@@ -3130,7 +3130,9 @@ static const u32 sCompressedStatuses[] =
 STATIC_ASSERT(NUM_SPECIES < (1 << 11), PokemonSubstruct0_species_TooSmall);
 STATIC_ASSERT(NUMBER_OF_MON_TYPES + 1 <= (1 << 5), PokemonSubstruct0_teraType_TooSmall);
 STATIC_ASSERT(ITEMS_COUNT < (1 << 10), PokemonSubstruct0_heldItem_TooSmall);
+STATIC_ASSERT(MAX_BERSERK_GENE_PROFILES < (1 << 11), PokemonSubstruct0_berserkGeneProfileId_TooSmall);
 STATIC_ASSERT(MAX_LEVEL <= 100, PokemonSubstruct0_experience_PotentiallTooSmall); // Maximum of ~2 million exp.
+STATIC_ASSERT(ABILITIES_COUNT < (1 << 16), BerserkGeneProfile_AbilityFields_TooSmall);
 STATIC_ASSERT(POKEBALL_COUNT <= (1 << 6), PokemonSubstruct0_pokeball_TooSmall);
 STATIC_ASSERT(MOVES_COUNT_ALL < (1 << 11), PokemonSubstruct1_moves_TooSmall);
 STATIC_ASSERT(ARRAY_COUNT(sCompressedStatuses) <= (1 << 4), PokemonSubstruct3_compressedStatus_TooSmall);
@@ -4847,6 +4849,14 @@ u32 GetBoxMonData3(struct BoxPokemon *boxMon, s32 field, u8 *data)
                 }
             }
             break;
+        case MON_DATA_BERSERK_GENE_PROFILE_ID:
+            {
+                struct PokemonSubstruct0 *substruct0 = GetSubstruct0(boxMon);
+                retVal = substruct0->berserkGeneProfileIdLo
+                       | (substruct0->berserkGeneProfileIdMid << 6)
+                       | (substruct0->berserkGeneProfileIdHi << 9);
+            }
+            break;
         case MON_DATA_EVOLUTION_TRACKER:
             {
                 struct PokemonSubstruct1 *substruct1 = GetSubstruct1(boxMon);
@@ -5279,6 +5289,16 @@ void SetBoxMonData(struct BoxPokemon *boxMon, s32 field, const void *dataArg)
         case MON_DATA_TERA_TYPE:
             SET8(GetSubstruct0(boxMon)->teraType);
             break;
+        case MON_DATA_BERSERK_GENE_PROFILE_ID:
+        {
+            u16 profileId;
+            struct PokemonSubstruct0 *substruct0 = GetSubstruct0(boxMon);
+            SET16(profileId);
+            substruct0->berserkGeneProfileIdLo = profileId & 0x3F;
+            substruct0->berserkGeneProfileIdMid = (profileId >> 6) & 0x7;
+            substruct0->berserkGeneProfileIdHi = (profileId >> 9) & 0x3;
+            break;
+        }
         case MON_DATA_EVOLUTION_TRACKER:
         {
             union EvolutionTracker evoTracker;

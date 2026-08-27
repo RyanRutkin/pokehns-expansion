@@ -23,6 +23,7 @@ struct PokemonStorage
     /*0x0001*/ struct BoxPokemon boxes[TOTAL_BOXES_COUNT][IN_BOX_COUNT];
     /*0x8344*/ u8 boxNames[TOTAL_BOXES_COUNT][BOX_NAME_LENGTH + 1];
     /*0x83C2*/ u8 boxWallpapers[TOTAL_BOXES_COUNT];
+    /*0x3???*/ struct BerserkGeneProfile berserkGeneProfiles[MAX_BERSERK_GENE_PROFILES + 1];
     /*0x8432*/ struct Pokemon fusions[MAX_FUSION_STORAGE];
 };
 
@@ -47,6 +48,10 @@ u32 GetAndCopyBoxMonDataAt(u8 boxId, u8 boxPosition, s32 request, void *dst);
 void SetBoxMonAt(u8 boxId, u8 boxPosition, struct BoxPokemon *src);
 void CopyBoxMonAt(u8 boxId, u8 boxPosition, struct BoxPokemon *dst);
 void ZeroBoxMonAt(u8 boxId, u8 boxPosition);
+struct BerserkGeneProfile *GetBerserkGeneProfile(u16 profileId);
+u16 AllocBerserkGeneProfile(void);
+void FreeBerserkGeneProfile(u16 profileId);
+void ClearBoxMonBerserkGeneProfile(struct BoxPokemon *boxMon);
 void PurgeMonOrBoxMon(u8 boxId, u8 position);
 u16 GetFirstAliveBoxPokemon(void);
 void MoveFirstBoxPokemonToParty(void);

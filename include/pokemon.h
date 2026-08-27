@@ -15,6 +15,7 @@
 #include "constants/map_groups.h"
 #include "constants/battle.h"
 #include "constants/abilities.h"
+#include "constants/global.h"
 #include "contest_effect.h"
 #include "constants/trainers.h"
 
@@ -124,6 +125,7 @@ enum MonData {
     MON_DATA_GIGANTAMAX_FACTOR,
     MON_DATA_TERA_TYPE,
     MON_DATA_EVOLUTION_TRACKER,
+    MON_DATA_BERSERK_GENE_PROFILE_ID,
 };
 
 struct PokemonSubstruct0
@@ -131,15 +133,52 @@ struct PokemonSubstruct0
     u16 species:11; // 2047 species.
     enum Type teraType:5; // 30 types.
     u16 heldItem:10; // 1023 items.
-    u16 unused_02:6;
+    u16 berserkGeneProfileIdLo:6;
     u32 experience:21;
     u32 nickname11:8; // 11th character of nickname.
-    u32 unused_04:3;
+    u32 berserkGeneProfileIdMid:3;
     u8 ppBonuses;
     u8 friendship;
     u16 pokeball:6; // 63 balls.
     u16 nickname12:8; // 12th character of nickname.
-    u16 unused_0A:2;
+    u16 berserkGeneProfileIdHi:2;
+};
+
+struct __attribute__((packed)) FusionPotentialEvolution
+{
+    u16 targetSpecies;
+    u16 param;
+    u8 methodAndSourceParent;
+    u8 conditionSetId;
+};
+
+struct BerserkGeneProfile
+{
+    bool8 inUse;
+    u16 parentSpeciesA;
+    u16 parentSpeciesB;
+    struct FusionPotentialEvolution potentialEvolutions[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 potentialEvolutionCount;
+    u8 inheritanceFlags;
+    u8 type1;
+    u8 type2;
+    u8 color;
+    u16 ability1;
+    u16 ability2;
+    u16 abilityHidden;
+    u8 eggGroup1;
+    u8 eggGroup2;
+    u8 baseStats[NUM_STATS];
+    u8 eggCycles;
+    u16 cryId;
+    u16 height;
+    u16 weight;
+    u16 pokemonScale;
+    u16 pokemonOffset;
+    u8 gender;
+    u8 growthRate;
+    u16 evYields;
+    u8 friendship;
 };
 
 struct PokemonSubstruct1
