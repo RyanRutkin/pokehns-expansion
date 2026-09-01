@@ -358,6 +358,9 @@ struct SaveBlock3
 #endif
     struct ChallengeSettings challengeSettings;
     u16 registeredItemHold;
+    // Appended last so no existing SaveBlock3 member shifts. Counts how many of each
+    // stock-limited item the player has bought today; cleared by DailyResetShopStock.
+    u8 dailyShopStockPurchased[DAILY_STOCK_SHOP_COUNT][MAX_DAILY_SHOP_STOCK_ITEMS];
 }; /* max size 1624 bytes */
 
 extern struct SaveBlock3 *gSaveBlock3Ptr;

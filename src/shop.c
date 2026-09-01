@@ -53,6 +53,8 @@
 #define TAG_QUANTITY_BERRY 9151
 
 #define MAX_ITEMS_SHOWN 8
+// Returned by GetRemainingShopStock for items the current shop doesn't limit.
+#define SHOP_STOCK_UNLIMITED 0xFFFF
 #define SHOP_MENU_PALETTE_ID (gMapHeader.mapLayout->layoutVersion == LAYOUT_VERSION_HNS ? 6 : gMapHeader.mapLayout->layoutVersion == LAYOUT_VERSION_FRLG ? 11 : 12)
 
 enum {
@@ -148,6 +150,8 @@ static EWRAM_DATA u8 sQuantityBerryIconSpriteId = 0;
 static EWRAM_DATA const struct BPShopEntry *sBPShopEntries = NULL;
 static EWRAM_DATA const struct ShopPriceOverride *sActivePriceOverrides = NULL;
 static EWRAM_DATA const struct ShopPriceOverride *sActiveSellPriceOverrides = NULL;
+static EWRAM_DATA const struct ShopStockOverride *sActiveStockOverrides = NULL;
+static EWRAM_DATA u8 sActiveStockShopId = 0;
 EWRAM_DATA struct ItemSlot gMartPurchaseHistory[SMARTSHOPPER_NUM_ITEMS] = {0};
 
 static void Task_ShopMenu(u8 taskId);
@@ -375,6 +379,55 @@ static u32 GetShopItemPrice(u16 itemId)
     if (GetOverridePrice(sActivePriceOverrides, itemId, &price))
         return price;
     return GetItemPrice(itemId) >> IsPokeNewsActive(POKENEWS_SLATEPORT);
+}
+
+// Returns the item's position in the active stock table, or -1 if this shop doesn't limit it.
+static s32 GetShopStockIndex(u16 itemId)
+{
+    s32 i;
+
+    if (sActiveStockOverrides == NULL || sActiveStockShopId >= DAILY_STOCK_SHOP_COUNT)
+        return -1;
+
+    for (i = 0; sActiveStockOverrides[i].item != ITEM_NONE && i < MAX_DAILY_SHOP_STOCK_ITEMS; i++)
+    {
+        if (sActiveStockOverrides[i].item == itemId)
+            return i;
+    }
+    return -1;
+}
+
+// Returns how many of itemId this shop will still sell today, or SHOP_STOCK_UNLIMITED
+// if the shop doesn't limit that item.
+static u32 GetRemainingShopStock(u16 itemId)
+{
+    s32 index = GetShopStockIndex(itemId);
+    u32 stock, purchased;
+
+    if (index < 0)
+        return SHOP_STOCK_UNLIMITED;
+
+    stock = sActiveStockOverrides[index].stock;
+    purchased = gSaveBlock3Ptr->dailyShopStockPurchased[sActiveStockShopId][index];
+    if (purchased >= stock)
+        return 0;
+
+    return stock - purchased;
+}
+
+static void RecordShopStockPurchase(u16 itemId, u16 quantity)
+{
+    s32 index = GetShopStockIndex(itemId);
+    u32 purchased;
+
+    if (index < 0)
+        return;
+
+    purchased = gSaveBlock3Ptr->dailyShopStockPurchased[sActiveStockShopId][index] + quantity;
+    if (purchased > sActiveStockOverrides[index].stock)
+        purchased = sActiveStockOverrides[index].stock;
+
+    gSaveBlock3Ptr->dailyShopStockPurchased[sActiveStockShopId][index] = purchased;
 }
 
 static void PrintBPAmountInMoneyBox(u8 windowId, u32 bp, u8 speed)
@@ -1099,6 +1152,10 @@ static void Task_HandleShopMenuQuit(u8 taskId)
     RemoveWindow(sMartInfo.windowId);
     TryPutSmartShopperOnAir();
     UnlockPlayerFieldControls();
+    // Only point a normal/decor shop session truly ends, so overrides can't leak to a later shop.
+    sActivePriceOverrides = NULL;
+    sActiveSellPriceOverrides = NULL;
+    sActiveStockOverrides = NULL;
     DestroyTask(taskId);
 
     if (sMartInfo.callback)
@@ -1344,7 +1401,8 @@ static void BuyMenuPrintPriceInList(u8 windowId, u32 itemId, u8 y)
                 6);
         }
 
-        if (GetItemImportance(itemId) && (CheckBagHasItem(itemId, 1) || CheckPCHasItem(itemId, 1)))
+        if ((GetItemImportance(itemId) && (CheckBagHasItem(itemId, 1) || CheckPCHasItem(itemId, 1)))
+         || GetRemainingShopStock(itemId) == 0)
             StringCopy(gStringVar4, gText_SoldOut);
         else
             StringExpandPlaceholders(gStringVar4, gText_PokedollarVar1);
@@ -1762,7 +1820,8 @@ static void Task_BuyMenu(u8 taskId)
                     BuyMenuDisplayMessage(taskId, gText_Var1SureHowMany, Task_BuyHowManyDialogueInit);
                 }
             }
-            else if (GetItemImportance(itemId) && (CheckBagHasItem(itemId, 1) || CheckPCHasItem(itemId, 1)))
+            else if ((GetItemImportance(itemId) && (CheckBagHasItem(itemId, 1) || CheckPCHasItem(itemId, 1)))
+                  || GetRemainingShopStock(itemId) == 0)
                 BuyMenuDisplayMessage(taskId, gText_ThatItemIsSoldOut, BuyMenuReturnToItemList);
             else if (sMartInfo.martType == MART_TYPE_BP)
             {
@@ -1857,6 +1916,7 @@ static void Task_BuyHowManyDialogueInit(u8 taskId)
 
     u16 quantityInBag = CountTotalItemQuantityInBag(tItemId);
     u16 maxQuantity;
+    u32 remainingStock;
 
     DrawStdFrameWithCustomTileAndPalette(WIN_QUANTITY_IN_BAG, FALSE, 1, 13);
     ConvertIntToDecimalStringN(gStringVar1, quantityInBag, STR_CONV_MODE_RIGHT_ALIGN, MAX_ITEM_DIGITS + 1);
@@ -1880,6 +1940,10 @@ static void Task_BuyHowManyDialogueInit(u8 taskId)
         maxQuantity = MAX_BAG_ITEM_CAPACITY;
     else
         maxQuantity = GetMoney(&gSaveBlock1Ptr->money) / sShopData->totalCost;
+
+    remainingStock = GetRemainingShopStock(tItemId);
+    if (remainingStock != SHOP_STOCK_UNLIMITED && maxQuantity > remainingStock)
+        maxQuantity = remainingStock;
 
     if (maxQuantity > MAX_BAG_ITEM_CAPACITY)
         sShopData->maxQuantity = MAX_BAG_ITEM_CAPACITY;
@@ -1980,6 +2044,7 @@ static void BuyMenuTryMakePurchase(u8 taskId)
         {
             GetSetItemObtained(tItemId, FLAG_SET_ITEM_OBTAINED);
             RecordItemPurchase(taskId);
+            RecordShopStockPurchase(tItemId, tItemCount);
             BuyMenuDisplayMessage(taskId, gText_HereYouGoThankYou, BuyMenuSubtractMoney);
         }
         else
@@ -2203,15 +2268,18 @@ static void Task_ExitBuyMenu(u8 taskId)
         else
             RemoveMoneyLabelObject();
         BuyMenuFreeMemory();
-        sActivePriceOverrides = NULL;
-        sActiveSellPriceOverrides = NULL;
         SetMainCallback2(CB2_ReturnToField);
 
+        // Other mart types return to the shop menu from here, so their overrides must
+        // survive until the player actually leaves the shop (see Task_HandleShopMenuQuit).
         if (sMartInfo.martType == MART_TYPE_KURT
             || sMartInfo.martType == MART_TYPE_BP
             || sMartInfo.martType == MART_TYPE_BP_ITEM
             || sMartInfo.martType == MART_TYPE_BP_DECOR)
         {
+            sActivePriceOverrides = NULL;
+            sActiveSellPriceOverrides = NULL;
+            sActiveStockOverrides = NULL;
             UnlockPlayerFieldControls();
             if (sMartInfo.callback)
                 sMartInfo.callback();
@@ -2267,11 +2335,12 @@ void CreatePokemartMenu(const u16 *itemsForSale)
     SetShopMenuCallback(ScriptContext_Enable);
 }
 
-// Installs a per-item price override table that applies to the very next MART_TYPE_NORMAL
-// pokemart opened (see GetShopItemPrice). Call this via `special` immediately before the
-// `pokemart` script command for any shop that needs custom pricing on one or more of its
-// items; shops that never call this are completely unaffected. Automatically cleared when
-// the buy menu is exited, so it never leaks into an unrelated later shop.
+// Installs a per-item price override table that applies for as long as the player remains in
+// the shop that set it, including switching between the Buy and Sell sub-menus (see
+// GetShopItemPrice). Call this via `special` immediately before the `pokemart` script command
+// for any shop that needs custom pricing on one or more of its items; shops that never call
+// this are completely unaffected. Automatically cleared when the player leaves the shop, so it
+// never leaks into an unrelated later shop.
 void SetShopPriceOverrides(const struct ShopPriceOverride *overrides)
 {
     sActivePriceOverrides = overrides;
@@ -2281,7 +2350,7 @@ void SetShopPriceOverrides(const struct ShopPriceOverride *overrides)
 // remains in the shop that set it (both the Buy and Sell sub-menus). Call this via `special`
 // immediately before the `pokemart` script command, same as SetShopPriceOverrides. Items not
 // listed in the table fall back to the normal GetItemSellPrice() amount. Automatically
-// cleared when the buy menu is exited, so it never leaks into an unrelated later shop.
+// cleared when the player leaves the shop, so it never leaks into an unrelated later shop.
 void SetShopSellPriceOverrides(const struct ShopPriceOverride *overrides)
 {
     sActiveSellPriceOverrides = overrides;
@@ -2295,6 +2364,24 @@ u32 GetShopItemSellPrice(u16 itemId)
     if (GetOverridePrice(sActiveSellPriceOverrides, itemId, &price))
         return price;
     return GetItemSellPrice(itemId);
+}
+
+// Installs a per-item daily stock limit table, following the same script pattern as the price
+// override setters. shopId picks which saved counter block the table spends, so two shops must
+// not share an id. Items missing from the table are sold in unlimited quantity as usual.
+void SetShopStockOverrides(u8 shopId, const struct ShopStockOverride *overrides)
+{
+    if (shopId >= DAILY_STOCK_SHOP_COUNT)
+        return;
+
+    sActiveStockOverrides = overrides;
+    sActiveStockShopId = shopId;
+}
+
+// Restocks every stock-limited shop. Called once per day from UpdatePerDay in clock.c.
+void DailyResetShopStock(void)
+{
+    memset(gSaveBlock3Ptr->dailyShopStockPurchased, 0, sizeof(gSaveBlock3Ptr->dailyShopStockPurchased));
 }
 
 void CreateDecorationShop1Menu(const u16 *itemsForSale)

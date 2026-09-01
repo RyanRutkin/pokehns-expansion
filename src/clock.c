@@ -10,6 +10,7 @@
 #include "overworld.h"
 #include "pokerus.h"
 #include "rtc.h"
+#include "shop.h"
 #include "time_events.h"
 #include "tv.h"
 #include "wallclock.h"
@@ -58,6 +59,7 @@ static void UpdatePerDay(struct Time *localTime)
         SetRandomLotteryNumber(daysSince);
         UpdateDaysPassedSinceFormChange(daysSince);
         DailyResetApricornTrees();
+        DailyResetShopStock();
         *days = localTime->days;
     }
     else

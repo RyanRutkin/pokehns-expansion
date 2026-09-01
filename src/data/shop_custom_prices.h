@@ -13,6 +13,7 @@ static const struct ShopPriceOverride sGoldenrodEvoItemShopPriceOverrides[] = {
     { ITEM_PRISM_SCALE,      6000 },
     { ITEM_BLUE_ORB,         10000 },
     { ITEM_RED_ORB,          10000 },
+    { ITEM_RARE_CANDY,       0 },
     { ITEM_NONE,             0 },
 };
 
@@ -76,4 +77,22 @@ static const struct ShopPriceOverride sSafariZoneGateVitaminGuruSellPriceOverrid
 void SetSafariZoneGateVitaminGuruSellPrices(void)
 {
     SetShopSellPriceOverrides(sSafariZoneGateVitaminGuruSellPriceOverrides);
+}
+
+// Only three of each vitamin per day; DailyResetShopStock restocks him overnight.
+static const struct ShopStockOverride sSafariZoneGateVitaminGuruStock[] = {
+    { ITEM_PROTEIN, 3 },
+    { ITEM_IRON,    3 },
+    { ITEM_CARBOS,  3 },
+    { ITEM_ZINC,    3 },
+    { ITEM_CALCIUM, 3 },
+    { ITEM_HP_UP,   3 },
+    { ITEM_NONE,    0 },
+};
+
+STATIC_ASSERT(ARRAY_COUNT(sSafariZoneGateVitaminGuruStock) - 1 <= MAX_DAILY_SHOP_STOCK_ITEMS, SafariZoneGateVitaminGuruStockTooLarge);
+
+void SetSafariZoneGateVitaminGuruStock(void)
+{
+    SetShopStockOverrides(DAILY_STOCK_SHOP_SAFARI_ZONE_VITAMIN_GURU, sSafariZoneGateVitaminGuruStock);
 }
