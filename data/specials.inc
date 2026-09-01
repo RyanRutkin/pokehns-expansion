@@ -492,6 +492,7 @@ gSpecials::
 	def_special SetGoldenrodEvoItemShopSellPrices
 	def_special SetSafariZoneGateVitaminGuruPrices
 	def_special SetSafariZoneGateVitaminGuruSellPrices
+	def_special SetSafariZoneGateVitaminGuruStock
 	def_special DisplayBerryPowderVendorMenu
 	def_special RemoveBerryPowderVendorMenu
 	def_special HasEnoughBerryPowder

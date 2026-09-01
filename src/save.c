@@ -9,6 +9,7 @@
 #include "overworld.h"
 #include "hall_of_fame.h"
 #include "pokemon_storage_system.h"
+#include "shop.h"
 #include "trainer_hill.h"
 #include "link.h"
 #include "constants/game_stat.h"
@@ -969,6 +970,13 @@ u8 LoadGameSave(u8 saveType)
         }
 #endif //FREE_MATCH_CALL
         gSaveBlock1Ptr->saveVersion = 4;
+    }
+
+    if (gSaveBlock1Ptr->saveVersion < 5)
+    {
+        // dailyShopStockPurchased is new in this version, so it holds junk in older saves.
+        DailyResetShopStock();
+        gSaveBlock1Ptr->saveVersion = 5;
     }
 
     // Add version migration steps here:
