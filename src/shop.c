@@ -1099,6 +1099,9 @@ static void Task_HandleShopMenuQuit(u8 taskId)
     RemoveWindow(sMartInfo.windowId);
     TryPutSmartShopperOnAir();
     UnlockPlayerFieldControls();
+    // Only point a normal/decor shop session truly ends, so overrides can't leak to a later shop.
+    sActivePriceOverrides = NULL;
+    sActiveSellPriceOverrides = NULL;
     DestroyTask(taskId);
 
     if (sMartInfo.callback)
@@ -2203,15 +2206,17 @@ static void Task_ExitBuyMenu(u8 taskId)
         else
             RemoveMoneyLabelObject();
         BuyMenuFreeMemory();
-        sActivePriceOverrides = NULL;
-        sActiveSellPriceOverrides = NULL;
         SetMainCallback2(CB2_ReturnToField);
 
+        // Other mart types return to the shop menu from here, so their overrides must
+        // survive until the player actually leaves the shop (see Task_HandleShopMenuQuit).
         if (sMartInfo.martType == MART_TYPE_KURT
             || sMartInfo.martType == MART_TYPE_BP
             || sMartInfo.martType == MART_TYPE_BP_ITEM
             || sMartInfo.martType == MART_TYPE_BP_DECOR)
         {
+            sActivePriceOverrides = NULL;
+            sActiveSellPriceOverrides = NULL;
             UnlockPlayerFieldControls();
             if (sMartInfo.callback)
                 sMartInfo.callback();
@@ -2267,11 +2272,12 @@ void CreatePokemartMenu(const u16 *itemsForSale)
     SetShopMenuCallback(ScriptContext_Enable);
 }
 
-// Installs a per-item price override table that applies to the very next MART_TYPE_NORMAL
-// pokemart opened (see GetShopItemPrice). Call this via `special` immediately before the
-// `pokemart` script command for any shop that needs custom pricing on one or more of its
-// items; shops that never call this are completely unaffected. Automatically cleared when
-// the buy menu is exited, so it never leaks into an unrelated later shop.
+// Installs a per-item price override table that applies for as long as the player remains in
+// the shop that set it, including switching between the Buy and Sell sub-menus (see
+// GetShopItemPrice). Call this via `special` immediately before the `pokemart` script command
+// for any shop that needs custom pricing on one or more of its items; shops that never call
+// this are completely unaffected. Automatically cleared when the player leaves the shop, so it
+// never leaks into an unrelated later shop.
 void SetShopPriceOverrides(const struct ShopPriceOverride *overrides)
 {
     sActivePriceOverrides = overrides;
@@ -2281,7 +2287,7 @@ void SetShopPriceOverrides(const struct ShopPriceOverride *overrides)
 // remains in the shop that set it (both the Buy and Sell sub-menus). Call this via `special`
 // immediately before the `pokemart` script command, same as SetShopPriceOverrides. Items not
 // listed in the table fall back to the normal GetItemSellPrice() amount. Automatically
-// cleared when the buy menu is exited, so it never leaks into an unrelated later shop.
+// cleared when the player leaves the shop, so it never leaks into an unrelated later shop.
 void SetShopSellPriceOverrides(const struct ShopPriceOverride *overrides)
 {
     sActiveSellPriceOverrides = overrides;
