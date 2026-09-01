@@ -150,6 +150,7 @@ SafariZoneGate_EventScript_VitaminGuru::
 	waitmessage
 	special SetSafariZoneGateVitaminGuruPrices
 	special SetSafariZoneGateVitaminGuruSellPrices
+	special SetSafariZoneGateVitaminGuruStock
 	pokemart SafariZoneGate_Pokemart_VitaminGuru
 	msgbox gText_PleaseComeAgain, MSGBOX_DEFAULT
 	release

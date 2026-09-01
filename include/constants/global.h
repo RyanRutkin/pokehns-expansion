@@ -97,6 +97,11 @@ enum Language
 #define POKEBLOCKS_COUNT 40
 #define OBJECT_EVENTS_COUNT 16
 #define MAIL_COUNT (10 + PARTY_SIZE)
+#define MAX_BERSERK_GENE_PROFILES 16
+#define MAX_FUSION_POTENTIAL_EVOLUTIONS 8
+// Per-shop daily stock limits (see SetShopStockOverrides in shop.c).
+#define MAX_DAILY_SHOP_STOCK_ITEMS 8
+#define DAILY_STOCK_SHOP_COUNT 4
 #define SECRET_BASES_COUNT 20
 #define POKE_NEWS_COUNT 16
 #define PC_ITEMS_COUNT 50
