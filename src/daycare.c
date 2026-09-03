@@ -155,6 +155,52 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     if (slot == 1)
         flags |= BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT;
 
+    // Step 4: ability / secondary ability / hidden ability, one independent binary roll each.
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->ability1 = gSpeciesInfo[species[parent]].abilities[0];
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->ability2 = gSpeciesInfo[species[parent]].abilities[1];
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->abilityHidden = gSpeciesInfo[species[parent]].abilities[2];
+
+    {
+        // Rarity-weighted pick of the child's live ability among the three stored slots.
+        bool8 childIsFlying = (profile->type1 == TYPE_FLYING || profile->type2 == TYPE_FLYING);
+        bool8 flyingParentPresent = FALSE;
+        bool8 levitateEligible;
+        u32 roll;
+        u8 activeSlot;
+
+        for (i = 0; i < DAYCARE_MON_COUNT; i++)
+        {
+            if (types[i][0] == TYPE_FLYING || types[i][1] == TYPE_FLYING)
+                flyingParentPresent = TRUE;
+        }
+        levitateEligible = !childIsFlying && flyingParentPresent;
+
+        roll = Random() % 100;
+        if (levitateEligible && roll >= 90)
+            activeSlot = 3; // Levitate, folded into the pick at hidden-ability rarity
+        else if (roll >= 90)
+            activeSlot = 2; // hidden
+        else if (roll >= 70)
+            activeSlot = 1; // ability2
+        else
+            activeSlot = 0; // ability1
+
+        if (activeSlot == 1 && profile->ability2 == ABILITY_NONE)
+            activeSlot = 0;
+        if (activeSlot == 2 && profile->abilityHidden == ABILITY_NONE)
+            activeSlot = 0;
+
+        if (activeSlot == 3)
+        {
+            profile->ability1 = ABILITY_LEVITATE;
+            activeSlot = 0;
+        }
+        flags |= (activeSlot << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
+    }
+
     profile->inheritanceFlags = flags;
     SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 }

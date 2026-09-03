@@ -161,6 +161,9 @@ struct __attribute__((packed)) FusionPotentialEvolution
 #define BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT  (1 << 3)
 #define BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT    (1 << 4)
 #define BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT (1 << 5)
+// Which of ability1(0)/ability2(1)/abilityHidden(2) is the child's live ability at birth.
+#define BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT 6
+#define BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK  (3 << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT)
 
 struct BerserkGeneProfile
 {

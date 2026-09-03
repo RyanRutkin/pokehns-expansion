@@ -274,3 +274,34 @@ TEST("(Daycare) A Berserk Gene egg gets a profile with a distinct blended type p
     EXPECT(profile->type2 == TYPE_FIRE || profile->type2 == TYPE_WATER);
     EXPECT_NE(profile->type1, profile->type2);
 }
+
+TEST("(Daycare) A Berserk Gene egg's profile records each ability slot from one of the two parents, and a valid active ability")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    u8 activeSlot;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+
+    EXPECT(profile->ability1 == gSpeciesInfo[SPECIES_CHARMANDER].abilities[0]
+        || profile->ability1 == gSpeciesInfo[SPECIES_SQUIRTLE].abilities[0]
+        || profile->ability1 == ABILITY_LEVITATE);
+    EXPECT(profile->ability2 == gSpeciesInfo[SPECIES_CHARMANDER].abilities[1] || profile->ability2 == gSpeciesInfo[SPECIES_SQUIRTLE].abilities[1]);
+    EXPECT(profile->abilityHidden == gSpeciesInfo[SPECIES_CHARMANDER].abilities[2] || profile->abilityHidden == gSpeciesInfo[SPECIES_SQUIRTLE].abilities[2]);
+
+    activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+    EXPECT(activeSlot <= 2);
+    if (activeSlot == 1)
+        EXPECT_NE(profile->ability2, ABILITY_NONE);
+    if (activeSlot == 2)
+        EXPECT_NE(profile->abilityHidden, ABILITY_NONE);
+}
