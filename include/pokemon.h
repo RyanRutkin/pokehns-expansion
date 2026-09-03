@@ -152,6 +152,16 @@ struct __attribute__((packed)) FusionPotentialEvolution
     u8 conditionSetId;
 };
 
+// BerserkGeneProfile.inheritanceFlags bits: which parent (A=0/B=1) and which of that parent's
+// own type slots (primary=0/secondary=1) each resolved type was drawn from, plus whether the
+// original breeding had one gene holder (0, 62/38 weighting) or two (1, 50/50 weighting).
+#define BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT   (1 << 0)
+#define BERSERK_GENE_FLAG_TYPE1_SOURCE_PARENT  (1 << 1)
+#define BERSERK_GENE_FLAG_TYPE1_SOURCE_SLOT    (1 << 2)
+#define BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT  (1 << 3)
+#define BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT    (1 << 4)
+#define BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT (1 << 5)
+
 struct BerserkGeneProfile
 {
     bool8 inUse;

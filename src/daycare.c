@@ -63,6 +63,102 @@ static bool8 BerserkGeneShouldInheritFromParent(bool8 parentHasGene, u8 numGeneH
     return (Random() % 100) < chance;
 }
 
+// Weighted-average blend for numeric fields (height/weight/sprite scale/offset/base stats),
+// rounded to nearest. Same 62/38 (one holder) or 50/50 (two holders) weighting as the roll above.
+static s32 BerserkGeneBlendNumeric(s32 pGeneValue, s32 pOtherValue, u8 numGeneHolders)
+{
+    if (numGeneHolders >= 2)
+        return (pGeneValue + pOtherValue + 1) / 2;
+
+    return (pGeneValue * 62 + pOtherValue * 38 + 50) / 100;
+}
+
+// Steps 1-2 of the Berserk Gene trait inheritance order: primary/secondary type, drawn from a
+// pooled candidate set of both parents' own primary+secondary types. Ditto pairings never form
+// a fusion (Ditto contributes no meaningful traits), so this is a no-op for them.
+static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg)
+{
+    u16 species[DAYCARE_MON_COUNT];
+    u8 types[DAYCARE_MON_COUNT][2];
+    u8 numTypes[DAYCARE_MON_COUNT];
+    u8 geneHolders = CountBerserkGeneHolders(daycare);
+    u8 flags = 0;
+    u8 parent, slot, chosenType, tries;
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    u32 i;
+
+    for (i = 0; i < DAYCARE_MON_COUNT; i++)
+        species[i] = GetBoxMonData(&daycare->mons[i].mon, MON_DATA_SPECIES);
+
+    if (geneHolders == 0 || IS_DITTO(species[0]) || IS_DITTO(species[1]))
+        return;
+
+    profileId = AllocBerserkGeneProfile();
+    if (profileId == 0)
+        return; // shouldn't happen; egg creation is already gated by IsBerserkGeneProfileTableFull
+
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = species[0];
+    profile->parentSpeciesB = species[1];
+    if (geneHolders >= 2)
+        flags |= BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
+
+    for (i = 0; i < DAYCARE_MON_COUNT; i++)
+    {
+        types[i][0] = gSpeciesInfo[species[i]].types[0];
+        types[i][1] = gSpeciesInfo[species[i]].types[1];
+        numTypes[i] = (types[i][0] == types[i][1]) ? 1 : 2;
+    }
+
+    // Primary type
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    slot = (numTypes[parent] == 2) ? (Random() & 1) : 0;
+    profile->type1 = types[parent][slot];
+    if (parent == 1)
+        flags |= BERSERK_GENE_FLAG_TYPE1_SOURCE_PARENT;
+    if (slot == 1)
+        flags |= BERSERK_GENE_FLAG_TYPE1_SOURCE_SLOT;
+
+    // Secondary type: same pool, retry with the just-picked primary type removed from it
+    chosenType = profile->type1;
+    for (tries = 0; tries < 10 && chosenType == profile->type1; tries++)
+    {
+        parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+        if (numTypes[parent] == 2)
+        {
+            slot = (types[parent][0] == profile->type1) ? 1 : (types[parent][1] == profile->type1) ? 0 : (Random() & 1);
+            chosenType = types[parent][slot];
+        }
+        else
+        {
+            slot = 0;
+            chosenType = types[parent][0];
+        }
+    }
+    if (chosenType == profile->type1)
+    {
+        // Deterministic fallback: the other parent's non-matching type, if it has one.
+        u8 other = parent ^ 1;
+        if (types[other][0] != profile->type1)
+        {
+            parent = other; slot = 0; chosenType = types[other][0];
+        }
+        else if (numTypes[other] == 2 && types[other][1] != profile->type1)
+        {
+            parent = other; slot = 1; chosenType = types[other][1];
+        }
+    }
+    profile->type2 = chosenType;
+    if (parent == 1)
+        flags |= BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT;
+    if (slot == 1)
+        flags |= BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT;
+
+    profile->inheritanceFlags = flags;
+    SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+}
+
 static void ClearDaycareMonMail(struct DaycareMail *mail);
 static void SetInitialEggData(struct Pokemon *mon, u16 species, struct DayCare *daycare);
 static void DaycarePrintMonInfo(u8 windowId, u32 daycareSlotId, u8 y);
@@ -1132,6 +1228,7 @@ static void _GiveEggFromDaycare(struct DayCare *daycare)
     if (P_INCENSE_BREEDING < GEN_9)
         AlterEggSpeciesWithIncenseItem(&species, daycare);
     SetInitialEggData(&egg, species, daycare);
+    BuildBerserkGeneProfile(daycare, &egg);
     InheritIVs(&egg, daycare);
     InheritPokeball(&egg, &daycare->mons[parentSlots[1]].mon, &daycare->mons[parentSlots[0]].mon);
     BuildEggMoveset(&egg, &daycare->mons[parentSlots[1]].mon, &daycare->mons[parentSlots[0]].mon);

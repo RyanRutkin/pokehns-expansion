@@ -250,3 +250,27 @@ TEST("(Daycare) Berserk Gene egg production is refused when the profile side-tab
     for (i = 0; i < MAX_BERSERK_GENE_PROFILES; i++)
         FreeBerserkGeneProfile(allocated[i]);
 }
+
+TEST("(Daycare) A Berserk Gene egg gets a profile with a distinct blended type pair from both parents")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    EXPECT_NE(profileId, 0);
+
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT(profile->parentSpeciesA == SPECIES_CHARMANDER || profile->parentSpeciesA == SPECIES_SQUIRTLE);
+    EXPECT(profile->parentSpeciesB == SPECIES_CHARMANDER || profile->parentSpeciesB == SPECIES_SQUIRTLE);
+    EXPECT(profile->type1 == TYPE_FIRE || profile->type1 == TYPE_WATER);
+    EXPECT(profile->type2 == TYPE_FIRE || profile->type2 == TYPE_WATER);
+    EXPECT_NE(profile->type1, profile->type2);
+}
