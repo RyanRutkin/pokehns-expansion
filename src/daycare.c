@@ -34,17 +34,33 @@
 #define IS_DITTO(species) (gSpeciesInfo[species].eggGroups[0] == EGG_GROUP_DITTO || gSpeciesInfo[species].eggGroups[1] == EGG_GROUP_DITTO)
 
 // Number of the two daycare mons (0, 1, or 2) holding the Berserk Gene.
+static bool8 DaycareMonHasBerserkGene(struct DayCare *daycare, u8 i)
+{
+    return GetItemHoldEffect(GetBoxMonData(&daycare->mons[i].mon, MON_DATA_HELD_ITEM)) == HOLD_EFFECT_BERSERK_GENE;
+}
+
 static u8 CountBerserkGeneHolders(struct DayCare *daycare)
 {
     u8 i, count = 0;
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
     {
-        if (GetItemHoldEffect(GetBoxMonData(&daycare->mons[i].mon, MON_DATA_HELD_ITEM)) == HOLD_EFFECT_BERSERK_GENE)
+        if (DaycareMonHasBerserkGene(daycare, i))
             count++;
     }
 
     return count;
+}
+
+// 1 gene holder -> 62% chance to inherit from it (38% from the other parent); 2 holders -> 50/50.
+static bool8 BerserkGeneShouldInheritFromParent(bool8 parentHasGene, u8 numGeneHolders)
+{
+    u32 chance = 50;
+
+    if (numGeneHolders < 2)
+        chance = parentHasGene ? 62 : 38;
+
+    return (Random() % 100) < chance;
 }
 
 static void ClearDaycareMonMail(struct DaycareMail *mail);
@@ -1031,6 +1047,17 @@ static u16 DetermineEggSpeciesAndParentSlots(struct DayCare *daycare, u8 *parent
             parentSlots[0] = i;
             parentSlots[1] = i ^ 1;
         }
+    }
+
+    // Berserk Gene bypass breeding (no female, no Ditto — e.g. both male, or a genderless
+    // parent) leaves no mon selected above; pick a fixed identity donor so species/name/sprite
+    // still consistently come from one side and the other side isn't silently ignored.
+    if (parentSlots[0] == parentSlots[1])
+    {
+        u8 geneHolders = CountBerserkGeneHolders(daycare);
+        u8 identityDonor = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+        parentSlots[0] = identityDonor;
+        parentSlots[1] = identityDonor ^ 1;
     }
 
     motherEggSpecies = GetEggSpecies(species[parentSlots[0]]);
