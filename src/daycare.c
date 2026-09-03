@@ -233,6 +233,94 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
     profile->gender = GetBoxMonGender(&daycare->mons[parent].mon);
 
+    // Step 10: egg groups — union/selection over both parents' effective egg groups.
+    {
+        u8 eggGroups[DAYCARE_MON_COUNT][2];
+        u8 pool[4];
+        u8 poolCount = 0;
+        u8 j, k;
+
+        for (i = 0; i < DAYCARE_MON_COUNT; i++)
+        {
+            eggGroups[i][0] = gSpeciesInfo[species[i]].eggGroups[0];
+            eggGroups[i][1] = gSpeciesInfo[species[i]].eggGroups[1];
+        }
+
+        for (i = 0; i < DAYCARE_MON_COUNT; i++)
+        {
+            for (j = 0; j < 2; j++)
+            {
+                u8 group = eggGroups[i][j];
+                bool8 alreadyInPool = FALSE;
+
+                if (group == EGG_GROUP_NO_EGGS_DISCOVERED)
+                    continue;
+                for (k = 0; k < poolCount; k++)
+                {
+                    if (pool[k] == group)
+                    {
+                        alreadyInPool = TRUE;
+                        break;
+                    }
+                }
+                if (!alreadyInPool)
+                    pool[poolCount++] = group;
+            }
+        }
+
+        if (poolCount == 0)
+        {
+            profile->eggGroup1 = EGG_GROUP_NO_EGGS_DISCOVERED;
+            profile->eggGroup2 = EGG_GROUP_NO_EGGS_DISCOVERED;
+        }
+        else if (poolCount == 1)
+        {
+            profile->eggGroup1 = pool[0];
+            profile->eggGroup2 = pool[0];
+        }
+        else if (poolCount == 2)
+        {
+            profile->eggGroup1 = pool[0];
+            profile->eggGroup2 = pool[1];
+        }
+        else
+        {
+            u8 slot1Parent, slot1Group, slot2Parent, slot2Group, tries2;
+
+            slot1Parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+            slot1Group = (eggGroups[slot1Parent][0] == eggGroups[slot1Parent][1]) ? eggGroups[slot1Parent][0] : eggGroups[slot1Parent][Random() & 1];
+
+            slot2Group = slot1Group;
+            for (tries2 = 0; tries2 < 10 && slot2Group == slot1Group; tries2++)
+            {
+                slot2Parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+                if (eggGroups[slot2Parent][0] == eggGroups[slot2Parent][1])
+                    slot2Group = eggGroups[slot2Parent][0];
+                else if (eggGroups[slot2Parent][0] == slot1Group)
+                    slot2Group = eggGroups[slot2Parent][1];
+                else if (eggGroups[slot2Parent][1] == slot1Group)
+                    slot2Group = eggGroups[slot2Parent][0];
+                else
+                    slot2Group = eggGroups[slot2Parent][Random() & 1];
+            }
+            if (slot2Group == slot1Group)
+            {
+                // Deterministic fallback: first pool entry that isn't slot1Group.
+                for (j = 0; j < poolCount; j++)
+                {
+                    if (pool[j] != slot1Group)
+                    {
+                        slot2Group = pool[j];
+                        break;
+                    }
+                }
+            }
+
+            profile->eggGroup1 = slot1Group;
+            profile->eggGroup2 = slot2Group;
+        }
+    }
+
     profile->inheritanceFlags = flags;
     SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 }

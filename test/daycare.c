@@ -381,3 +381,47 @@ TEST("(Daycare) A Berserk Gene egg's profile gender matches one of the two paren
     EXPECT(profile != NULL);
     EXPECT(profile->gender == MON_MALE || profile->gender == MON_FEMALE);
 }
+
+TEST("(Daycare) A Berserk Gene egg's profile picks a distinct egg group pair from the pooled candidates")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    bool32 group1InPool, group2InPool;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+
+    // Charmander (Monster/Dragon) x Squirtle (Monster/Water 1) pools to {Monster, Dragon, Water 1}.
+    group1InPool = (profile->eggGroup1 == EGG_GROUP_MONSTER || profile->eggGroup1 == EGG_GROUP_DRAGON || profile->eggGroup1 == EGG_GROUP_WATER_1);
+    group2InPool = (profile->eggGroup2 == EGG_GROUP_MONSTER || profile->eggGroup2 == EGG_GROUP_DRAGON || profile->eggGroup2 == EGG_GROUP_WATER_1);
+    EXPECT(group1InPool);
+    EXPECT(group2InPool);
+    EXPECT_NE(profile->eggGroup1, profile->eggGroup2);
+}
+
+TEST("(Daycare) A Berserk Gene egg's profile gets No Eggs Discovered in both slots when neither parent has a real egg group")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_MEWTWO, 50, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_ARTICUNO, 50, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT_EQ(profile->eggGroup1, EGG_GROUP_NO_EGGS_DISCOVERED);
+    EXPECT_EQ(profile->eggGroup2, EGG_GROUP_NO_EGGS_DISCOVERED);
+}
