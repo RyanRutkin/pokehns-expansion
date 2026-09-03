@@ -305,3 +305,35 @@ TEST("(Daycare) A Berserk Gene egg's profile records each ability slot from one 
     if (activeSlot == 2)
         EXPECT_NE(profile->abilityHidden, ABILITY_NONE);
 }
+
+TEST("(Daycare) A Berserk Gene egg's profile records color and cry from one of the two parents")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+
+    EXPECT(profile->color == gSpeciesInfo[SPECIES_CHARMANDER].bodyColor || profile->color == gSpeciesInfo[SPECIES_SQUIRTLE].bodyColor);
+    EXPECT(profile->cryId == gSpeciesInfo[SPECIES_CHARMANDER].cryId || profile->cryId == gSpeciesInfo[SPECIES_SQUIRTLE].cryId);
+}
+
+TEST("(Daycare) A Berserk Gene egg is forced shiny when both parents are shiny")
+{
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE, shinyMode=SHINY_MODE_ALWAYS;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE, shinyMode=SHINY_MODE_ALWAYS;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY));
+}

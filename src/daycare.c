@@ -201,6 +201,23 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
         flags |= (activeSlot << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
     }
 
+    // Step 5: color
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->color = gSpeciesInfo[species[parent]].bodyColor;
+
+    // Step 6: shininess — force it only if the selected parent happens to already be shiny;
+    // otherwise leave the standard shiny-roll (already applied by SetInitialEggData) alone.
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    if (GetBoxMonData(&daycare->mons[parent].mon, MON_DATA_IS_SHINY))
+    {
+        bool8 isShiny = TRUE;
+        SetMonData(egg, MON_DATA_IS_SHINY, &isShiny);
+    }
+
+    // Step 7: cry
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->cryId = gSpeciesInfo[species[parent]].cryId;
+
     profile->inheritanceFlags = flags;
     SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 }
