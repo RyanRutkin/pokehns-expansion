@@ -828,6 +828,7 @@ static s32 GetParentToInheritNature(struct DayCare *daycare)
     u32 i;
     u8 numWithEverstone = 0;
     s32 slot = -1;
+    s32 result;
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
     {
@@ -840,12 +841,22 @@ static s32 GetParentToInheritNature(struct DayCare *daycare)
     }
 
     if (numWithEverstone >= DAYCARE_MON_COUNT)
-        return Random() & 1;
+        result = Random() & 1;
+    else if (P_NATURE_INHERITANCE > GEN_4)
+        result = slot;
+    else
+        result = Random() & 1 ? slot : -1;
 
-    if (P_NATURE_INHERITANCE > GEN_4)
-        return slot;
+    // Berserk Gene: if vanilla inheritance left this unforced, an additional 75% chance to
+    // force the (gene-weighted) selected parent's exact nature instead.
+    if (result < 0)
+    {
+        u8 geneHolders = CountBerserkGeneHolders(daycare);
+        if (geneHolders > 0 && (Random() % 100) < 75)
+            result = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    }
 
-    return Random() & 1 ? slot : -1;
+    return result;
 }
 
 static void _TriggerPendingDaycareEgg(struct DayCare *daycare)
