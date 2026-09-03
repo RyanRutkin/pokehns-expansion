@@ -218,6 +218,21 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
     profile->cryId = gSpeciesInfo[species[parent]].cryId;
 
+    // Step 8: size — height, weight, sprite scale, sprite offset, blended (not rolled).
+    {
+        u8 geneParent = DaycareMonHasBerserkGene(daycare, 0) ? 0 : 1;
+        u8 otherParent = geneParent ^ 1;
+
+        profile->height = BerserkGeneBlendNumeric(gSpeciesInfo[species[geneParent]].height, gSpeciesInfo[species[otherParent]].height, geneHolders);
+        profile->weight = BerserkGeneBlendNumeric(gSpeciesInfo[species[geneParent]].weight, gSpeciesInfo[species[otherParent]].weight, geneHolders);
+        profile->pokemonScale = BerserkGeneBlendNumeric(gSpeciesInfo[species[geneParent]].pokemonScale, gSpeciesInfo[species[otherParent]].pokemonScale, geneHolders);
+        profile->pokemonOffset = BerserkGeneBlendNumeric(gSpeciesInfo[species[geneParent]].pokemonOffset, gSpeciesInfo[species[otherParent]].pokemonOffset, geneHolders);
+    }
+
+    // Step 9: gender — one binary roll, explicit override (decoupled from species genderRatio).
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->gender = GetBoxMonGender(&daycare->mons[parent].mon);
+
     profile->inheritanceFlags = flags;
     SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 }

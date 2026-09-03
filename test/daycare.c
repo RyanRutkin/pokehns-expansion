@@ -337,3 +337,47 @@ TEST("(Daycare) A Berserk Gene egg is forced shiny when both parents are shiny")
 
     EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY));
 }
+
+TEST("(Daycare) A Berserk Gene egg's profile blends height/weight within both parents' range")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    u16 minHeight, maxHeight, minWeight, maxWeight;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+
+    minHeight = gSpeciesInfo[SPECIES_CHARMANDER].height < gSpeciesInfo[SPECIES_SQUIRTLE].height ? gSpeciesInfo[SPECIES_CHARMANDER].height : gSpeciesInfo[SPECIES_SQUIRTLE].height;
+    maxHeight = gSpeciesInfo[SPECIES_CHARMANDER].height > gSpeciesInfo[SPECIES_SQUIRTLE].height ? gSpeciesInfo[SPECIES_CHARMANDER].height : gSpeciesInfo[SPECIES_SQUIRTLE].height;
+    EXPECT(profile->height >= minHeight && profile->height <= maxHeight);
+
+    minWeight = gSpeciesInfo[SPECIES_CHARMANDER].weight < gSpeciesInfo[SPECIES_SQUIRTLE].weight ? gSpeciesInfo[SPECIES_CHARMANDER].weight : gSpeciesInfo[SPECIES_SQUIRTLE].weight;
+    maxWeight = gSpeciesInfo[SPECIES_CHARMANDER].weight > gSpeciesInfo[SPECIES_SQUIRTLE].weight ? gSpeciesInfo[SPECIES_CHARMANDER].weight : gSpeciesInfo[SPECIES_SQUIRTLE].weight;
+    EXPECT(profile->weight >= minWeight && profile->weight <= maxWeight);
+}
+
+TEST("(Daycare) A Berserk Gene egg's profile gender matches one of the two parents")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT(profile->gender == MON_MALE || profile->gender == MON_FEMALE);
+}
