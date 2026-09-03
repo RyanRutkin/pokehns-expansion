@@ -6627,6 +6627,7 @@ static void ReleaseMon(void)
                 item = GetBoxMonDataAt(boxId, sCursorPosition, MON_DATA_HELD_ITEM);
         }
 
+        ReleaseMonBerserkGeneProfile(boxId, sCursorPosition);
         PurgeMonOrBoxMon(boxId, sCursorPosition);
         if (item != ITEM_NONE)
             AddBagItem(item, 1);
@@ -9684,6 +9685,21 @@ void FreeBerserkGeneProfile(u16 profileId)
     memset(&gPokemonStoragePtr->berserkGeneProfiles[profileId], 0, sizeof(gPokemonStoragePtr->berserkGeneProfiles[profileId]));
 }
 
+// Read-only capacity check (does not allocate). Used to gate Berserk Gene egg production
+// before a free slot is actually claimed by AllocBerserkGeneProfile.
+bool8 IsBerserkGeneProfileTableFull(void)
+{
+    u16 profileId;
+
+    for (profileId = 1; profileId <= MAX_BERSERK_GENE_PROFILES; profileId++)
+    {
+        if (!gPokemonStoragePtr->berserkGeneProfiles[profileId].inUse)
+            return FALSE;
+    }
+
+    return TRUE;
+}
+
 void ClearBoxMonBerserkGeneProfile(struct BoxPokemon *boxMon)
 {
     u16 profileId;
@@ -9697,6 +9713,22 @@ void ClearBoxMonBerserkGeneProfile(struct BoxPokemon *boxMon)
         u16 emptyProfileId = 0;
         FreeBerserkGeneProfile(profileId);
         SetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID, &emptyProfileId);
+    }
+}
+
+// Call only where a mon is destroyed outright. Moves (PC pick-up, party compaction, daycare
+// withdrawal, CopyMonToPC) hand the profile id to the mon's new home, so freeing there would
+// strand a live fusion with a dangling profile.
+void ReleaseMonBerserkGeneProfile(u8 boxId, u8 position)
+{
+    if (boxId == TOTAL_BOXES_COUNT)
+    {
+        if (position < PARTY_SIZE)
+            ClearBoxMonBerserkGeneProfile(&gPlayerParty[position].box);
+    }
+    else
+    {
+        ClearBoxMonBerserkGeneProfile(GetBoxedMonPtr(boxId, position));
     }
 }
 

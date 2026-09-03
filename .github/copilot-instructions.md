@@ -80,3 +80,41 @@ favor of this approach.
   leaks into a later, unrelated shop. Shops that never call a setter are completely
   unaffected and behave exactly as before.
 
+## `CreateMon` signature differs from vanilla pokeemerald
+`void CreateMon(struct Pokemon *mon, u16 species, u8 level, u32 personality, struct
+OriginalTrainerId);` — only **5 args**, not the 8-arg vanilla signature
+(`species, level, fixedIV, hasFixedPersonality, fixedPersonality, otIdType, fixedOtId`).
+The last two vanilla params (OT ID method/value) are collapsed into one
+`struct OriginalTrainerId { enum OtIdMethod method; u32 value; }`. Use the existing
+helper macros instead of building the struct by hand:
+`OTID_STRUCT_PLAYER_ID`, `OTID_STRUCT_PRESET(value)`, `OTID_STRUCT_RANDOM_NO_SHINY`
+(see `include/pokemon.h`). There is no separate fixed-IV/personality param pair —
+pass `0` for personality unless a specific value is needed. Writing a `CreateMon`
+call from memory (e.g. porting a snippet from upstream pokeemerald or an older test)
+will silently compile-fail with a confusing "too many arguments" / "incompatible
+type for argument 5" error pointing at `FALSE`/`0`, not at the real mismatch —
+always check `include/pokemon.h`'s actual declaration first, and check
+`src/script_pokemon_util.c` for a real call site to copy the pattern from.
+
+## WSL/UNC file view can silently desync from what's actually on disk
+When editing files through the `\\wsl.localhost\...` UNC path, the editor/tool file
+view has been observed to return **stale or wrong-branch content** for a file,
+even though `replace_string_in_file`/`read_file` reports success. This has caused
+edits to silently apply to a phantom copy that never reaches disk (e.g. after a
+branch switch, a file's tool-visible content matched an *older branch's* version
+of that same file, not the currently checked-out one). Symptoms: a build/test
+failure references code that "should" have been changed but wasn't, or repeated
+edits to the same lines keep reporting success without fixing the error.
+Mitigation, once this is suspected:
+- Verify the real on-disk content natively via WSL before trusting further edits:
+  `wsl -d Ubuntu -e bash -lc "cd /home/rutki/decomps/pokehns-expansion && cat -n <file>"`
+  or `grep`/`wc -l` for a quick sanity check, and compare against what `read_file`
+  returned.
+- If they disagree, don't keep patching through the UNC path — rewrite the file
+  directly via a WSL heredoc (`cat > <file> <<'EOF' ... EOF`), using an *outer
+  single-quoted* heredoc delimiter so C code with `"`, `$`, and backticks passes
+  through untouched, then re-verify with `grep -c`/`cat` from WSL before building.
+- After any branch switch (`git checkout`/`git switch`), re-verify any file you're
+  about to edit against WSL-native `git status`/`cat` first, rather than assuming
+  the tool's cached view already reflects the new branch.
+

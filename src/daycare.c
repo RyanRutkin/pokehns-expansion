@@ -33,6 +33,20 @@
 
 #define IS_DITTO(species) (gSpeciesInfo[species].eggGroups[0] == EGG_GROUP_DITTO || gSpeciesInfo[species].eggGroups[1] == EGG_GROUP_DITTO)
 
+// Number of the two daycare mons (0, 1, or 2) holding the Berserk Gene.
+static u8 CountBerserkGeneHolders(struct DayCare *daycare)
+{
+    u8 i, count = 0;
+
+    for (i = 0; i < DAYCARE_MON_COUNT; i++)
+    {
+        if (GetItemHoldEffect(GetBoxMonData(&daycare->mons[i].mon, MON_DATA_HELD_ITEM)) == HOLD_EFFECT_BERSERK_GENE)
+            count++;
+    }
+
+    return count;
+}
+
 static void ClearDaycareMonMail(struct DaycareMail *mail);
 static void SetInitialEggData(struct Pokemon *mon, u16 species, struct DayCare *daycare);
 static void DaycarePrintMonInfo(u8 windowId, u32 daycareSlotId, u8 y);
@@ -1083,6 +1097,9 @@ static void _GiveEggFromDaycare(struct DayCare *daycare)
 
     if (GetDaycareCompatibilityScore(daycare) == PARENTS_INCOMPATIBLE)
         return;
+    // Refuse to produce a Berserk Gene egg if the profile side-table has no free slot.
+    if (CountBerserkGeneHolders(daycare) > 0 && IsBerserkGeneProfileTableFull())
+        return;
 
     species = DetermineEggSpeciesAndParentSlots(daycare, parentSlots);
     if (P_INCENSE_BREEDING < GEN_9)
@@ -1170,7 +1187,8 @@ static bool8 TryProduceOrHatchEgg(struct DayCare *daycare)
     if (daycare->offspringPersonality == 0 && validEggs == DAYCARE_MON_COUNT && (daycare->mons[1].steps & 0xFF) == 0xFF)
     {
         u8 compatibility = ModifyBreedingScoreForOvalCharm(GetDaycareCompatibilityScore(daycare));
-        if (compatibility > (Random() * 100u) / USHRT_MAX)
+        if (compatibility > (Random() * 100u) / USHRT_MAX
+         && !(CountBerserkGeneHolders(daycare) > 0 && IsBerserkGeneProfileTableFull()))
             TriggerPendingDaycareEgg();
     }
 
@@ -1312,6 +1330,7 @@ u8 GetDaycareCompatibilityScore(struct DayCare *daycare)
     u16 species[DAYCARE_MON_COUNT];
     u32 trainerIds[DAYCARE_MON_COUNT];
     u32 genders[DAYCARE_MON_COUNT];
+    u8 geneHolders = CountBerserkGeneHolders(daycare);
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
     {
@@ -1326,7 +1345,9 @@ u8 GetDaycareCompatibilityScore(struct DayCare *daycare)
     }
 
     // check unbreedable egg group
-    if (eggGroups[0][0] == EGG_GROUP_NO_EGGS_DISCOVERED || eggGroups[1][0] == EGG_GROUP_NO_EGGS_DISCOVERED)
+    // Berserk Gene can bypass this, but only if both parents hold one.
+    if ((eggGroups[0][0] == EGG_GROUP_NO_EGGS_DISCOVERED || eggGroups[1][0] == EGG_GROUP_NO_EGGS_DISCOVERED)
+     && geneHolders < 2)
         return PARENTS_INCOMPATIBLE;
     // two Ditto can't breed
     if (eggGroups[0][0] == EGG_GROUP_DITTO && eggGroups[1][0] == EGG_GROUP_DITTO)
@@ -1344,9 +1365,19 @@ u8 GetDaycareCompatibilityScore(struct DayCare *daycare)
     else
     {
         if (genders[0] == genders[1])
-            return PARENTS_INCOMPATIBLE;
+        {
+            // Berserk Gene bypasses a same-gender pairing, except an all-male pairing
+            // (no female present, no Ditto present), which still needs both to hold it.
+            bool8 noFemalePresent = (genders[0] != MON_FEMALE && genders[1] != MON_FEMALE);
+            if (geneHolders == 0 || (noFemalePresent && geneHolders < 2))
+                return PARENTS_INCOMPATIBLE;
+        }
         if (genders[0] == MON_GENDERLESS || genders[1] == MON_GENDERLESS)
-            return PARENTS_INCOMPATIBLE;
+        {
+            // A genderless (non-Ditto) parent needs both parents to hold the gene to bypass.
+            if (geneHolders < 2)
+                return PARENTS_INCOMPATIBLE;
+        }
         if (!EggGroupsOverlap(eggGroups[0], eggGroups[1]))
             return PARENTS_INCOMPATIBLE;
 
@@ -1380,6 +1411,17 @@ void SetDaycareCompatibilityString(void)
     u8 relationshipScore;
 
     relationshipScore = GetDaycareCompatibilityScoreFromSave();
+
+    // Distinct from the normal compatibility messages: the pairing would produce a
+    // Berserk Gene egg, but the profile side-table has no free slot for it right now.
+    if (relationshipScore != PARENTS_INCOMPATIBLE
+     && CountBerserkGeneHolders(&gSaveBlock1Ptr->daycare) > 0
+     && IsBerserkGeneProfileTableFull())
+    {
+        StringCopy(gStringVar4, gDaycareText_BerserkGeneStorageFull);
+        return;
+    }
+
     whichString = 0;
     if (relationshipScore == PARENTS_INCOMPATIBLE)
         whichString = 3;

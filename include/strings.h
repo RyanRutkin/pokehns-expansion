@@ -1443,6 +1443,7 @@ extern const u8 gDaycareText_GetAlongVeryWell[];
 extern const u8 gDaycareText_GetAlong[];
 extern const u8 gDaycareText_DontLikeOther[];
 extern const u8 gDaycareText_PlayOther[];
+extern const u8 gDaycareText_BerserkGeneStorageFull[];
 
 // party menu
 extern const u8 gText_ChoosePokemon[];

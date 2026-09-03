@@ -1,0 +1,33 @@
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/braille_puzzles.o src/braille_puzzles.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/clock.o src/clock.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/coins.o src/coins.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/confetti_util.o src/confetti_util.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/contest.o src/contest.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/contest_ai.o src/contest_ai.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/contest_effect.o src/contest_effect.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/contest_link.o src/contest_link.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/contest_link_util.o src/contest_link_util.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/contest_painting.o src/contest_painting.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/contest_util.o src/contest_util.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/coord_event_weather.o src/coord_event_weather.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/credits.o src/credits.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/credits_frlg.o src/credits_frlg.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/credits_hns.o src/credits_hns.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/data.o src/data.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/datetime.o src/datetime.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/daycare.o src/daycare.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/debug.o src/debug.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/decompress.o src/decompress.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/decompress_error_handler.o src/decompress_error_handler.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/decoration.o src/decoration.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/decoration_inventory.o src/decoration_inventory.c
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/dewford_trend.o src/dewford_trend.c
+src/braille_puzzles.c: In function 'CheckTogepi':
+src/braille_puzzles.c:379:17: error: 'FLAG_RECEIVED_TOGEPI_EGG' undeclared (first use in this function)
+  379 |     if (FlagGet(FLAG_RECEIVED_TOGEPI_EGG) == TRUE)
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~
+src/braille_puzzles.c:379:17: note: each undeclared identifier is reported only once for each function it appears in
+make: *** [Makefile:497: build/emerald-test/src/braille_puzzles.o] Error 1
+make: *** Deleting file 'build/emerald-test/src/braille_puzzles.o'
+make: *** Waiting for unfinished jobs....
+/usr/lib/gcc/arm-none-eabi/14.2.1/cc1 -quiet <flags> -o build/emerald-test/src/dexnav.o src/dexnav.c

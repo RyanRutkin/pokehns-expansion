@@ -338,6 +338,11 @@ void NuzlockeDeletePartyMon(u8 position)
     {
         CopyMonToPC(&gPlayerParty[position]);
     }
+    else
+    {
+        // Not copied anywhere, so this mon's fusion profile would leak.
+        ReleaseMonBerserkGeneProfile(TOTAL_BOXES_COUNT, position);
+    }
     PurgeMonOrBoxMon(TOTAL_BOXES_COUNT, position);
 }
 

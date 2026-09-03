@@ -3,6 +3,7 @@
 #include "event_data.h"
 #include "malloc.h"
 #include "party_menu.h"
+#include "pokemon_storage_system.h"
 #include "regions.h"
 #include "test/overworld_script.h"
 #include "test/test.h"
@@ -164,4 +165,88 @@ TEST("(Daycare) Pokémon with regional forms give the correct offspring")
     STORE_IN_DAYCARE_AND_GET_EGG();
 
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), offspring);
+}
+
+TEST("(Daycare) Berserk Gene bypasses a same-gender pairing, but an all-male pairing needs both parents to hold it")
+{
+    bool32 canBreed = FALSE;
+
+    ZeroPlayerPartyMons();
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_NONE;         givemon SPECIES_EEVEE, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE; givemon SPECIES_EEVEE, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE; givemon SPECIES_EEVEE, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE; ); }
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    if (canBreed)
+        EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    else
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+}
+
+TEST("(Daycare) Berserk Gene bypasses a same-gender pairing with only one holder when a female is present")
+{
+    bool32 canBreed = FALSE;
+
+    ZeroPlayerPartyMons();
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_FEMALE, item=ITEM_NONE;         givemon SPECIES_EEVEE, 50, gender=MON_FEMALE, item=ITEM_NONE; ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE; givemon SPECIES_EEVEE, 50, gender=MON_FEMALE, item=ITEM_NONE; ); }
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    if (canBreed)
+        EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    else
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+}
+
+TEST("(Daycare) Berserk Gene bypasses a genderless parent only when both parents hold it")
+{
+    bool32 canBreed = FALSE;
+
+    ZeroPlayerPartyMons();
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_MAGNEMITE, 50, item=ITEM_NONE;         givemon SPECIES_GEODUDE, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_MAGNEMITE, 50, item=ITEM_BERSERK_GENE; givemon SPECIES_GEODUDE, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_MAGNEMITE, 50, item=ITEM_BERSERK_GENE; givemon SPECIES_GEODUDE, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE; ); }
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    if (canBreed)
+        EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    else
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+}
+
+TEST("(Daycare) Berserk Gene bypasses the No Eggs Discovered egg group only when both parents hold it")
+{
+    bool32 canBreed = FALSE;
+
+    ZeroPlayerPartyMons();
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_MEWTWO, 50, item=ITEM_NONE;         givemon SPECIES_ARTICUNO, 50, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_MEWTWO, 50, item=ITEM_BERSERK_GENE; givemon SPECIES_ARTICUNO, 50, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_MEWTWO, 50, item=ITEM_BERSERK_GENE; givemon SPECIES_ARTICUNO, 50, item=ITEM_BERSERK_GENE; ); }
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    if (canBreed)
+        EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    else
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+}
+
+TEST("(Daycare) Berserk Gene egg production is refused when the profile side-table is full")
+{
+    u16 i;
+    u16 allocated[MAX_BERSERK_GENE_PROFILES];
+
+    ZeroPlayerPartyMons();
+    for (i = 0; i < MAX_BERSERK_GENE_PROFILES; i++)
+        allocated[i] = AllocBerserkGeneProfile();
+
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_EEVEE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+
+    for (i = 0; i < MAX_BERSERK_GENE_PROFILES; i++)
+        FreeBerserkGeneProfile(allocated[i]);
 }
