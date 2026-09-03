@@ -425,3 +425,98 @@ TEST("(Daycare) A Berserk Gene egg's profile gets No Eggs Discovered in both slo
     EXPECT_EQ(profile->eggGroup1, EGG_GROUP_NO_EGGS_DISCOVERED);
     EXPECT_EQ(profile->eggGroup2, EGG_GROUP_NO_EGGS_DISCOVERED);
 }
+
+TEST("(Daycare) A Berserk Gene egg's profile blends base stats within both parents' range")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    u8 stat;
+    u32 statsA[NUM_STATS], statsB[NUM_STATS];
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+
+    statsA[STAT_HP] = GetSpeciesBaseHP(SPECIES_CHARMANDER);
+    statsA[STAT_ATK] = GetSpeciesBaseAttack(SPECIES_CHARMANDER);
+    statsA[STAT_DEF] = GetSpeciesBaseDefense(SPECIES_CHARMANDER);
+    statsA[STAT_SPEED] = GetSpeciesBaseSpeed(SPECIES_CHARMANDER);
+    statsA[STAT_SPATK] = GetSpeciesBaseSpAttack(SPECIES_CHARMANDER);
+    statsA[STAT_SPDEF] = GetSpeciesBaseSpDefense(SPECIES_CHARMANDER);
+
+    statsB[STAT_HP] = GetSpeciesBaseHP(SPECIES_SQUIRTLE);
+    statsB[STAT_ATK] = GetSpeciesBaseAttack(SPECIES_SQUIRTLE);
+    statsB[STAT_DEF] = GetSpeciesBaseDefense(SPECIES_SQUIRTLE);
+    statsB[STAT_SPEED] = GetSpeciesBaseSpeed(SPECIES_SQUIRTLE);
+    statsB[STAT_SPATK] = GetSpeciesBaseSpAttack(SPECIES_SQUIRTLE);
+    statsB[STAT_SPDEF] = GetSpeciesBaseSpDefense(SPECIES_SQUIRTLE);
+
+    for (stat = 0; stat < NUM_STATS; stat++)
+    {
+        u32 lo = statsA[stat] < statsB[stat] ? statsA[stat] : statsB[stat];
+        u32 hi = statsA[stat] > statsB[stat] ? statsA[stat] : statsB[stat];
+        EXPECT(profile->baseStats[stat] >= lo && profile->baseStats[stat] <= hi);
+    }
+}
+
+TEST("(Daycare) A Berserk Gene egg's profile records growth rate, friendship, and EV yields from one of the two parents")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    u8 stat;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+
+    EXPECT(profile->growthRate == gSpeciesInfo[SPECIES_CHARMANDER].growthRate || profile->growthRate == gSpeciesInfo[SPECIES_SQUIRTLE].growthRate);
+    EXPECT(profile->friendship == gSpeciesInfo[SPECIES_CHARMANDER].friendship || profile->friendship == gSpeciesInfo[SPECIES_SQUIRTLE].friendship);
+
+    for (stat = 0; stat < NUM_STATS; stat++)
+    {
+        u8 evValue = (profile->evYields >> (stat * 2)) & 0x3;
+        u8 evA, evB;
+
+        switch (stat)
+        {
+        case STAT_HP:    evA = gSpeciesInfo[SPECIES_CHARMANDER].evYield_HP;      evB = gSpeciesInfo[SPECIES_SQUIRTLE].evYield_HP;      break;
+        case STAT_ATK:   evA = gSpeciesInfo[SPECIES_CHARMANDER].evYield_Attack;  evB = gSpeciesInfo[SPECIES_SQUIRTLE].evYield_Attack;  break;
+        case STAT_DEF:   evA = gSpeciesInfo[SPECIES_CHARMANDER].evYield_Defense; evB = gSpeciesInfo[SPECIES_SQUIRTLE].evYield_Defense; break;
+        case STAT_SPEED: evA = gSpeciesInfo[SPECIES_CHARMANDER].evYield_Speed;   evB = gSpeciesInfo[SPECIES_SQUIRTLE].evYield_Speed;   break;
+        case STAT_SPATK: evA = gSpeciesInfo[SPECIES_CHARMANDER].evYield_SpAttack;   evB = gSpeciesInfo[SPECIES_SQUIRTLE].evYield_SpAttack;   break;
+        default:         evA = gSpeciesInfo[SPECIES_CHARMANDER].evYield_SpDefense; evB = gSpeciesInfo[SPECIES_SQUIRTLE].evYield_SpDefense; break;
+        }
+        EXPECT(evValue == evA || evValue == evB);
+    }
+}
+
+TEST("(Daycare) A Berserk Gene egg's IVs are never lower than the higher of its two parents' IVs")
+{
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE, hpIv=10, atkIv=15, defIv=20, speedIv=5, spAtkIv=25, spDefIv=0;
+        givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE, hpIv=20, atkIv=5, defIv=10, speedIv=25, spAtkIv=0, spDefIv=15;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_HP_IV) >= 20);
+    EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_ATK_IV) >= 15);
+    EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_DEF_IV) >= 20);
+    EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_SPEED_IV) >= 25);
+    EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_SPATK_IV) >= 25);
+    EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_SPDEF_IV) >= 15);
+}

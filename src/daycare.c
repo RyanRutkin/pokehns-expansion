@@ -321,6 +321,60 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
         }
     }
 
+    // Step 12: base stats — blended per-stat via BerserkGeneBlendNumeric (not independent rolls).
+    {
+        u8 geneParent = DaycareMonHasBerserkGene(daycare, 0) ? 0 : 1;
+        u8 otherParent = geneParent ^ 1;
+        u32 geneBase[NUM_STATS], otherBase[NUM_STATS];
+
+        geneBase[STAT_HP] = GetSpeciesBaseHP(species[geneParent]);
+        geneBase[STAT_ATK] = GetSpeciesBaseAttack(species[geneParent]);
+        geneBase[STAT_DEF] = GetSpeciesBaseDefense(species[geneParent]);
+        geneBase[STAT_SPEED] = GetSpeciesBaseSpeed(species[geneParent]);
+        geneBase[STAT_SPATK] = GetSpeciesBaseSpAttack(species[geneParent]);
+        geneBase[STAT_SPDEF] = GetSpeciesBaseSpDefense(species[geneParent]);
+
+        otherBase[STAT_HP] = GetSpeciesBaseHP(species[otherParent]);
+        otherBase[STAT_ATK] = GetSpeciesBaseAttack(species[otherParent]);
+        otherBase[STAT_DEF] = GetSpeciesBaseDefense(species[otherParent]);
+        otherBase[STAT_SPEED] = GetSpeciesBaseSpeed(species[otherParent]);
+        otherBase[STAT_SPATK] = GetSpeciesBaseSpAttack(species[otherParent]);
+        otherBase[STAT_SPDEF] = GetSpeciesBaseSpDefense(species[otherParent]);
+
+        for (i = 0; i < NUM_STATS; i++)
+            profile->baseStats[i] = BerserkGeneBlendNumeric(geneBase[i], otherBase[i], geneHolders);
+    }
+
+    // Step 14: growth rate, EV yield (per stat), base friendship — independent binary rolls.
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->growthRate = gSpeciesInfo[species[parent]].growthRate;
+
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->friendship = gSpeciesInfo[species[parent]].friendship;
+
+    {
+        u16 evYields = 0;
+        u8 evStat;
+
+        for (evStat = 0; evStat < NUM_STATS; evStat++)
+        {
+            u8 evParent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+            u8 evValue;
+
+            switch (evStat)
+            {
+            case STAT_HP:    evValue = gSpeciesInfo[species[evParent]].evYield_HP; break;
+            case STAT_ATK:   evValue = gSpeciesInfo[species[evParent]].evYield_Attack; break;
+            case STAT_DEF:   evValue = gSpeciesInfo[species[evParent]].evYield_Defense; break;
+            case STAT_SPEED: evValue = gSpeciesInfo[species[evParent]].evYield_Speed; break;
+            case STAT_SPATK: evValue = gSpeciesInfo[species[evParent]].evYield_SpAttack; break;
+            default:         evValue = gSpeciesInfo[species[evParent]].evYield_SpDefense; break;
+            }
+            evYields |= (evValue & 0x3) << (evStat * 2);
+        }
+        profile->evYields = evYields;
+    }
+
     profile->inheritanceFlags = flags;
     SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 }
@@ -1014,6 +1068,28 @@ static void InheritIVs(struct Pokemon *egg, struct DayCare *daycare)
     }
 }
 
+// Step 13: replaces InheritIVs entirely when either parent holds the Berserk Gene. Not
+// percentage-based: each IV independently rolls Random() % 32, keeping the roll if it beats
+// both parents' actual IV for that stat, else falling back to the higher of the two parents'.
+static void InheritIVsBerserkGene(struct Pokemon *egg, struct DayCare *daycare)
+{
+    static const u16 sIvDataTypes[NUM_STATS] = {
+        MON_DATA_HP_IV, MON_DATA_ATK_IV, MON_DATA_DEF_IV, MON_DATA_SPEED_IV, MON_DATA_SPATK_IV, MON_DATA_SPDEF_IV
+    };
+    u8 i;
+
+    for (i = 0; i < NUM_STATS; i++)
+    {
+        u8 parentAIv = GetBoxMonData(&daycare->mons[0].mon, sIvDataTypes[i]);
+        u8 parentBIv = GetBoxMonData(&daycare->mons[1].mon, sIvDataTypes[i]);
+        u8 best = (parentAIv > parentBIv) ? parentAIv : parentBIv;
+        u8 roll = Random() % 32;
+        u8 iv = (roll > best) ? roll : best;
+
+        SetMonData(egg, sIvDataTypes[i], &iv);
+    }
+}
+
 static void InheritPokeball(struct Pokemon *egg, struct BoxPokemon *father, struct BoxPokemon *mother)
 {
     enum PokeBall inheritBall = BALL_POKE;
@@ -1406,7 +1482,10 @@ static void _GiveEggFromDaycare(struct DayCare *daycare)
         AlterEggSpeciesWithIncenseItem(&species, daycare);
     SetInitialEggData(&egg, species, daycare);
     BuildBerserkGeneProfile(daycare, &egg);
-    InheritIVs(&egg, daycare);
+    if (CountBerserkGeneHolders(daycare) > 0)
+        InheritIVsBerserkGene(&egg, daycare);
+    else
+        InheritIVs(&egg, daycare);
     InheritPokeball(&egg, &daycare->mons[parentSlots[1]].mon, &daycare->mons[parentSlots[0]].mon);
     BuildEggMoveset(&egg, &daycare->mons[parentSlots[1]].mon, &daycare->mons[parentSlots[0]].mon);
     if (P_ABILITY_INHERITANCE >= GEN_6)
