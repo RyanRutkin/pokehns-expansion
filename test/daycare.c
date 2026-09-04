@@ -646,6 +646,39 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
     EXPECT(sawPidgeyLine);
 }
 
+TEST("(Daycare) Matching unconditional level evolutions are stored as a paired fusion phase")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    bool32 sawPupitar = FALSE, sawRaticate = FALSE;
+    u8 i;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_LARVITAR, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_RATTATA, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT_EQ(profile->potentialEvolutionCount, 2);
+
+    for (i = 0; i < profile->potentialEvolutionCount; i++)
+    {
+        EXPECT_EQ(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK, EVO_LEVEL);
+        EXPECT_EQ(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING, EVO_POTENTIAL_PAIRED_WITH_SIBLING);
+        EXPECT_EQ(profile->potentialEvolutions[i].param, 25);
+        if (profile->potentialEvolutions[i].targetSpecies == SPECIES_PUPITAR)
+            sawPupitar = TRUE;
+        if (profile->potentialEvolutions[i].targetSpecies == SPECIES_RATICATE)
+            sawRaticate = TRUE;
+    }
+    EXPECT(sawPupitar);
+    EXPECT(sawRaticate);
+}
+
 TEST("(Daycare) Conditional evolution entries round-trip through stable condition-set IDs")
 {
     const struct Evolution *evolutions = GetSpeciesEvolutions(SPECIES_DIPPLIN);

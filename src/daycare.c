@@ -542,6 +542,21 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
             stored++;
         }
 
+        // A single plain level-up line from each side becomes one paired fusion phase.
+        if (countA == 1 && countB == 1 && stored == 2
+         && profile->potentialEvolutions[0].conditionSetId == 0
+         && profile->potentialEvolutions[1].conditionSetId == 0
+         && (profile->potentialEvolutions[0].methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_LEVEL
+         && (profile->potentialEvolutions[1].methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_LEVEL)
+        {
+            u16 mergedLevel = (profile->potentialEvolutions[0].param + profile->potentialEvolutions[1].param + 1) / 2;
+
+            profile->potentialEvolutions[0].param = mergedLevel;
+            profile->potentialEvolutions[1].param = mergedLevel;
+            profile->potentialEvolutions[0].methodAndSourceParent |= EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+            profile->potentialEvolutions[1].methodAndSourceParent |= EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+        }
+
         profile->potentialEvolutionCount = stored;
     }
 

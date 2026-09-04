@@ -631,6 +631,21 @@ handling, deliberately scoped down from the full spec — see "Deferred" below.
   fusion mon actually evolve into one of its stored options; `GetMonEvolutions`/evolution-checking
   code has not been touched.
 
+### Simple paired level-evolution merge, second increment (implemented 2026-09-04)
+The unambiguous base case of the paired-entry design is now implemented: when **each parent has
+exactly one selected candidate**, both candidates are unconditional `EVO_LEVEL` entries, and the
+selection produced exactly those two entries, they become one logical fused phase. The adjacent
+entries retain their own target species/source-parent bits, both gain
+`EVO_POTENTIAL_PAIRED_WITH_SIBLING`, and both `param` values become
+`ceil((levelA + levelB) / 2)`. This implements the initial Larvitar×Rattata-style phase
+(Pupitar×Raticate at level 25) without inventing behavior for multi-branch cases. Regression
+test added for that exact pair/level/flag invariant.
+
+**Still deferred:** one-vs-many and many-vs-many selected-line combinations (including
+Rattata×Applin) need the later pseudo-fusion/branch model before pairing can be defined correctly;
+they remain independent stored entries for now. The flags are storage metadata only until the
+future evolution-trigger hook teaches the runtime to consume both adjacent entries atomically.
+
 
 (`parentSpeciesA`/`parentSpeciesB` on the profile), not a fixed final form. It carries the
 potential to evolve along *either* parent's evolutionary line, and each evolution re-derives most
