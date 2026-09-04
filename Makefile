@@ -567,6 +567,9 @@ $(OBJ_DIR)/sym_ewram.ld: sym_ewram.txt
 	$(RAMSCRGEN) ewram_data $< ENGLISH > $@
 
 TEACHABLE_DEPS := $(ALL_LEARNABLES_JSON) $(INCLUDE_DIRS)/constants/tms_hms.h $(INCLUDE_DIRS)/config/pokemon.h $(DATA_SRC_SUBDIR)/pokemon/special_movesets.json $(INCLUDE_DIRS)/config/pokedex_plus_hgss.h $(LEARNSET_HELPERS_DIR)/make_teachables.py
+EVOLUTION_CONDITION_MANIFEST := tools/evolution_conditions/condition_sets.json
+EVOLUTION_CONDITION_GENERATOR := tools/evolution_conditions/make_condition_sets.py
+EVOLUTION_CONDITION_SETS := $(DATA_SRC_SUBDIR)/pokemon/evolution_condition_sets.h
 
 $(LEARNSET_HELPERS_BUILD_DIR):
 	@mkdir -p $@
@@ -579,6 +582,9 @@ $(ALL_TUTORS_JSON): $(shell find data/ -type f -name '*.inc')  $(LEARNSET_HELPER
 
 $(ALL_TEACHING_TYPES_JSON): $(wildcard $(DATA_SRC_SUBDIR)/pokemon/species_info/*_families.h)  $(LEARNSET_HELPERS_DIR)/make_teaching_types.py | $(LEARNSET_HELPERS_BUILD_DIR)
 	python3 $(LEARNSET_HELPERS_DIR)/make_teaching_types.py $@
+
+$(EVOLUTION_CONDITION_SETS): $(wildcard $(DATA_SRC_SUBDIR)/pokemon/species_info/*_families.h) $(EVOLUTION_CONDITION_MANIFEST) $(EVOLUTION_CONDITION_GENERATOR)
+	python3 $(EVOLUTION_CONDITION_GENERATOR) $(DATA_SRC_SUBDIR)/pokemon/species_info $(EVOLUTION_CONDITION_MANIFEST) $@
 
 $(DATA_SRC_SUBDIR)/pokemon/teachable_learnsets.h: $(TEACHABLE_DEPS) | $(ALL_TUTORS_JSON) $(ALL_TEACHING_TYPES_JSON)
 	python3 $(LEARNSET_HELPERS_DIR)/make_teachables.py --build $(GAME_VERSION) $(LEARNSET_HELPERS_BUILD_DIR)

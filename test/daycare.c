@@ -646,3 +646,22 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
     EXPECT(sawPidgeyLine);
 }
 
+TEST("(Daycare) Conditional evolution entries round-trip through stable condition-set IDs")
+{
+    const struct Evolution *evolutions = GetSpeciesEvolutions(SPECIES_DIPPLIN);
+    const struct EvolutionParam *conditions = evolutions[0].params;
+    const struct EvolutionParam *resolved;
+    u8 conditionSetId;
+
+    EXPECT_NE(conditions, NULL);
+    conditionSetId = GetEvolutionConditionSetId(conditions);
+    EXPECT_NE(conditionSetId, 0);
+
+    resolved = GetEvolutionConditionSet(conditionSetId);
+    EXPECT_NE(resolved, NULL);
+    EXPECT_EQ(resolved[0].condition, conditions[0].condition);
+    EXPECT_EQ(resolved[0].arg1, conditions[0].arg1);
+    EXPECT_EQ(resolved[0].arg2, conditions[0].arg2);
+    EXPECT_EQ(resolved[0].arg3, conditions[0].arg3);
+}
+

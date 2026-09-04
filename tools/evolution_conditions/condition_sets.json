@@ -1,0 +1,420 @@
+{
+  "sets": [
+    {
+      "id": 1,
+      "signature": "IF_AMPED_NATURE,0,0,0"
+    },
+    {
+      "id": 2,
+      "signature": "IF_ATK_EQ_DEF,0,0,0"
+    },
+    {
+      "id": 3,
+      "signature": "IF_ATK_GT_DEF,0,0,0"
+    },
+    {
+      "id": 4,
+      "signature": "IF_ATK_LT_DEF,0,0,0"
+    },
+    {
+      "id": 5,
+      "signature": "IF_BAG_ITEM_COUNT,ITEM_GIMMIGHOUL_COIN,999,0"
+    },
+    {
+      "id": 6,
+      "signature": "IF_BAG_ITEM_COUNT,ITEM_POKE_BALL,1,0"
+    },
+    {
+      "id": 7,
+      "signature": "IF_CRITICAL_HITS_GE,3,0,0"
+    },
+    {
+      "id": 8,
+      "signature": "IF_CURRENT_DAMAGE_GE,49,0,0"
+    },
+    {
+      "id": 9,
+      "signature": "IF_DEFEAT_X_WITH_ITEMS,SPECIES_BISHARP,ITEM_LEADERS_CREST,3"
+    },
+    {
+      "id": 10,
+      "signature": "IF_GENDER,MON_FEMALE,0,0"
+    },
+    {
+      "id": 11,
+      "signature": "IF_GENDER,MON_MALE,0,0"
+    },
+    {
+      "id": 12,
+      "signature": "IF_HOLD_ITEM,ITEM_BERRY_SWEET,0,0|IF_TIME,TIME_DAY,0,0"
+    },
+    {
+      "id": 13,
+      "signature": "IF_HOLD_ITEM,ITEM_BERRY_SWEET,0,0|IF_TIME,TIME_EVENING,0,0"
+    },
+    {
+      "id": 14,
+      "signature": "IF_HOLD_ITEM,ITEM_BERRY_SWEET,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 15,
+      "signature": "IF_HOLD_ITEM,ITEM_CLOVER_SWEET,0,0|IF_TIME,TIME_DAY,0,0"
+    },
+    {
+      "id": 16,
+      "signature": "IF_HOLD_ITEM,ITEM_CLOVER_SWEET,0,0|IF_TIME,TIME_EVENING,0,0"
+    },
+    {
+      "id": 17,
+      "signature": "IF_HOLD_ITEM,ITEM_CLOVER_SWEET,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 18,
+      "signature": "IF_HOLD_ITEM,ITEM_DEEP_SEA_SCALE,0,0"
+    },
+    {
+      "id": 19,
+      "signature": "IF_HOLD_ITEM,ITEM_DEEP_SEA_TOOTH,0,0"
+    },
+    {
+      "id": 20,
+      "signature": "IF_HOLD_ITEM,ITEM_DRAGON_SCALE,0,0"
+    },
+    {
+      "id": 21,
+      "signature": "IF_HOLD_ITEM,ITEM_DUBIOUS_DISC,0,0"
+    },
+    {
+      "id": 22,
+      "signature": "IF_HOLD_ITEM,ITEM_ELECTIRIZER,0,0"
+    },
+    {
+      "id": 23,
+      "signature": "IF_HOLD_ITEM,ITEM_FLOWER_SWEET,0,0|IF_TIME,TIME_DAY,0,0"
+    },
+    {
+      "id": 24,
+      "signature": "IF_HOLD_ITEM,ITEM_FLOWER_SWEET,0,0|IF_TIME,TIME_EVENING,0,0"
+    },
+    {
+      "id": 25,
+      "signature": "IF_HOLD_ITEM,ITEM_FLOWER_SWEET,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 26,
+      "signature": "IF_HOLD_ITEM,ITEM_KINGS_ROCK,0,0"
+    },
+    {
+      "id": 27,
+      "signature": "IF_HOLD_ITEM,ITEM_LOVE_SWEET,0,0|IF_TIME,TIME_DAY,0,0"
+    },
+    {
+      "id": 28,
+      "signature": "IF_HOLD_ITEM,ITEM_LOVE_SWEET,0,0|IF_TIME,TIME_EVENING,0,0"
+    },
+    {
+      "id": 29,
+      "signature": "IF_HOLD_ITEM,ITEM_LOVE_SWEET,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 30,
+      "signature": "IF_HOLD_ITEM,ITEM_MAGMARIZER,0,0"
+    },
+    {
+      "id": 31,
+      "signature": "IF_HOLD_ITEM,ITEM_METAL_COAT,0,0"
+    },
+    {
+      "id": 32,
+      "signature": "IF_HOLD_ITEM,ITEM_PRISM_SCALE,0,0"
+    },
+    {
+      "id": 33,
+      "signature": "IF_HOLD_ITEM,ITEM_PROTECTOR,0,0"
+    },
+    {
+      "id": 34,
+      "signature": "IF_HOLD_ITEM,ITEM_REAPER_CLOTH,0,0"
+    },
+    {
+      "id": 35,
+      "signature": "IF_HOLD_ITEM,ITEM_RIBBON_SWEET,0,0|IF_TIME,TIME_DAY,0,0"
+    },
+    {
+      "id": 36,
+      "signature": "IF_HOLD_ITEM,ITEM_RIBBON_SWEET,0,0|IF_TIME,TIME_EVENING,0,0"
+    },
+    {
+      "id": 37,
+      "signature": "IF_HOLD_ITEM,ITEM_RIBBON_SWEET,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 38,
+      "signature": "IF_HOLD_ITEM,ITEM_SACHET,0,0"
+    },
+    {
+      "id": 39,
+      "signature": "IF_HOLD_ITEM,ITEM_STAR_SWEET,0,0|IF_TIME,TIME_DAY,0,0"
+    },
+    {
+      "id": 40,
+      "signature": "IF_HOLD_ITEM,ITEM_STAR_SWEET,0,0|IF_TIME,TIME_EVENING,0,0"
+    },
+    {
+      "id": 41,
+      "signature": "IF_HOLD_ITEM,ITEM_STAR_SWEET,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 42,
+      "signature": "IF_HOLD_ITEM,ITEM_STRAWBERRY_SWEET,0,0|IF_TIME,TIME_DAY,0,0"
+    },
+    {
+      "id": 43,
+      "signature": "IF_HOLD_ITEM,ITEM_STRAWBERRY_SWEET,0,0|IF_TIME,TIME_EVENING,0,0"
+    },
+    {
+      "id": 44,
+      "signature": "IF_HOLD_ITEM,ITEM_STRAWBERRY_SWEET,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 45,
+      "signature": "IF_HOLD_ITEM,ITEM_UPGRADE,0,0"
+    },
+    {
+      "id": 46,
+      "signature": "IF_HOLD_ITEM,ITEM_WHIPPED_DREAM,0,0"
+    },
+    {
+      "id": 47,
+      "signature": "IF_IN_MAP,MAP_PETALBURG_WOODS,0,0"
+    },
+    {
+      "id": 48,
+      "signature": "IF_IN_MAP,MAP_SHOAL_CAVE_LOW_TIDE_ICE_ROOM,0,0"
+    },
+    {
+      "id": 49,
+      "signature": "IF_IN_MAPSEC,MAPSEC_ICE_PATH,0,0"
+    },
+    {
+      "id": 50,
+      "signature": "IF_IN_MAPSEC,MAPSEC_ILEX_FOREST,0,0"
+    },
+    {
+      "id": 51,
+      "signature": "IF_IN_MAPSEC,MAPSEC_MT_MOON,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 52,
+      "signature": "IF_IN_MAPSEC,MAPSEC_POWER_PLANT,0,0"
+    },
+    {
+      "id": 53,
+      "signature": "IF_IN_MAPSEC,MAPSEC_ROUTE_10,0,0"
+    },
+    {
+      "id": 54,
+      "signature": "IF_IN_MAPSEC,MAPSEC_SEAFOAM_ISLANDS,0,0"
+    },
+    {
+      "id": 55,
+      "signature": "IF_IN_MAPSEC,MAPSEC_VIRIDIAN_FOREST,0,0"
+    },
+    {
+      "id": 56,
+      "signature": "IF_KNOWS_MOVE,MOVE_ANCIENT_POWER,0,0"
+    },
+    {
+      "id": 57,
+      "signature": "IF_KNOWS_MOVE,MOVE_BARB_BARRAGE,0,0|IF_REGION,REGION_HISUI,0,0"
+    },
+    {
+      "id": 58,
+      "signature": "IF_KNOWS_MOVE,MOVE_DOUBLE_HIT,0,0"
+    },
+    {
+      "id": 59,
+      "signature": "IF_KNOWS_MOVE,MOVE_DRAGON_CHEER,0,0"
+    },
+    {
+      "id": 60,
+      "signature": "IF_KNOWS_MOVE,MOVE_DRAGON_PULSE,0,0"
+    },
+    {
+      "id": 61,
+      "signature": "IF_KNOWS_MOVE,MOVE_HYPER_DRILL,0,0|IF_PID_MODULO_100_EQ,0,0,0"
+    },
+    {
+      "id": 62,
+      "signature": "IF_KNOWS_MOVE,MOVE_HYPER_DRILL,0,0|IF_PID_MODULO_100_GT,0,0,0"
+    },
+    {
+      "id": 63,
+      "signature": "IF_KNOWS_MOVE,MOVE_MIMIC,0,0"
+    },
+    {
+      "id": 64,
+      "signature": "IF_KNOWS_MOVE,MOVE_MIMIC,0,0|IF_NOT_REGION,REGION_GALAR,0,0"
+    },
+    {
+      "id": 65,
+      "signature": "IF_KNOWS_MOVE,MOVE_MIMIC,0,0|IF_REGION,REGION_GALAR,0,0"
+    },
+    {
+      "id": 66,
+      "signature": "IF_KNOWS_MOVE,MOVE_ROLLOUT,0,0"
+    },
+    {
+      "id": 67,
+      "signature": "IF_KNOWS_MOVE,MOVE_STOMP,0,0"
+    },
+    {
+      "id": 68,
+      "signature": "IF_KNOWS_MOVE,MOVE_TAUNT,0,0"
+    },
+    {
+      "id": 69,
+      "signature": "IF_KNOWS_MOVE,MOVE_TWIN_BEAM,0,0"
+    },
+    {
+      "id": 70,
+      "signature": "IF_LOW_KEY_NATURE,0,0,0"
+    },
+    {
+      "id": 71,
+      "signature": "IF_MIN_BEAUTY,170,0,0"
+    },
+    {
+      "id": 72,
+      "signature": "IF_MIN_FRIENDSHIP,FRIENDSHIP_EVO_THRESHOLD,0,0"
+    },
+    {
+      "id": 73,
+      "signature": "IF_MIN_FRIENDSHIP,FRIENDSHIP_EVO_THRESHOLD,0,0|IF_NOT_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 74,
+      "signature": "IF_MIN_FRIENDSHIP,FRIENDSHIP_EVO_THRESHOLD,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 75,
+      "signature": "IF_MIN_OVERWORLD_STEPS,1000,0,0"
+    },
+    {
+      "id": 76,
+      "signature": "IF_NOT_REGION,REGION_ALOLA,0,0"
+    },
+    {
+      "id": 77,
+      "signature": "IF_NOT_REGION,REGION_GALAR,0,0"
+    },
+    {
+      "id": 78,
+      "signature": "IF_NOT_REGION,REGION_HISUI,0,0"
+    },
+    {
+      "id": 79,
+      "signature": "IF_NOT_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 80,
+      "signature": "IF_NOT_TIME,TIME_NIGHT,0,0|IF_HOLD_ITEM,ITEM_OVAL_STONE,0,0"
+    },
+    {
+      "id": 81,
+      "signature": "IF_NOT_TIME,TIME_NIGHT,0,0|IF_HOLD_ITEM,ITEM_RAZOR_CLAW,0,0"
+    },
+    {
+      "id": 82,
+      "signature": "IF_PID_MODULO_100_EQ,0,0,0"
+    },
+    {
+      "id": 83,
+      "signature": "IF_PID_MODULO_100_GT,0,0,0"
+    },
+    {
+      "id": 84,
+      "signature": "IF_PID_UPPER_MODULO_10_GT,4,0,0"
+    },
+    {
+      "id": 85,
+      "signature": "IF_PID_UPPER_MODULO_10_LT,5,0,0"
+    },
+    {
+      "id": 86,
+      "signature": "IF_RECOIL_DAMAGE_GE,294,0,0|IF_GENDER,MON_FEMALE,0,0"
+    },
+    {
+      "id": 87,
+      "signature": "IF_RECOIL_DAMAGE_GE,294,0,0|IF_GENDER,MON_MALE,0,0"
+    },
+    {
+      "id": 88,
+      "signature": "IF_REGION,REGION_ALOLA,0,0"
+    },
+    {
+      "id": 89,
+      "signature": "IF_REGION,REGION_ALOLA,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 90,
+      "signature": "IF_REGION,REGION_GALAR,0,0"
+    },
+    {
+      "id": 91,
+      "signature": "IF_REGION,REGION_HISUI,0,0"
+    },
+    {
+      "id": 92,
+      "signature": "IF_REGION,REGION_HISUI,0,0|IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 93,
+      "signature": "IF_SPECIES_IN_PARTY,SPECIES_REMORAID,0,0"
+    },
+    {
+      "id": 94,
+      "signature": "IF_TIME,TIME_EVENING,0,0"
+    },
+    {
+      "id": 95,
+      "signature": "IF_TIME,TIME_NIGHT,0,0"
+    },
+    {
+      "id": 96,
+      "signature": "IF_TIME,TIME_NIGHT,0,0|IF_HOLD_ITEM,ITEM_RAZOR_CLAW,0,0"
+    },
+    {
+      "id": 97,
+      "signature": "IF_TIME,TIME_NIGHT,0,0|IF_HOLD_ITEM,ITEM_RAZOR_FANG,0,0"
+    },
+    {
+      "id": 98,
+      "signature": "IF_TRADE_PARTNER_SPECIES,SPECIES_KARRABLAST,0,0"
+    },
+    {
+      "id": 99,
+      "signature": "IF_TRADE_PARTNER_SPECIES,SPECIES_SHELMET,0,0"
+    },
+    {
+      "id": 100,
+      "signature": "IF_TYPE_IN_PARTY,TYPE_DARK,0,0"
+    },
+    {
+      "id": 101,
+      "signature": "IF_USED_MOVE_X_TIMES,MOVE_PSYSHIELD_BASH,20,0"
+    },
+    {
+      "id": 102,
+      "signature": "IF_USED_MOVE_X_TIMES,MOVE_RAGE_FIST,20,0"
+    },
+    {
+      "id": 103,
+      "signature": "IF_WEATHER,WEATHER_FOG,0,0"
+    },
+    {
+      "id": 104,
+      "signature": "IF_WEATHER,WEATHER_RAIN,0,0"
+    }
+  ]
+}

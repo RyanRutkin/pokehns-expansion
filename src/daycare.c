@@ -75,9 +75,7 @@ static s32 BerserkGeneBlendNumeric(s32 pGeneValue, s32 pOtherValue, u8 numGeneHo
 
 // Collect a species' (or a fusion parent's own currently-stored) immediate next-stage evolution
 // candidates. A fusion parent contributes only its own stored potentialEvolutions[], never its
-// full native ancestry, to keep repeated re-breeding bounded. Conditional evolutions (anything
-// with CONDITIONS(...)) are skipped for now — safely representing them needs a condition-set-ID
-// registry that hasn't been built yet.
+// full native ancestry, to keep repeated re-breeding bounded.
 static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sourceParentB,
                                       struct FusionPotentialEvolution *outCandidates, u8 maxCandidates)
 {
@@ -106,14 +104,15 @@ static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sour
 
         for (i = 0; evolutions[i].method != EVOLUTIONS_END && count < maxCandidates; i++)
         {
-            if (evolutions[i].params != NULL)
-                continue; // conditional evolution; not yet supported
+            u8 conditionSetId = GetEvolutionConditionSetId(evolutions[i].params);
+            if (evolutions[i].params != NULL && conditionSetId == 0)
+                continue; // malformed/unregistered source data; never discard conditions silently
 
             outCandidates[count].targetSpecies = evolutions[i].targetSpecies;
             outCandidates[count].param = evolutions[i].param;
             outCandidates[count].methodAndSourceParent = (evolutions[i].method & EVO_POTENTIAL_METHOD_MASK)
                 | (sourceParentB ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0);
-            outCandidates[count].conditionSetId = 0;
+            outCandidates[count].conditionSetId = conditionSetId;
             count++;
         }
     }

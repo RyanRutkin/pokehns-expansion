@@ -5917,12 +5917,49 @@ const u16 *GetSpeciesEggMoves(u16 species)
     return learnset;
 }
 
+#include "data/pokemon/evolution_condition_sets.h"
+
 const struct Evolution *GetSpeciesEvolutions(u16 species)
 {
     const struct Evolution *evolutions = gSpeciesInfo[SanitizeSpeciesId(species)].evolutions;
     if (evolutions == NULL)
         return gSpeciesInfo[SPECIES_NONE].evolutions;
     return evolutions;
+}
+
+u8 GetEvolutionConditionSetId(const struct EvolutionParam *params)
+{
+    u8 conditionSetId;
+
+    if (params == NULL)
+        return 0;
+
+    for (conditionSetId = 1; conditionSetId < ARRAY_COUNT(gEvolutionConditionSets); conditionSetId++)
+    {
+        const struct EvolutionParam *candidate = gEvolutionConditionSets[conditionSetId];
+        u8 i = 0;
+
+        while (params[i].condition == candidate[i].condition)
+        {
+            if (params[i].condition == CONDITIONS_END)
+                return conditionSetId;
+            if (params[i].arg1 != candidate[i].arg1
+             || params[i].arg2 != candidate[i].arg2
+             || params[i].arg3 != candidate[i].arg3)
+                break;
+            i++;
+        }
+    }
+
+    return 0;
+}
+
+const struct EvolutionParam *GetEvolutionConditionSet(u8 conditionSetId)
+{
+    if (conditionSetId == 0 || conditionSetId >= ARRAY_COUNT(gEvolutionConditionSets))
+        return NULL;
+
+    return gEvolutionConditionSets[conditionSetId];
 }
 
 const u16 *GetSpeciesFormTable(u16 species)
