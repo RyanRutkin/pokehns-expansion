@@ -1,7 +1,24 @@
 #include "global.h"
+#include "item.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
+#include "shop.h"
 #include "test/test.h"
+
+static const struct ShopPriceOverride sTestSellPriceOverrides[] = {
+    { ITEM_SWEET_APPLE, 2200 },
+    { ITEM_NONE, 0 },
+};
+
+TEST("Shop sell price overrides replace the default sale price")
+{
+    SetShopSellPriceOverrides(sTestSellPriceOverrides);
+
+    EXPECT_EQ(GetShopItemSellPrice(ITEM_SWEET_APPLE), 2200);
+    EXPECT_EQ(GetShopItemSellPrice(ITEM_TART_APPLE), GetItemSellPrice(ITEM_TART_APPLE));
+
+    SetShopSellPriceOverrides(NULL);
+}
 
 TEST("Berserk Gene profile id is stored in BoxPokemon data")
 {
@@ -49,6 +66,7 @@ TEST("Clearing a BoxPokemon Berserk Gene profile frees its slot")
 {
     struct Pokemon mon;
     u16 profileId;
+    u16 reusedProfileId;
 
     ResetPokemonStorageSystem();
     CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
@@ -59,7 +77,9 @@ TEST("Clearing a BoxPokemon Berserk Gene profile frees its slot")
     ClearBoxMonBerserkGeneProfile(&mon.box);
     EXPECT_EQ(GetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID), 0);
     EXPECT_EQ(GetBerserkGeneProfile(profileId), NULL);
-    EXPECT_EQ(AllocBerserkGeneProfile(), profileId);
+
+    reusedProfileId = AllocBerserkGeneProfile();
+    EXPECT_EQ(reusedProfileId, profileId);
 }
 
 TEST("Releasing a party mon frees its Berserk Gene profile slot")
@@ -85,7 +105,6 @@ TEST("Releasing a boxed mon frees its Berserk Gene profile slot")
     u16 profileId;
 
     ResetPokemonStorageSystem();
-    ZeroPlayerPartyMons();
     CreateMon(&gPlayerParty[0], SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
     SetBoxMonAt(0, 0, &gPlayerParty[0].box);
     boxMon = GetBoxedMonPtr(0, 0);
@@ -99,7 +118,7 @@ TEST("Releasing a boxed mon frees its Berserk Gene profile slot")
     EXPECT_EQ(GetBerserkGeneProfile(profileId), NULL);
 }
 
-// Moving copies the profile id to the new slot, so the shared purge must not free it.
+// Moving a mon copies its profile id to the new slot, so the shared purge must not free it.
 TEST("Moving a mon keeps its Berserk Gene profile slot allocated")
 {
     u16 profileId;
@@ -116,4 +135,27 @@ TEST("Moving a mon keeps its Berserk Gene profile slot allocated")
 
     EXPECT_NE(GetBerserkGeneProfile(profileId), NULL);
     EXPECT_EQ(GetBoxMonDataAt(0, 0, MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+}
+
+TEST("Berserk Gene profile overrides concrete mon base stats and active ability")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->baseStats[STAT_HP] = 123;
+    profile->baseStats[STAT_ATK] = 45;
+    profile->ability1 = ABILITY_INTIMIDATE;
+    profile->ability2 = ABILITY_NONE;
+    profile->abilityHidden = ABILITY_NONE;
+    profile->inheritanceFlags = 0;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    EXPECT_EQ(GetMonBaseStat(&mon, STAT_HP), 123);
+    EXPECT_EQ(GetMonBaseStat(&mon, STAT_ATK), 45);
+    EXPECT_EQ(GetMonAbility(&mon), ABILITY_INTIMIDATE);
 }

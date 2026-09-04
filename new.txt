@@ -1,0 +1,35 @@
+enum Ability GetMonAbility(struct Pokemon *mon)
+{
+    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+    u8 abilityNum = GetMonData(mon, MON_DATA_ABILITY_NUM);
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+
+    if (profile != NULL)
+    {
+        u8 activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+
+        switch (activeSlot)
+        {
+        case 0:
+            return profile->ability1;
+        case 1:
+            return profile->ability2;
+        case 2:
+            return profile->abilityHidden;
+        }
+    }
+
+    return GetAbilityBySpecies(species, abilityNum);
+}
+
+u32 GetMonBaseStat(struct Pokemon *mon, u32 statIndex)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+
+    if (profile != NULL && statIndex < NUM_STATS)
+        return profile->baseStats[statIndex];
+
+    return GetSpeciesBaseStat(GetMonData(mon, MON_DATA_SPECIES), statIndex);
+}

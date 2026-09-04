@@ -1042,6 +1042,20 @@ delegate to the existing `GetSpeciesX(species, ...)` function. Only call sites t
 have a concrete mon instance in hand, and (b) matter for actual gameplay/display correctness for
 that individual, get switched to call the new wrapper instead of the old species-only function.
 
+### Phase 4, first wrapper increment (implemented 2026-09-04)
+Implemented the first two centralized concrete-mon override surfaces in `src/pokemon.c`:
+- `GetMonBaseStat(struct Pokemon *mon, u32 statIndex)` returns the profile's `baseStats[statIndex]`
+  for a mon with a live Berserk Gene profile, otherwise delegates to unchanged
+  `GetSpeciesBaseStat(species, statIndex)`. `CalculateMonStats` now uses this wrapper for all six
+  stat calculations unless its existing equalized-BST override applies.
+- `GetMonAbility(struct Pokemon *mon)` now returns the profile-selected active ability slot for a
+  mon with a live profile; otherwise it preserves `GetAbilityBySpecies(species, abilityNum)`.
+  Existing gameplay consumers already route through `GetMonAbility`, avoiding broad migration.
+
+`test/berserk_gene.c` now verifies both overrides against manually-populated profile values.
+`make hns` builds clean; `make tidycheck && make check` reaches only the known pre-existing
+`braille_puzzles.c` `FLAG_RECEIVED_TOGEPI_EGG` failure.
+
 Concrete categorized checklist from the 39-match sweep:
 - **Must convert to new mon-aware wrappers** (real per-individual gameplay behavior):
   - `src/pokemon.c` stat calculation call sites using `GetSpeciesBaseHP/Attack/Defense/SpAttack/

@@ -1,0 +1,6 @@
+enum Ability GetMonAbility(struct Pokemon *mon)
+{
+    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+    u8 abilityNum = GetMonData(mon, MON_DATA_ABILITY_NUM);
+    return GetAbilityBySpecies(species, abilityNum);
+}

@@ -3766,7 +3766,7 @@ void CalculateMonStats(struct Pokemon *mon)
         if (i == STAT_HP)
             continue;
 
-        u32 baseStat = equalizedBst ? equalizedBst : GetSpeciesBaseStat(species, i);
+        u32 baseStat = equalizedBst ? equalizedBst : GetMonBaseStat(mon, i);
         s32 n = (((2 * baseStat + iv[i] + ev[i] / 4) * level) / 100) + 5;
         n = ModifyStatByNature(nature, n, i);
         if (B_FRIENDSHIP_BOOST == TRUE)
@@ -3785,7 +3785,7 @@ void CalculateMonStats(struct Pokemon *mon)
     }
     else
     {
-        s32 n = 2 * (equalizedBst ? equalizedBst : GetSpeciesBaseHP(species)) + iv[STAT_HP];
+        s32 n = 2 * (equalizedBst ? equalizedBst : GetMonBaseStat(mon, STAT_HP)) + iv[STAT_HP];
         newMaxHP = (((n + ev[STAT_HP] / 4) * level) / 100) + level + 10;
     }
 
@@ -5611,11 +5611,42 @@ enum Ability GetAbilityBySpecies(u16 species, u8 abilityNum)
     return gLastUsedAbility;
 }
 
+
+
 enum Ability GetMonAbility(struct Pokemon *mon)
 {
     u16 species = GetMonData(mon, MON_DATA_SPECIES);
     u8 abilityNum = GetMonData(mon, MON_DATA_ABILITY_NUM);
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+
+    if (profile != NULL)
+    {
+        u8 activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+
+        switch (activeSlot)
+        {
+        case 0:
+            return profile->ability1;
+        case 1:
+            return profile->ability2;
+        case 2:
+            return profile->abilityHidden;
+        }
+    }
+
     return GetAbilityBySpecies(species, abilityNum);
+}
+
+u32 GetMonBaseStat(struct Pokemon *mon, u32 statIndex)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+
+    if (profile != NULL && statIndex < NUM_STATS)
+        return profile->baseStats[statIndex];
+
+    return GetSpeciesBaseStat(GetMonData(mon, MON_DATA_SPECIES), statIndex);
 }
 
 void CreateSecretBaseEnemyParty(struct SecretBase *secretBaseRecord)
