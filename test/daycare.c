@@ -407,7 +407,7 @@ TEST("(Daycare) A Berserk Gene egg's profile picks a distinct egg group pair fro
     EXPECT_NE(profile->eggGroup1, profile->eggGroup2);
 }
 
-TEST("(Daycare) A Berserk Gene egg's profile gets No Eggs Discovered in both slots when neither parent has a real egg group")
+TEST("(Daycare) A Berserk Gene egg's profile swaps the Undiscovered egg group for Monster before pooling")
 {
     u16 profileId;
     struct BerserkGeneProfile *profile;
@@ -422,8 +422,95 @@ TEST("(Daycare) A Berserk Gene egg's profile gets No Eggs Discovered in both slo
     profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
     profile = GetBerserkGeneProfile(profileId);
     EXPECT(profile != NULL);
-    EXPECT_EQ(profile->eggGroup1, EGG_GROUP_NO_EGGS_DISCOVERED);
-    EXPECT_EQ(profile->eggGroup2, EGG_GROUP_NO_EGGS_DISCOVERED);
+    EXPECT_EQ(profile->eggGroup1, EGG_GROUP_MONSTER);
+    EXPECT_EQ(profile->eggGroup2, EGG_GROUP_MONSTER);
+}
+
+TEST("(Daycare) Two same-species Berserk Gene parents with no existing profile skip fusion-profile creation")
+{
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), 0);
+}
+
+TEST("(Daycare) A Berserk Gene egg never has Levitate as its active ability while Flying-typed")
+{
+    u8 i;
+
+    for (i = 0; i < 30; i++)
+    {
+        u16 profileId;
+        struct BerserkGeneProfile *profile;
+
+        ZeroPlayerPartyMons();
+        RUN_OVERWORLD_SCRIPT(
+            givemon SPECIES_BALTOY, 50, item=ITEM_BERSERK_GENE;
+            givemon SPECIES_PIDGEY, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+        );
+        STORE_IN_DAYCARE_AND_GET_EGG();
+
+        profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        profile = GetBerserkGeneProfile(profileId);
+        EXPECT(profile != NULL);
+
+        if (profile->type1 == TYPE_FLYING || profile->type2 == TYPE_FLYING)
+        {
+            u8 activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+            u16 activeAbility = (activeSlot == 0) ? profile->ability1 : (activeSlot == 1) ? profile->ability2 : profile->abilityHidden;
+            EXPECT_NE(activeAbility, ABILITY_LEVITATE);
+        }
+
+        FreeBerserkGeneProfile(profileId);
+    }
+}
+
+TEST("(Daycare) A Berserk Gene fusion profile never stores Wonder Guard in any ability slot")
+{
+    u8 i;
+
+    for (i = 0; i < 30; i++)
+    {
+        u16 profileId;
+        struct BerserkGeneProfile *profile;
+
+        ZeroPlayerPartyMons();
+        RUN_OVERWORLD_SCRIPT(
+            givemon SPECIES_SHEDINJA, 50, item=ITEM_BERSERK_GENE;
+            givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        );
+        STORE_IN_DAYCARE_AND_GET_EGG();
+
+        profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        profile = GetBerserkGeneProfile(profileId);
+        EXPECT(profile != NULL);
+        EXPECT_NE(profile->ability1, ABILITY_WONDER_GUARD);
+        EXPECT_NE(profile->ability2, ABILITY_WONDER_GUARD);
+        EXPECT_NE(profile->abilityHidden, ABILITY_WONDER_GUARD);
+
+        FreeBerserkGeneProfile(profileId);
+    }
+}
+
+TEST("(Daycare) Same-species Berserk Gene breeding picks a valid, non-empty ability slot")
+{
+    u8 abilityNum;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    abilityNum = GetMonData(&gPlayerParty[0], MON_DATA_ABILITY_NUM);
+    EXPECT(abilityNum < NUM_ABILITY_SLOTS);
+    EXPECT_NE(gSpeciesInfo[SPECIES_PIKACHU].abilities[abilityNum], ABILITY_NONE);
 }
 
 TEST("(Daycare) A Berserk Gene egg's profile blends base stats within both parents' range")
@@ -520,3 +607,42 @@ TEST("(Daycare) A Berserk Gene egg's IVs are never lower than the higher of its 
     EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_SPATK_IV) >= 25);
     EXPECT(GetMonData(&gPlayerParty[0], MON_DATA_SPDEF_IV) >= 15);
 }
+
+TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolution from each parent")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    bool32 sawRattataLine = FALSE, sawPidgeyLine = FALSE;
+    u8 i;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_RATTATA, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_PIDGEY, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT_EQ(profile->potentialEvolutionCount, 2);
+
+    for (i = 0; i < profile->potentialEvolutionCount; i++)
+    {
+        if (profile->potentialEvolutions[i].targetSpecies == SPECIES_RATICATE)
+        {
+            sawRattataLine = TRUE;
+            EXPECT_EQ(profile->potentialEvolutions[i].param, 20);
+            EXPECT_EQ(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT, 0);
+        }
+        else if (profile->potentialEvolutions[i].targetSpecies == SPECIES_PIDGEOTTO)
+        {
+            sawPidgeyLine = TRUE;
+            EXPECT_EQ(profile->potentialEvolutions[i].param, 18);
+            EXPECT_NE(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT, 0);
+        }
+    }
+    EXPECT(sawRattataLine);
+    EXPECT(sawPidgeyLine);
+}
+

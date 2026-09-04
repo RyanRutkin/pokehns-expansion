@@ -1,0 +1,8 @@
+Memory region         Used Size  Region Size  %age Used
+           EWRAM:      253876 B       256 KB     96.85%
+           IWRAM:       25708 B        32 KB     78.45%
+             ROM:    31676468 B        32 MB     94.40%
+cd build/hns && arm-none-eabi-ld -Map ../../pokehns.map --print-memory-usage --gc-sections -T ../../ld_script_modern.ld -o ../../pokehns.elf <objs> <libs> | cat
+tools/gbafix/gbafix pokehns.elf -t"POKEMON HNS" -cBPEE -m01 -r0 --silent
+arm-none-eabi-objcopy -O binary pokehns.elf pokehns.gba
+tools/gbafix/gbafix pokehns.gba -p --silent

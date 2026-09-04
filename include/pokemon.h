@@ -152,6 +152,12 @@ struct __attribute__((packed)) FusionPotentialEvolution
     u8 conditionSetId;
 };
 
+// FusionPotentialEvolution.methodAndSourceParent bit layout: EvolutionMethods has only 9 values,
+// so the method fits in the low 4 bits, leaving room for source-parent + pairing metadata.
+#define EVO_POTENTIAL_METHOD_MASK         0x0F
+#define EVO_POTENTIAL_SOURCE_PARENT_BIT   (1 << 4) // 0 = parentSpeciesA, 1 = parentSpeciesB
+#define EVO_POTENTIAL_PAIRED_WITH_SIBLING (1 << 5) // always select/apply together with the adjacent merged-phase entry
+
 // BerserkGeneProfile.inheritanceFlags bits: which parent (A=0/B=1) and which of that parent's
 // own type slots (primary=0/secondary=1) each resolved type was drawn from, plus whether the
 // original breeding had one gene holder (0, 62/38 weighting) or two (1, 50/50 weighting).
@@ -165,14 +171,24 @@ struct __attribute__((packed)) FusionPotentialEvolution
 #define BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT 6
 #define BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK  (3 << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT)
 
+// BerserkGeneProfile.evolutionFlags bits: which parent's name segment leads on an exact 50/50
+// name-priority tie (decided once, by coin flip, at breeding time).
+#define BERSERK_GENE_NAME_PRIORITY_PARENT (1 << 0) // 0 = parentSpeciesA leads, 1 = parentSpeciesB
+
 struct BerserkGeneProfile
 {
     bool8 inUse;
     u16 parentSpeciesA;
     u16 parentSpeciesB;
     struct FusionPotentialEvolution potentialEvolutions[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    // Nibble-packed per-entry age stamp (0-15, two entries per byte) used to find the oldest
+    // stored potential-evolution line(s) when purging down to the MAX_FUSION_POTENTIAL_EVOLUTIONS
+    // cap. Array position alone isn't reliable, since re-selection during re-breeding can leave
+    // older and newer lines interleaved.
+    u8 potentialEvolutionAge[MAX_FUSION_POTENTIAL_EVOLUTIONS / 2];
     u8 potentialEvolutionCount;
     u8 inheritanceFlags;
+    u8 evolutionFlags;
     u8 type1;
     u8 type2;
     u8 color;

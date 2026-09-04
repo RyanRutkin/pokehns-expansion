@@ -207,6 +207,45 @@ save-layout audit and a fresh build/size probe.
   specifically on "would this pairing produce a Berserk Gene child" so it never fires for normal
   (non-gene) breeding pairs.
 
+## Same-species Berserk Gene breeding (new, implemented 2026-09-04)
+If two daycare parents are the **same species**, hold Berserk Gene (one or both), and **neither
+already has an existing `BerserkGeneProfile`** (i.e. neither is itself already a fusion), no
+fusion profile is created at all — there's nothing meaningful to fuse a species with itself.
+Instead: all the breeding-eligibility bypass rules above still apply (so e.g. two same-species
+male gene-holders can still breed at all), but the child otherwise uses **standard breeding
+rules** for everything, with two exceptions: IVs still use `InheritIVsBerserkGene` (not vanilla
+`InheritIVs`), and ability inheritance uses equal weighting across all valid ability slots (see
+below) instead of vanilla `InheritAbility`. Implemented as an early return in
+`BuildBerserkGeneProfile` (checked right after the Ditto guard, before allocating a profile) so
+the egg simply ends up with `MON_DATA_BERSERK_GENE_PROFILE_ID == 0`, same as an ordinary hatch.
+
+## Hidden ability gets equal weight in all Berserk Gene breeding (new, resolved + implemented
+2026-09-04)
+Clarified: vanilla `InheritAbility`'s hidden-ability branch only ever fires when a parent
+*already has* the hidden ability as their own active ability — hidden ability is rare to obtain
+via standard breeding because you need a hidden-ability parent in the first place, not because
+the 60%/80% pass-down roll itself is stingy. For **any** Berserk Gene breeding — whether or not a
+fusion profile ends up being generated — the hidden ability is no longer gated behind a parent
+already having it: it's just one more equally-weighted candidate.
+- **Fusion-profile case** (`BuildBerserkGeneProfile`'s active-ability pick): changed from the
+  earlier rarity-weighted 70/20/10 split (a placeholder invented at implementation time, now
+  superseded) to an **equal-weight pick** among whichever of `{ability1, ability2, abilityHidden,
+  Levitate-if-eligible}` are actually valid (non-`ABILITY_NONE`) candidates.
+- **Same-species-skip case** (no profile): new `InheritAbilityBerserkGeneEqualWeight` replaces
+  vanilla `InheritAbility` entirely (regardless of `P_ABILITY_INHERITANCE`) — picks equally among
+  whichever of the shared species' own ability slots (`ability1`/`ability2`/hidden) are non-empty,
+  ignoring which slot either parent currently has active.
+
+## Undiscovered egg group is swapped for Monster in Berserk Gene fusions (new, implemented
+2026-09-04)
+When building a Berserk Gene profile's egg groups (step 10), `EGG_GROUP_NO_EGGS_DISCOVERED` is no
+longer excluded from the pool — it's **swapped for `EGG_GROUP_MONSTER`** before the pool is built,
+for either/both parents. This means a fusion involving an Undiscovered-group parent (e.g. a
+legendary) now always has real, breedable egg groups rather than defaulting to Undiscovered in
+both slots. (The old "both slots become `EGG_GROUP_NO_EGGS_DISCOVERED`" fallback path in the
+union algorithm is effectively dead code now, since the swap means the pool is never actually
+empty — left in place defensively rather than removed.)
+
 ## Identity (name/sprite/species) parent selection
 Extend `DetermineEggSpeciesAndParentSlots` (`src/daycare.c`): if a real female parent is present,
 child's species/name/sprite come from her as normal. If breeding was only possible via the new
@@ -315,10 +354,293 @@ accordingly — read it as blended, not rolled.
 
 ## Evolutionary line handling (new)
 
-A Berserk-Gene-bred child is conceptually a standing "fusion" between two specific species
+**Update (2026-09-03, supersedes the line-selection/storage details below):** the user has
+refined the evolution model further after the 14-step trait pipeline was implemented. This
+section is the current source of truth; the "Available evolutions = stored immediate next-stage
+options only" subsection further down still holds for the *slot-count/weighting/condition-ID/cap*
+mechanics, but its "does not guarantee either parent contributes" line and its "single next stage
+only" storage scope are both superseded by what follows.
+
+### Line selection at breeding (updated)
+- Both parents are now guaranteed at least one selected evolutionary line — not just "the
+  potential to contribute" as originally written. Additional line slots (up to the existing
+  `slotCount = ceil(lowCount + highCount * r)` cap, capped at `MAX_FUSION_POTENTIAL_EVOLUTIONS`)
+  are still filled using the existing 62%/50% gene-holder weighting, but treated as a priority
+  ordering over the combined candidate pool rather than a single independent sample per slot,
+  so the guaranteed one-per-parent minimum is satisfied before any extra weighted picks are added.
+- Selecting a line no longer means storing just that line's single immediate-next-stage target.
+  It means the **entire remaining line from the child's current stage** becomes available: both
+  the immediate next stage ("Phase 1") and, if that Phase 1 target itself has a further evolution
+  ("Phase 2"), that next stage too. In practice this still stays bounded, since almost no family
+  has more than two remaining stages past a freshly-bred basic-stage child, and the existing
+  rolling-pool recalculation on evolution (see below, unchanged) means a re-bred fusion parent
+  only ever contributes forward from its *current* stage, never re-expanding earlier stages.
+
+### Only one Phase 1 and one Phase 2 evolution may ever be taken
+A fusion can only ever evolve into one Phase 1 target and, later, one Phase 2 target overall —
+never both parents' Phase 1 targets (that's simply "picking a second, different Phase 1 evolution
+for the same mon," which is meaningless). Critically, though, the Phase 2 choice is **not**
+locked to continuing down whichever side supplied the Phase 1 evolution: after taking one parent's
+Phase 1, the *other* parent's Phase 2 options are still legal candidates for the next evolution
+(see the pseudo-fusion-profile mechanic below for why that's necessary rather than simply unfair).
+
+### Pre-merging simple, unconditional, same-phase level-up lines
+After the initial per-parent line selection (above), lines are checked for merging: if, at a
+given phase, **both** parents' lines resolve to a plain level-up evolution with no extra
+`CONDITIONS(...)` (no item, no trade, no location, no move, etc. — just a level requirement, or
+no further evolution at all on one side), the two are pre-merged into a **single fused line**
+rather than kept as two independent lines. This merge happens once, after line selection, before
+any player-facing evolution choice exists.
+- Per merged phase, the target is a fusion of whichever species each side contributes at that
+  phase. If only one side still has a species change at that phase (the other side's line already
+  capped out at an earlier stage), the capped-out side simply keeps contributing its last species
+  unchanged at that phase — this is not a special case, it's the same "evolving one side of a
+  fusion" mechanic the rest of this feature already uses.
+- The level requirement for a merged phase, when both sides have one, is `ceil(average(levelA,
+  levelB))`. When only one side has a level requirement at that phase (the other side already
+  capped out), that level is used directly.
+- Worked example: Larvitar (Pupitar @ 30, Tyranitar @ 55) bred with Rattata (Raticate @ 20, no
+  further evolution). Both lines are simple unconditional level-ups, so they merge into one fused
+  line: Phase 1 = Pupitar×Raticate fusion at `ceil((30+20)/2) = 25`; Phase 2 = Tyranitar×Raticate
+  fusion at level 55 (Raticate has nothing further, so it just carries forward unchanged at that
+  phase while Larvitar's side continues to Tyranitar).
+- Type inheritance follow-through for a merged phase: if neither side's type actually changes at
+  that evolution step (e.g. Rattata→Raticate and Larvitar→Pupitar are both type-preserving), the
+  profile's `type1`/`type2` are **not** recalculated — they're already correct by construction,
+  since this is exactly what the existing "sticky by provenance" type rule already produces (a
+  type slot only changes if the species at its stored provenance parent/slot actually changed
+  type). This is a clarifying restatement of that existing rule for the merged-line case, not a
+  new rule.
+- Lines that have any `CONDITIONS(...)` at a phase (item, trade, move, location, friendship,
+  etc.) are **never** merged into a fused line at that phase or any phase after it — conditional
+  branches always stay as distinct, player-choosable options (see the pseudo-fusion mechanic
+  immediately below for how the *other* parent's line still participates when the player picks
+  a conditional-branch option instead of that side's own path).
+
+### Conditional-branch evolutions and the pseudo-fusion-profile mechanic
+When a parent's line has a genuinely branching/conditional Phase 2 (multiple possible targets
+from the same Phase 1 species, distinguished by item/trade/etc.), those branches are exposed to
+the player as-is — never rolled into a fused line. But the *other* parent's Phase 2 options
+remain legal alternate choices at that same decision point (per "only one Phase 1 and one Phase 2
+evolution" above), which creates an asymmetry that needs correcting: choosing a branch from the
+side that has multiple options, while ignoring the *other* side's multiple options entirely,
+would otherwise leave that other side "stuck" one stage behind relative to what choosing one of
+its own branches would have produced.
+
+The fix is a **pseudo-fusion-profile**: when the player picks a Phase 2 target that belongs to
+only one side (i.e. they did not, and structurally could not, also pick one of the *other* side's
+own Phase 2 options), that other side's full set of un-taken Phase 2 branches is collapsed into a
+single synthetic ("pseudo") stand-in profile, and it is that pseudo-profile — not the untouched
+Phase 1 species — that gets fused with the player's chosen Phase 2 target:
+- The pseudo-profile keeps the *type1/type2 and abilities* of the currently-displayed phase of
+  the side it's built from (i.e. that side's Phase 1 species/identity is unchanged — evolving the
+  other side doesn't retroactively change this side's own type/ability identity).
+- Base stats are the average across **all** of that side's un-taken Phase 2 branches (not just
+  one of them) — e.g. averaging Poliwrath's and Politoed's base stats together, not picking one.
+- Moves are a pseudo-random sample drawn from the combined movepools of all of that side's
+  un-taken branches (same "sample from a pool" spirit as the normal learnset-merge step, just
+  sourced from multiple candidate species instead of one).
+- Any other blended/rolled field for this synthetic side is just a plain 50/50 average across
+  its own un-taken branches (not a gene-weighted roll — there's no "parent" left to weight
+  against once we're synthesizing a stand-in for multiple sibling branches of the same side).
+- This pseudo-profile is transient — it is not stored anywhere as its own `BerserkGeneProfile`;
+  it exists only long enough to be blended with the player's actual chosen Phase 2 target when
+  recalculating the fusion's post-evolution profile.
+- If the *other* side's Phase 2 pool has only one branch (no ambiguity — e.g. Dratini only ever
+  has one next evolution, Dragonite), no pseudo-profile is needed at all: that single branch is
+  used directly as a normal fusion target, exactly like the existing non-conditional case.
+
+**Worked example (Poliwag × Dratini):** Phase 1 merges into a single Poliwhirl×Dragonair line
+(both are plain unconditional level-ups at that stage). That merged Phase 1 then has three
+Phase 2 branch options available in total: Poliwrath (Water Stone, Poliwag-side), Politoed
+(trade holding King's Rock, Poliwag-side), and Dragonite (level 55, Dratini-side).
+- Choosing **Politoed**: Dratini-side's Phase 2 pool has only one option (Dragonite), so no
+  pseudo-profile is needed — the result is a direct Politoed×Dragonite fusion.
+- Choosing **Dragonite**: Poliwag-side's Phase 2 pool has two un-taken options (Poliwrath,
+  Politoed), so a pseudo-profile is built from both of them (type/ability from Poliwhirl, stats
+  averaged across Poliwrath+Politoed, moves sampled from both) and *that* is fused with Dragonite
+  — not a direct Dragonite×Poliwhirl fusion, which would otherwise leave the Poliwag side a full
+  stage behind.
+
+### Open questions — implementation is blocked on these being resolved
+Raised 2026-09-03; resolved 2026-09-03 (answers below), still holding off on code per explicit
+user instruction until any remaining follow-ups are also answered.
+1. **Data model for merged phases — resolved.** A single `FusionPotentialEvolution` entry has
+   one `targetSpecies` field and can only describe one side changing; a genuine "Both" third
+   `sourceParent` state can't fix this, since the bit-width isn't the constraint — one entry
+   cannot carry two different target species no matter how source-parent is encoded. Resolution:
+   a merged phase is represented as **two ordinary entries** (one sourceParent=A, one
+   sourceParent=B), stored adjacent in the array, both carrying the same pre-averaged `param`
+   (level), tagged with one new spare bit `pairedWithSibling:1` on `methodAndSourceParent` (room
+   exists: `EvolutionMethods` has only 9 values, needing 4 bits, leaving 3 bits spare in that
+   byte — no struct growth) meaning "always select/apply this together with its sibling entry,
+   never as independent alternatives." **Scoping note:** only phases where *both* sides have a
+   simultaneous same-phase unconditional level-up need this pairing (e.g. Larvitar×Rattata Phase
+   1). A phase where only one side still has a species change (e.g. that example's Phase 2,
+   Tyranitar with Raticate capped out) is just the ordinary already-supported single-sided
+   "evolve one side, other side unchanged" entry — no pairing needed there.
+2. **Pseudo-fusion scope — resolved.** Only the un-taken sibling branches feed the pseudo-profile
+   average/move-sample; the end result is that pseudo-profile fused with the player's selected
+   branch evolution.
+3. **Deeper branching — resolved.** All siblings at that phase (whichever phase, 1 or 2, is being
+   resolved) get equal weight in the pseudo-profile average — no gene-holder weighting applied to
+   the pseudo-profile construction itself.
+
+### Follow-up round 1 — resolved 2026-09-04
+1. **Paired-entry solution confirmed.** Also confirmed: the asymmetric-phase-count scoping is
+   exactly as stated (e.g. Rattata capped after Phase 1 while Dratini continues to Dragonite at
+   Phase 2 — that Phase 2 is a plain single-sided entry, not a forced/invented pairing).
+2. **Fused display/species name — new mechanic, replaces the earlier "Fusion Pokédex uses a
+   description sentence" naming approach with an actual constructed name used everywhere**
+   (evolution menu text, the default nickname/species-name shown for the egg and hatched mon,
+   Pokédex display, etc.) — not just Pokédex flavor text:
+   - **Two-source name fusion** (the normal case: two species being merged at a phase): take the
+     first half of source A's name (`ceil(len/2)` characters) and append the last half of source
+     B's name (`ceil(len/2)` characters, i.e. the last `ceil(len/2)` characters of B's name).
+   - **Multi-sibling name fusion** (pseudo-fusion side with N un-taken siblings, N > 1): let
+     `avgLen = ` the (rounded) average length of all sibling names; chunk the target output name
+     into `N` pieces sized to sum to `avgLen`; chunk each sibling's own name into `N` pieces the
+     same way; take the *i*-th chunk from the *i*-th sibling's own name for the *i*-th output
+     chunk, concatenating all chunks together.
+   - **Ordering/priority:** the chosen evolution path's name segment always leads (is the
+     prefix) when there *is* a chosen path (i.e. the branching-evolution case, not the always-
+     paired-together merge case). When there is no "chosen path" to prioritize (the
+     always-applied-together paired-merge case, and the base unevolved fusion at birth), ordering
+     falls back to the existing 62%/50% gene-holder priority — the higher-weighted parent's name
+     leads. On an exact 50/50 tie, which parent leads is decided by one coin flip **at breeding
+     time** and persisted on the profile (needs a new small stored field, since `geneHolderWeight`
+     only records 1-vs-2 holders, not *which* parent is prioritized in the 50/50 case).
+3. **Multiple potential-evolution lines per single parent are normal, not capped at one per
+   side** — the existing `slotCount = ceil(lowCount + highCount * r)` weighted-sampling mechanism
+   already supports this and is unchanged; the *only* new rule on top of it is the "at least one
+   line guaranteed from each parent" floor. Confirmed via worked example: Eevee alone can
+   contribute 3 separate eeveelution lines (Sylveon/Umbreon/Jolteon) to one child simultaneously.
+4. **Multi-generation re-breeding, confirmed mechanism:** when a parent going into a new breeding
+   already has its own `BerserkGeneProfile` (i.e. it's itself a fusion), that parent's
+   "candidate pool" for the new child is its own currently-stored `potentialEvolutions[]` list
+   (not full ancestry, consistent with the existing rule) — and the new child does a **fresh
+   weighted re-selection** from that pool sized by the same `slotCount` formula (candidate count
+   for that side = however many entries that fusion parent currently has stored), not an
+   unconditional carry-forward of all of them. Worked 3-generation example confirmed: gen 1
+   Rattata×Applin(50/50) stores {Raticate, Appletun, Dipplin}; gen 2 re-breeds that gen-1 fusion
+   ×Eevee(62/38), selecting 3 of Eevee's 8 lines (Sylveon/Umbreon/Jolteon) and re-selecting 2 of
+   the gen-1 fusion's own 3 stored lines (Raticate, Dipplin — Appletun dropped), for 5 total; gen
+   3 re-breeds that ×Dratini(50/50), guaranteeing ≥1 from Dratini (its only line, Dragonair) and
+   ≥1 from the gen-2 fusion's pool, landing on 3 total (Dragonair, Sylveon, Dipplin) in the
+   example, well under the 8 cap.
+5. **Purge priority when combined candidates would exceed `MAX_FUSION_POTENTIAL_EVOLUTIONS = 8`:**
+   purge **oldest lines first**; tie-break by **fewest remaining evolutionary phases** (a
+   1-phase-only line before a 2-phase line); tie-break ties by **random** selection among the
+   remaining candidates.
+6. **Storage/save-impact implication (new, needs resolving):** the naming and purge-priority
+   mechanics above both require information not currently in the packed 6-byte
+   `FusionPotentialEvolution` entry or the profile: (a) a per-entry "how old is this line"
+   signal for purge ordering, and (b) a single persisted "which parent is name-priority on a
+   50/50 tie" bit on the profile. Given the profile is already at a razor-thin size budget (92
+   bytes, only 4 bytes of `PokemonStorage` headroom left per the Phase 1 measurements), these
+   need a byte-conscious design rather than naive new fields — see follow-up questions below.
+
+### Follow-up round 2 — new, raised 2026-09-04, still blocking implementation
+1. **Age tracking without growing the struct:** can "oldest line" simply mean **array position**
+   (lines are always kept in insertion order — oldest at the lowest index, newly-selected lines
+   always appended after existing carried-forward ones during a re-breeding's re-selection step),
+   avoiding any new per-entry field? Or is an explicit small per-entry age/generation stamp
+   needed (e.g. packed into the `pairedWithSibling` byte's remaining spare bits) because
+   array position alone can't be trusted (e.g. if the re-selection step ever needs to reorder,
+   or if paired entries must stay adjacent and that conflicts with strict age ordering)?
+2. **Name-priority tie-break storage:** confirm adding one new profile-level bit (e.g.
+   `namePriorityParent:1`, packed into the existing `inheritanceFlags` byte — bits 0-7 of that
+   byte are currently: bit 0 gene-holder-weight, bits 1-4 type1/2 source parent/slot, bit 5
+   sprite-source-parent, bits 6-7 active-ability-slot, i.e. **fully used already** — so this new
+   bit needs a different home, such as stealing a bit from an existing byte-aligned-but-not-
+   fully-packed field, or accepting the profile grows by a byte if nothing else fits) is the
+   right approach, versus deriving name-priority some other way that needs no new storage at all
+   (e.g. always deterministically re-deriving it from `geneHolderWeight` plus some other already-
+   stored value at the moment a name needs to be generated, rather than persisting a dedicated
+   bit)?
+### Follow-up round 2 — resolved 2026-09-04
+1. **Age tracking — resolved: explicit per-entry age stamp needed** (array position isn't
+   trustworthy; user confirmed).
+2. **Name-priority tie-break storage — resolved: dedicated new field, profile grows.**
+3. **Output name length limit — resolved: scale both halves down proportionally** so the
+   combined name never needs truncating, rather than hard-truncating to `POKEMON_NAME_LENGTH`.
+
+### Final field layout and measured save-size impact (decided + measured 2026-09-04)
+Chose the recommended **Option C** for age storage: a nibble-packed per-entry age stamp (0-15
+range, two entries per shared byte) rather than a full byte per entry (Option B) or reusing
+leftover bits with only a 0-3 range (Option A) — same byte cost as Option A, more wraparound
+headroom.
+
+Implemented in `include/pokemon.h`:
+- `FusionPotentialEvolution.methodAndSourceParent` bit layout finalized: method in bits 0-3
+  (`EVO_POTENTIAL_METHOD_MASK`), source parent in bit 4 (`EVO_POTENTIAL_SOURCE_PARENT_BIT`, 0=A/
+  1=B), and the new pairing flag in bit 5 (`EVO_POTENTIAL_PAIRED_WITH_SIBLING`) — struct stays 6
+  bytes, no growth.
+- `BerserkGeneProfile` gains `u8 potentialEvolutionAge[MAX_FUSION_POTENTIAL_EVOLUTIONS / 2]` (4
+  bytes, nibble per entry) and `u8 evolutionFlags` (1 byte, bit 0 =
+  `BERSERK_GENE_NAME_PRIORITY_PARENT`, 7 bits reserved for future use).
+
+**Measured impact** (via `sizeof` probes, `arm-none-eabi-nm -S` — the earlier awk-based
+multi-symbol probe script was found to be unreliable for this measurement and was replaced by an
+`nm`-based check): `BerserkGeneProfile` grew from 92 → **96 bytes**. At the previous
+`MAX_BERSERK_GENE_PROFILES = 16` (17 stored profiles including the reserved slot), `PokemonStorage`
+would have grown to 35776 bytes, exceeding the 35712-byte sector budget by 64 bytes.
+**`MAX_BERSERK_GENE_PROFILES` reduced to 15** (16 stored profiles) brings `PokemonStorage` to a
+measured **35680 bytes** — comfortably under budget with **32 bytes of headroom** (more headroom
+than the original 4-byte margin at the old 92-byte/16-cap configuration). `test/save.c`'s pinned
+`T_POKEMONSTORAGE_SIZE` updated to 35680 accordingly. `FusionPotentialEvolution` remains 6 bytes;
+`SaveBlock1` unaffected (still 15752). Full `make hns` and `make check` builds both validated
+clean (the latter blocked only by the pre-existing unrelated `braille_puzzles.c` issue).
+
+### Line selection, first increment (implemented 2026-09-04)
+Implemented the birth-time candidate-collection and selection piece of evolutionary line
+handling, deliberately scoped down from the full spec — see "Deferred" below.
+
+- `CollectEvolutionCandidates(daycare, mon, sourceParentB, outCandidates, maxCandidates)`: for a
+  non-fusion parent, reads that species' own `GetSpeciesEvolutions()` table and takes only
+  **unconditional** entries (`Evolution.params == NULL`); for a fusion parent (has an existing
+  `BerserkGeneProfile`), takes that parent's own currently-stored `potentialEvolutions[]` instead
+  of its native ancestry (the existing "prevents unbounded growth across re-breeding" rule),
+  re-tagging each entry's source-parent bit to reflect the *current* breeding's side.
+- `BuildBerserkGeneProfile` now: computes `countA`/`countB` via the above, computes
+  `slotCount = lowCount + ceil(highCount * r)` (unchanged formula) clamped to the combined pool
+  size and `MAX_FUSION_POTENTIAL_EVOLUTIONS`, guarantees one candidate from each side that has
+  any (new floor rule), then fills remaining slots via the existing `BerserkGeneShouldInheritFromParent`
+  gene-weighted roll without replacement. Every entry gets the profile's zero-initialized default
+  age stamp, correct for a freshly-allocated profile.
+
+**Deferred to later increments (not yet implemented):**
+- **Conditional evolutions are entirely excluded from the candidate pool** — an evolution with
+  any `CONDITIONS(...)` (item, trade, friendship, location, move, etc.) is skipped outright rather
+  than incorrectly stored as if it were free. This means branching lines like Poliwag/Dratini are
+  not yet representable at all; they simply won't appear as potential evolutions until the
+  condition-set-ID registry (build-time generated stable table, spec'd earlier in this doc) is
+  built and wired through `CollectEvolutionCandidates`.
+- **Merging simultaneous unconditional same-phase lines** (the paired-entry mechanic, e.g.
+  Larvitar×Rattata Phase 1) is not implemented — right now Rattata's and Larvitar's Phase 1
+  entries would simply both be stored as independent single-sided entries, not merged into one
+  fused choice.
+- **The pseudo-fusion-profile mechanic** for un-taken sibling branches is not implemented (depends
+  on conditional-evolution support existing first).
+- **Fused-name generation** (the portmanteau naming algorithm) is not implemented.
+- **Age-based purge-priority** is not implemented — there's no code path yet where combined
+  candidates could exceed `MAX_FUSION_POTENTIAL_EVOLUTIONS`, since only single-phase unconditional
+  entries are collected right now (real multi-line, multi-generation stacking that could approach
+  the cap requires conditional-evolution support to produce enough candidates in the first place).
+- **The actual evolution-trigger hook point** — nothing yet reads `potentialEvolutions[]` to let a
+  fusion mon actually evolve into one of its stored options; `GetMonEvolutions`/evolution-checking
+  code has not been touched.
+
+
 (`parentSpeciesA`/`parentSpeciesB` on the profile), not a fixed final form. It carries the
 potential to evolve along *either* parent's evolutionary line, and each evolution re-derives most
 (not all) of its traits from the updated species pair.
+
+A Berserk-Gene-bred child is conceptually a standing "fusion" between two specific species
+(as above). The subsections immediately above this point (line selection, merging, and the
+pseudo-fusion-profile mechanic) are the current spec; what follows next covers storage
+representation, the condition-set-ID registry, and per-evolution rerun/preservation rules, which
+still apply on top of the updated line-selection/merging rules above.
 
 ### Available evolutions = stored immediate next-stage options only
 The old full-line/full-union wording is intentionally superseded: a fusion must **not** accumulate
@@ -466,6 +788,31 @@ scratch between the two new-current species, using `BerserkGeneShouldInheritFrom
 *original* `geneHolderWeight` stored on the profile (62% for one gene holder, 50% for two) — not
 a fresh determination of "who holds a gene," since the original breeding parents are no longer
 necessarily available/relevant at evolution time.
+
+**Flying/Levitate exclusion carries forward to every reroll (new, 2026-09-04):** a Berserk Gene
+mon must never have Levitate as its *active* ability while typed Flying. At breeding time
+(`BuildBerserkGeneProfile`), this is enforced two ways: the special Flying-parent Levitate
+candidate is never injected when the child's already-resolved type is Flying, and — the gap
+found later — any *normally-rolled* ability slot that merely happens to already be Levitate (a
+non-Flying parent that naturally has it, e.g. Baltoy) is also excluded from the active-ability
+pick when the child is Flying-typed (falls back to `ability1` in the astronomically unlikely case
+every candidate gets excluded). The stored `ability1`/`ability2`/`abilityHidden` values themselves
+are **not** scrubbed — only the *active* pick is constrained — so a later non-Flying descendant
+can still potentially get Levitate active. The user has confirmed no current evolution line
+introduces the Flying type partway through (so the type side of this is a birth-time-only
+concern), but a species **can** gain Levitate partway through an evolution line — so **the
+evolution-time ability fresh-reroll above must apply this exact same exclusion check** (using the
+mon's type *at that point in the evolution*, not just at birth) once that rerun logic is
+implemented; do not port the fresh-reroll logic without also porting this guard.
+
+**Wonder Guard is excluded from fusion profiles entirely (new, 2026-09-04):** unlike Levitate
+(which is only excluded from the *active* pick, and only while Flying-typed), Wonder Guard is
+never allowed into `ability1`/`ability2`/`abilityHidden` **at all** for a fusion profile — this
+only applies when the same-species-skip case (above) does *not* apply, i.e. only for genuine
+two-different-species fusions. Each of the three per-slot rolls falls back to the *other*
+parent's value for that slot if the initially-rolled value is Wonder Guard, and to Sap Sipper in
+the (currently unreachable in practice, since Wonder Guard is Shedinja-exclusive and same-species
+pairs already skip profile generation) case where both sides would be Wonder Guard.
 
 ### Sprite/identity: fresh reroll, same stored weight, but must always change
 Also a fresh weighted reroll (same `geneHolderWeight` as above) between the two new-current
