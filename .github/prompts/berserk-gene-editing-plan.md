@@ -646,6 +646,33 @@ Rattata×Applin) need the later pseudo-fusion/branch model before pairing can be
 they remain independent stored entries for now. The flags are storage metadata only until the
 future evolution-trigger hook teaches the runtime to consume both adjacent entries atomically.
 
+### Potential-line age propagation, third increment (implemented 2026-09-04)
+The nibble-packed per-entry age field is now active in candidate collection. A native evolution
+line first introduced by a non-fusion parent is stamped age 0. A line inherited from a parent
+that already has a profile carries its stored age forward and increments it, saturating at 15.
+`GetPotentialEvolutionAge`/`SetPotentialEvolutionAge` centralize the two-entries-per-byte packing;
+the selected candidate's age is copied into the newly allocated child's profile alongside its
+evolution entry. This makes the required "oldest first" information survive multi-generation
+re-breeding rather than relying on array order.
+
+**Still deferred:** cap pruning itself. Age is sufficient for the first priority key, but the
+user's required second key is "fewest remaining evolutionary phases." The current 6-byte entry
+stores only its immediate target, so a correct implementation must first define how to compute
+the remaining reachable phase depth for conditional and paired/multi-sibling lines without
+accidentally expanding a fusion parent's full ancestry. Do not replace the current weighted
+selection with an age-only pruning heuristic; that would silently violate the specified second
+tie-break rule.
+
+### Oldest-line cap pruning, fourth increment (implemented 2026-09-04)
+The user removed the "fewest remaining evolutionary phases" secondary tie-break. When candidate
+collection exceeds `MAX_FUSION_POTENTIAL_EVOLUTIONS`, candidate construction now repeatedly:
+finds the greatest age among candidates whose source side has more than one remaining line,
+randomly picks one entry from that oldest-age set, and removes it. This preserves the required
+at-least-one-line floor for each parent side while making age the only priority criterion; ties
+between equally-old paths are deliberately random as specified. Pruning happens before the
+normal 62%/50% weighted selection fills the child's requested slots, so an old route cannot
+survive merely due to source-array ordering.
+
 
 (`parentSpeciesA`/`parentSpeciesB` on the profile), not a fixed final form. It carries the
 potential to evolve along *either* parent's evolutionary line, and each evolution re-derives most

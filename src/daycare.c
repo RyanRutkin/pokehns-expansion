@@ -73,11 +73,25 @@ static s32 BerserkGeneBlendNumeric(s32 pGeneValue, s32 pOtherValue, u8 numGeneHo
     return (pGeneValue * 62 + pOtherValue * 38 + 50) / 100;
 }
 
+static u8 GetPotentialEvolutionAge(const struct BerserkGeneProfile *profile, u8 index)
+{
+    u8 ages = profile->potentialEvolutionAge[index / 2];
+
+    return (index & 1) ? ages >> 4 : ages & 0xF;
+}
+
+static void SetPotentialEvolutionAge(struct BerserkGeneProfile *profile, u8 index, u8 age)
+{
+    u8 *ages = &profile->potentialEvolutionAge[index / 2];
+
+    *ages = (index & 1) ? (*ages & 0x0F) | ((age & 0xF) << 4) : (*ages & 0xF0) | (age & 0xF);
+}
+
 // Collect a species' (or a fusion parent's own currently-stored) immediate next-stage evolution
 // candidates. A fusion parent contributes only its own stored potentialEvolutions[], never its
 // full native ancestry, to keep repeated re-breeding bounded.
 static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sourceParentB,
-                                      struct FusionPotentialEvolution *outCandidates, u8 maxCandidates)
+                                      struct FusionPotentialEvolution *outCandidates, u8 *outAges, u8 maxCandidates)
 {
     u16 profileId = GetBoxMonData(&daycare->mons[mon].mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
     u8 count = 0;
@@ -93,6 +107,7 @@ static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sour
             outCandidates[count].methodAndSourceParent =
                 (outCandidates[count].methodAndSourceParent & ~(EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PAIRED_WITH_SIBLING))
                 | (sourceParentB ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0);
+            outAges[count] = min(GetPotentialEvolutionAge(parentProfile, i) + 1, 15);
             count++;
         }
     }
@@ -113,6 +128,7 @@ static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sour
             outCandidates[count].methodAndSourceParent = (evolutions[i].method & EVO_POTENTIAL_METHOD_MASK)
                 | (sourceParentB ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0);
             outCandidates[count].conditionSetId = conditionSetId;
+            outAges[count] = 0;
             count++;
         }
     }
@@ -463,10 +479,12 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     {
         struct FusionPotentialEvolution candidatesA[MAX_FUSION_POTENTIAL_EVOLUTIONS];
         struct FusionPotentialEvolution candidatesB[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+        u8 candidateAgesA[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+        u8 candidateAgesB[MAX_FUSION_POTENTIAL_EVOLUTIONS];
         bool8 takenA[MAX_FUSION_POTENTIAL_EVOLUTIONS] = {FALSE};
         bool8 takenB[MAX_FUSION_POTENTIAL_EVOLUTIONS] = {FALSE};
-        u8 countA = CollectEvolutionCandidates(daycare, 0, FALSE, candidatesA, MAX_FUSION_POTENTIAL_EVOLUTIONS);
-        u8 countB = CollectEvolutionCandidates(daycare, 1, TRUE, candidatesB, MAX_FUSION_POTENTIAL_EVOLUTIONS);
+        u8 countA = CollectEvolutionCandidates(daycare, 0, FALSE, candidatesA, candidateAgesA, MAX_FUSION_POTENTIAL_EVOLUTIONS);
+        u8 countB = CollectEvolutionCandidates(daycare, 1, TRUE, candidatesB, candidateAgesB, MAX_FUSION_POTENTIAL_EVOLUTIONS);
         u8 lowCount = (countA < countB) ? countA : countB;
         u8 highCount = (countA > countB) ? countA : countB;
         u32 rFixed = Random() % 1001; // fixed-point r in [0, 1], scaled by 1000
@@ -480,10 +498,90 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
         if (slotCount > MAX_FUSION_POTENTIAL_EVOLUTIONS)
             slotCount = MAX_FUSION_POTENTIAL_EVOLUTIONS;
 
+        // At the profile cap, preserve the one-per-parent floor and evict the oldest remaining
+        // candidate first; equally-old candidates are removed uniformly at random.
+        while (combinedCount > MAX_FUSION_POTENTIAL_EVOLUTIONS)
+        {
+            u8 oldestAge = 0;
+            u8 oldestCount = 0;
+            u8 targetParent = 0;
+            u8 targetIndex = 0;
+            u8 pick;
+            u8 candidateIndex;
+
+            for (candidateIndex = 0; candidateIndex < countA; candidateIndex++)
+            {
+                if (countA > 1 && candidateAgesA[candidateIndex] > oldestAge)
+                    oldestAge = candidateAgesA[candidateIndex];
+            }
+            for (candidateIndex = 0; candidateIndex < countB; candidateIndex++)
+            {
+                if (countB > 1 && candidateAgesB[candidateIndex] > oldestAge)
+                    oldestAge = candidateAgesB[candidateIndex];
+            }
+            for (candidateIndex = 0; candidateIndex < countA; candidateIndex++)
+            {
+                if (countA > 1 && candidateAgesA[candidateIndex] == oldestAge)
+                    oldestCount++;
+            }
+            for (candidateIndex = 0; candidateIndex < countB; candidateIndex++)
+            {
+                if (countB > 1 && candidateAgesB[candidateIndex] == oldestAge)
+                    oldestCount++;
+            }
+
+            pick = Random() % oldestCount;
+            for (candidateIndex = 0; candidateIndex < countA; candidateIndex++)
+            {
+                if (countA > 1 && candidateAgesA[candidateIndex] == oldestAge && pick-- == 0)
+                {
+                    targetParent = 0;
+                    targetIndex = candidateIndex;
+                    break;
+                }
+            }
+            if (candidateIndex == countA)
+            {
+                for (candidateIndex = 0; candidateIndex < countB; candidateIndex++)
+                {
+                    if (countB > 1 && candidateAgesB[candidateIndex] == oldestAge && pick-- == 0)
+                    {
+                        targetParent = 1;
+                        targetIndex = candidateIndex;
+                        break;
+                    }
+                }
+            }
+
+            if (targetParent == 0)
+            {
+                for (candidateIndex = targetIndex; candidateIndex + 1 < countA; candidateIndex++)
+                {
+                    candidatesA[candidateIndex] = candidatesA[candidateIndex + 1];
+                    candidateAgesA[candidateIndex] = candidateAgesA[candidateIndex + 1];
+                }
+                countA--;
+            }
+            else
+            {
+                for (candidateIndex = targetIndex; candidateIndex + 1 < countB; candidateIndex++)
+                {
+                    candidatesB[candidateIndex] = candidatesB[candidateIndex + 1];
+                    candidateAgesB[candidateIndex] = candidateAgesB[candidateIndex + 1];
+                }
+                countB--;
+            }
+            combinedCount--;
+        }
+
+        remainingA = countA;
+        remainingB = countB;
+
         if (countA > 0 && stored < slotCount)
         {
             u8 pick = Random() % countA;
             profile->potentialEvolutions[stored++] = candidatesA[pick];
+            SetPotentialEvolutionAge(profile, stored - 1, candidateAgesA[pick]);
             takenA[pick] = TRUE;
             remainingA--;
         }
@@ -491,6 +589,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
         {
             u8 pick = Random() % countB;
             profile->potentialEvolutions[stored++] = candidatesB[pick];
+            SetPotentialEvolutionAge(profile, stored - 1, candidateAgesB[pick]);
             takenB[pick] = TRUE;
             remainingB--;
         }
@@ -520,6 +619,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
                     }
                 }
                 profile->potentialEvolutions[stored] = candidatesA[idx];
+                SetPotentialEvolutionAge(profile, stored, candidateAgesA[idx]);
                 takenA[idx] = TRUE;
                 remainingA--;
             }
@@ -536,6 +636,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
                     }
                 }
                 profile->potentialEvolutions[stored] = candidatesB[idx];
+                SetPotentialEvolutionAge(profile, stored, candidateAgesB[idx]);
                 takenB[idx] = TRUE;
                 remainingB--;
             }
