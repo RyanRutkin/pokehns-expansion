@@ -6184,6 +6184,9 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
 {
     struct BerserkGeneProfile *profile;
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    u8 oldDisplayName[POKEMON_NAME_BUFFER_SIZE];
+    u8 nickname[POKEMON_NAME_BUFFER_SIZE];
+    u8 language;
     u8 i;
 
     if (profileId == 0)
@@ -6192,6 +6195,10 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
     profile = GetBerserkGeneProfile(profileId);
     if (profile == NULL)
         return;
+
+    StringCopy(oldDisplayName, GetMonDisplaySpeciesName(mon));
+    GetMonData(mon, MON_DATA_NICKNAME, nickname);
+    language = GetMonData(mon, MON_DATA_LANGUAGE);
 
     for (i = 0; i < profile->potentialEvolutionCount; i++)
     {
@@ -6211,12 +6218,36 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
         else
             profile->parentSpeciesA = targetSpecies;
 
+        if (potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
+        {
+            u8 siblingIndex = i ^ 1;
+
+            if (siblingIndex < profile->potentialEvolutionCount)
+            {
+                const struct FusionPotentialEvolution *sibling = &profile->potentialEvolutions[siblingIndex];
+                bool8 siblingSourceParentB = sibling->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT;
+
+                if ((sibling->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
+                 && siblingSourceParentB != sourceParentB
+                 && (sibling->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == (potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK)
+                 && sibling->param == potentialEvolution->param)
+                {
+                    if (siblingSourceParentB)
+                        profile->parentSpeciesB = sibling->targetSpecies;
+                    else
+                        profile->parentSpeciesA = sibling->targetSpecies;
+                }
+            }
+        }
+
         type1Parent = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE1_SOURCE_PARENT) != 0;
         type1Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE1_SOURCE_SLOT) != 0;
         type2Parent = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT) != 0;
         type2Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT) != 0;
         profile->type1 = GetSpeciesType(type1Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type1Slot);
         profile->type2 = GetSpeciesType(type2Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type2Slot);
+        if (language == GAME_LANGUAGE && !StringCompare(oldDisplayName, nickname))
+            SetMonData(mon, MON_DATA_NICKNAME, GetMonDisplaySpeciesName(mon));
         return;
     }
 }

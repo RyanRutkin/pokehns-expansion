@@ -354,11 +354,46 @@ TEST("Fusion evolution updates its source parent and sticky type provenance")
     profile->potentialEvolutions[0].methodAndSourceParent = EVO_ITEM | EVO_POTENTIAL_SOURCE_PARENT_BIT;
     profile->potentialEvolutionCount = 1;
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    SetMonData(&mon, MON_DATA_NICKNAME, COMPOUND_STRING("Eevlin"));
 
     UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_APPLETUN);
 
     EXPECT_EQ(profile->parentSpeciesA, SPECIES_EEVEE);
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_APPLETUN);
     EXPECT_EQ(profile->type1, GetSpeciesType(SPECIES_EEVEE, 0));
+    EXPECT_EQ(profile->type2, GetSpeciesType(SPECIES_APPLETUN, 0));
+    EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Eevetun")) == 0);
+
+    GetMonData(&mon, MON_DATA_NICKNAME, gStringVar1);
+    EXPECT(StringCompare(gStringVar1, COMPOUND_STRING("Eevetun")) == 0);
+}
+
+TEST("Paired fusion potential evolution updates both parent species")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT;
+    profile->potentialEvolutions[0].targetSpecies = SPECIES_JOLTEON;
+    profile->potentialEvolutions[0].param = 20;
+    profile->potentialEvolutions[0].methodAndSourceParent = EVO_LEVEL | EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+    profile->potentialEvolutions[1].targetSpecies = SPECIES_APPLETUN;
+    profile->potentialEvolutions[1].param = 20;
+    profile->potentialEvolutions[1].methodAndSourceParent = EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+    profile->potentialEvolutionCount = 2;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_JOLTEON);
+
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_JOLTEON);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_APPLETUN);
+    EXPECT_EQ(profile->type1, GetSpeciesType(SPECIES_JOLTEON, 0));
     EXPECT_EQ(profile->type2, GetSpeciesType(SPECIES_APPLETUN, 0));
 }
