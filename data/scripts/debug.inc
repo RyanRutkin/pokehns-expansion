@@ -602,6 +602,13 @@ Debug_EventScript_SetFriendship::
 	releaseall
 	end
 
+Debug_EventScript_CreateBerserkGeneProfile::
+	special ChoosePartyMon
+	waitstate
+	callnative DebugNative_Party_CreateBerserkGeneProfile
+	releaseall
+	end
+
 Debug_EventScript_GivePokerus::
 	special ChoosePartyMon
 	waitstate

@@ -186,8 +186,8 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
     {
-        types[i][0] = gSpeciesInfo[species[i]].types[0];
-        types[i][1] = gSpeciesInfo[species[i]].types[1];
+        types[i][0] = GetBoxMonType(&daycare->mons[i].mon, 0);
+        types[i][1] = GetBoxMonType(&daycare->mons[i].mon, 1);
         numTypes[i] = (types[i][0] == types[i][1]) ? 1 : 2;
     }
 

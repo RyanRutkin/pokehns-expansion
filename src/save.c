@@ -9,6 +9,7 @@
 #include "overworld.h"
 #include "hall_of_fame.h"
 #include "pokemon_storage_system.h"
+#include "shop.h"
 #include "trainer_hill.h"
 #include "link.h"
 #include "constants/game_stat.h"
@@ -969,6 +970,20 @@ u8 LoadGameSave(u8 saveType)
         }
 #endif //FREE_MATCH_CALL
         gSaveBlock1Ptr->saveVersion = 4;
+    }
+
+    if (gSaveBlock1Ptr->saveVersion < 5)
+    {
+        gSaveBlock1Ptr->saveVersion = 5;
+    }
+
+    if (gSaveBlock1Ptr->saveVersion < 6)
+    {
+        // Berserk Gene profiles were inserted before the legacy temporary fusion slots.
+        // Preserve those slots from older saves, then initialize every new profile as inactive.
+        memmove(gPokemonStoragePtr->fusions, gPokemonStoragePtr->berserkGeneProfiles, sizeof(gPokemonStoragePtr->fusions));
+        memset(gPokemonStoragePtr->berserkGeneProfiles, 0, sizeof(gPokemonStoragePtr->berserkGeneProfiles));
+        gSaveBlock1Ptr->saveVersion = 6;
     }
 
     // Add version migration steps here:

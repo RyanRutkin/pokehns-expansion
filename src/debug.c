@@ -375,6 +375,7 @@ extern const u8 Debug_EventScript_KoPokemon[];
 extern const u8 Debug_EventScript_SetHiddenNature[];
 extern const u8 Debug_EventScript_SetAbility[];
 extern const u8 Debug_EventScript_SetFriendship[];
+extern const u8 Debug_EventScript_CreateBerserkGeneProfile[];
 extern const u8 Debug_EventScript_Script_1[];
 extern const u8 Debug_EventScript_Script_2[];
 extern const u8 Debug_EventScript_Script_3[];
@@ -612,6 +613,7 @@ static const struct DebugMenuOption sDebugMenu_Actions_EditPokemon[] =
     { COMPOUND_STRING("Set Hidden Nature"),  DebugAction_ExecuteScript, Debug_EventScript_SetHiddenNature },
     { COMPOUND_STRING("Set Friendship"),     DebugAction_ExecuteScript, Debug_EventScript_SetFriendship },
     { COMPOUND_STRING("Set Ability"),        DebugAction_ExecuteScript, Debug_EventScript_SetAbility },
+    { COMPOUND_STRING("Create Fusion Profile"), DebugAction_ExecuteScript, Debug_EventScript_CreateBerserkGeneProfile },
     { NULL }
 };
 
@@ -4975,6 +4977,60 @@ void DebugNative_GetAbilityNames(void)
     StringCopy(gStringVar1, gAbilitiesInfo[GetAbilityBySpecies(species, 0)].name);
     StringCopy(gStringVar2, gAbilitiesInfo[GetAbilityBySpecies(species, 1)].name);
     StringCopy(gStringVar3, gAbilitiesInfo[GetAbilityBySpecies(species, 2)].name);
+}
+
+void DebugNative_Party_CreateBerserkGeneProfile(void)
+{
+    struct Pokemon *mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+    u16 species;
+
+    if (gSpecialVar_0x8004 >= PARTY_SIZE)
+        return;
+
+    mon = &gPlayerParty[gSpecialVar_0x8004];
+    species = GetMonData(mon, MON_DATA_SPECIES);
+    if (species == SPECIES_NONE)
+        return;
+
+    profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    if (profile == NULL)
+    {
+        profileId = AllocBerserkGeneProfile();
+        if (profileId == 0)
+            return;
+        profile = GetBerserkGeneProfile(profileId);
+        SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    }
+
+    memset(profile, 0, sizeof(*profile));
+    profile->inUse = TRUE;
+    profile->parentSpeciesA = species;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    profile->type1 = GetSpeciesType(species, 0);
+    profile->type2 = GetSpeciesType(SPECIES_APPLIN, 0);
+    profile->ability1 = GetSpeciesAbility(species, 0);
+    profile->ability2 = GetSpeciesAbility(SPECIES_APPLIN, 0);
+    profile->abilityHidden = GetSpeciesAbility(species, 2);
+    profile->eggGroup1 = GetMonEggGroup(mon, 0);
+    profile->eggGroup2 = gSpeciesInfo[SPECIES_APPLIN].eggGroups[0];
+    profile->cryId = GetCryIdBySpecies(species);
+    profile->height = (GetSpeciesHeight(species) + GetSpeciesHeight(SPECIES_APPLIN) + 1) / 2;
+    profile->weight = (GetSpeciesWeight(species) + GetSpeciesWeight(SPECIES_APPLIN) + 1) / 2;
+    profile->pokemonScale = (gSpeciesInfo[species].pokemonScale + gSpeciesInfo[SPECIES_APPLIN].pokemonScale + 1) / 2;
+    profile->pokemonOffset = (gSpeciesInfo[species].pokemonOffset + gSpeciesInfo[SPECIES_APPLIN].pokemonOffset + 1) / 2;
+    profile->gender = GetMonGender(mon);
+    profile->growthRate = gSpeciesInfo[species].growthRate;
+    profile->friendship = gSpeciesInfo[species].friendship;
+    profile->baseStats[STAT_HP] = (GetSpeciesBaseHP(species) + GetSpeciesBaseHP(SPECIES_APPLIN) + 1) / 2;
+    profile->baseStats[STAT_ATK] = (GetSpeciesBaseAttack(species) + GetSpeciesBaseAttack(SPECIES_APPLIN) + 1) / 2;
+    profile->baseStats[STAT_DEF] = (GetSpeciesBaseDefense(species) + GetSpeciesBaseDefense(SPECIES_APPLIN) + 1) / 2;
+    profile->baseStats[STAT_SPEED] = (GetSpeciesBaseSpeed(species) + GetSpeciesBaseSpeed(SPECIES_APPLIN) + 1) / 2;
+    profile->baseStats[STAT_SPATK] = (GetSpeciesBaseSpAttack(species) + GetSpeciesBaseSpAttack(SPECIES_APPLIN) + 1) / 2;
+    profile->baseStats[STAT_SPDEF] = (GetSpeciesBaseSpDefense(species) + GetSpeciesBaseSpDefense(SPECIES_APPLIN) + 1) / 2;
+    CalculateMonStats(mon);
 }
 
 #define tPartyId               data[5]
