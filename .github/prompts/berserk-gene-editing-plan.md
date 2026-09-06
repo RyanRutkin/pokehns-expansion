@@ -384,6 +384,38 @@ locked to continuing down whichever side supplied the Phase 1 evolution: after t
 Phase 1, the *other* parent's Phase 2 options are still legal candidates for the next evolution
 (see the pseudo-fusion-profile mechanic below for why that's necessary rather than simply unfair).
 
+### Deterministic full-line model (supersedes rolling re-selection)
+All evolution-line randomness happens exactly once: when the egg is produced. The 62/38 or 50/50
+weighted selection chooses **whole lines**, not only their immediate target. For every selected
+Phase 1 target, the profile must also persist every Phase 2 target reachable from it, including
+conditional branches. Evolution never makes a new weighted roll, never re-samples candidates, and
+never discovers a previously unselected line.
+
+At Phase 1, the player chooses exactly one selected Phase 1 target. The chosen side becomes that
+target. The selected Phase 1 targets on the *opposite* parent side are combined into that side's
+transient pseudo-fusion when there is more than one; a single opposite-side target is used directly.
+All other selected Phase 1 targets on the chosen side are consumed and can never be chosen later.
+The Phase 2 menu is then the deterministic union of:
+- all Phase 2 descendants of the selected Phase 1 target, and
+- all Phase 2 descendants of every selected opposite-side Phase 1 target represented by the
+  pseudo-fusion.
+
+At Phase 2, the player again chooses exactly one active target. The chosen target becomes one
+concrete side. Every active Phase 2 target on the opposite side is folded into the transient
+pseudo-fusion side, even if there is only one such target. No Phase 1 target can reappear, and no
+further potential evolutions remain unless a future design explicitly introduces a Phase 3.
+
+**Slowpoke x Poliwag example:** if birth selection includes `Slowbro -> Slowking` and
+`Poliwhirl -> {Poliwrath, Politoed}`, choosing Slowbro at Phase 1 produces
+Slowbro x Poliwhirl. The active Phase 2 menu is Slowking, Poliwrath, and Politoed. Choosing
+Poliwrath then combines Poliwrath with the opposite-side Slowking pseudo-fusion; neither side has
+a later phase, so the profile has no remaining evolution choices.
+
+This model requires a persisted, birth-selected lineage graph (phase, source parent, and parent
+Phase 1 relationship for every selected target) plus a persisted phase-selection state. The current
+flat `potentialEvolutions[]` array can remain a derived active-menu projection, but it is not by
+itself sufficient to reconstruct deterministic Phase 2 choices or pseudo-fusion membership.
+
 ### Pre-merging simple, unconditional, same-phase level-up lines
 After the initial per-parent line selection (above), lines are checked for merging: if, at a
 given phase, **both** parents' lines resolve to a plain level-up evolution with no extra
@@ -775,12 +807,14 @@ Careful implementation path for the registry:
 6. Unit-test candidate-pool construction with condition-bearing evolutions to ensure stored
   `conditionSetId` values resolve back to the same behavior as the original evolution entries.
 
-### On evolution: which side changes, what reruns, what's preserved
-Evolving via one of the available triggers evolves *one side only* — replace whichever of
-`parentSpeciesA`/`parentSpeciesB` owned that evolution trigger with its evolved-form species; the
-other side's species is untouched. Example: Eevee×Applin fusion evolved via Thunder Stone (an
-Eevee-side trigger) becomes a Jolteon×Applin fusion (`parentSpeciesA` updated to Jolteon,
-`parentSpeciesB` stays Applin).
+### On evolution: deterministic phase resolution, reruns, and preserved traits
+The deterministic full-line model above supersedes the earlier one-side rolling-pool update. At
+Phase 1, both resulting sides advance: the chosen target is concrete and the opposite side is the
+selected opposite-parent Phase 1 target(s), directly or as a pseudo-fusion. At Phase 2, the chosen
+target is concrete and all active opposite-side Phase 2 targets become the direct/pseudo-fusion
+counterpart. `parentSpeciesA`/`parentSpeciesB` alone are not enough to represent a multi-species
+pseudo side; the implementation must retain the selected lineage membership needed to rebuild that
+transient side whenever traits, names, display, or future choices are calculated.
 
 After updating the changed side, **rerun the full Berserk Gene trait pipeline between the new
 species pair**, recalculating: base stats (still blended, per the updated formula above), height/
@@ -788,19 +822,14 @@ weight/pokemonScale/pokemonOffset (blended), learnset (full re-merge using the t
 species), color, cry, ability/secondary ability/hidden ability, sprite/identity, and the
 potential-evolutions list.
 
-Potential-evolution recalculation after evolution uses a rolling-pool update, not a full reset to
-both species' native evolution tables:
-1. Start with the fusion's existing `potentialEvolutions[]` entries.
-2. Remove every entry whose `sourceParent` matches the source parent side that just evolved. This
-  discards stale next-stage options for the side whose current species has changed.
-3. Add the immediate next evolutions of the newly evolved/fused-into species for that same source
-  parent side, preserving method/param/conditions and tagging those entries with that source
-  parent.
-4. Recalculate `slotCount` using the same `ceil(lowCount + highCount * r)` logic as at breeding,
-  with counts based on the updated per-parent candidate counts.
-5. Select the new stored `potentialEvolutions[]` list from the updated pool using the same
-  62%/50% weighting that was established at breeding (`geneHolderWeight`), so evolution can
-  reshuffle future options but still stays bounded at `MAX_FUSION_POTENTIAL_EVOLUTIONS = 8`.
+Potential-evolution updates after evolution are deterministic projections of the lineage graph,
+not a rolling-pool update:
+1. Consume the chosen phase's target and every other Phase 1 target after a Phase 1 choice.
+2. Derive the next phase's active choices only from descendants recorded at birth for the chosen
+  line and the selected opposite-side lines that form the direct/pseudo counterpart.
+3. At Phase 2, consume every remaining active choice and clear the active evolution projection.
+4. Do not call `Random()`, reapply 62/38 or 50/50 weighting, query fresh species evolution data,
+  or add newly discovered targets during evolution.
 
 **Learnset rerun scope (decided):** matches vanilla evolution behavior exactly — recalculating
 the learnset on evolution only regenerates the **future** level-up and teachable/tutor move
