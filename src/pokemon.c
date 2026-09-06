@@ -10079,8 +10079,8 @@ bool32 IsSpeciesForeignRegionalForm(u32 species, u32 currentRegion)
 
 enum Type GetTeraTypeFromPersonality(struct Pokemon *mon)
 {
-    const u8 *types = gSpeciesInfo[GetMonData(mon, MON_DATA_SPECIES)].types;
-    return (GetMonData(mon, MON_DATA_PERSONALITY) & 0x1) == 0 ? types[0] : types[1];
+    u8 slot = (GetMonData(mon, MON_DATA_PERSONALITY) & 0x1) == 0 ? 0 : 1;
+    return GetMonType(mon, slot);
 }
 
 struct Pokemon *GetSavedPlayerPartyMon(u32 index)

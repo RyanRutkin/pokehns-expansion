@@ -212,3 +212,57 @@ TEST("Berserk Gene profile overrides box-mon base stats and active ability")
     EXPECT_EQ(GetBoxMonBaseStat(&mon.box, STAT_DEF), 77);
     EXPECT_EQ(GetBoxMonAbility(&mon.box), ABILITY_COMPOUND_EYES);
 }
+
+TEST("Berserk Gene profile tera type derives from profile type override")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+    u32 personality;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->type1 = TYPE_FIRE;
+    profile->type2 = TYPE_FLYING;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    personality = 0;
+    SetMonData(&mon, MON_DATA_PERSONALITY, &personality);
+    EXPECT_EQ(GetTeraTypeFromPersonality(&mon), TYPE_FIRE);
+
+    personality = 1;
+    SetMonData(&mon, MON_DATA_PERSONALITY, &personality);
+    EXPECT_EQ(GetTeraTypeFromPersonality(&mon), TYPE_FLYING);
+}
+
+TEST("Daycare compatibility respects parent profile egg groups")
+{
+    struct Pokemon mon0, mon1;
+    struct BerserkGeneProfile *profile0, *profile1;
+    u16 profileId0, profileId1;
+    struct DayCare daycare;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon0, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&mon1, SPECIES_CHARIZARD, 5, 0, OTID_STRUCT_PLAYER_ID);
+
+    profileId0 = AllocBerserkGeneProfile();
+    profileId1 = AllocBerserkGeneProfile();
+    profile0 = GetBerserkGeneProfile(profileId0);
+    profile1 = GetBerserkGeneProfile(profileId1);
+
+    profile0->eggGroup1 = EGG_GROUP_WATER_1;
+    profile0->eggGroup2 = EGG_GROUP_FIELD;
+    profile1->eggGroup1 = EGG_GROUP_WATER_1;
+    profile1->eggGroup2 = EGG_GROUP_FLYING;
+
+    SetMonData(&mon0, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId0);
+    SetMonData(&mon1, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId1);
+
+    daycare.mons[0].mon = mon0.box;
+    daycare.mons[1].mon = mon1.box;
+
+    EXPECT_NE(GetDaycareCompatibilityScore(&daycare), PARENTS_INCOMPATIBLE);
+}

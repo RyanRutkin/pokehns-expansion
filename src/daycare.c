@@ -335,8 +335,8 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
 
         for (i = 0; i < DAYCARE_MON_COUNT; i++)
         {
-            eggGroups[i][0] = gSpeciesInfo[species[i]].eggGroups[0];
-            eggGroups[i][1] = gSpeciesInfo[species[i]].eggGroups[1];
+            eggGroups[i][0] = GetBoxMonEggGroup(&daycare->mons[i].mon, 0);
+            eggGroups[i][1] = GetBoxMonEggGroup(&daycare->mons[i].mon, 1);
             // Undiscovered is swapped for Monster before pooling, rather than excluded outright.
             if (eggGroups[i][0] == EGG_GROUP_NO_EGGS_DISCOVERED)
                 eggGroups[i][0] = EGG_GROUP_MONSTER;
@@ -2027,8 +2027,8 @@ u8 GetDaycareCompatibilityScore(struct DayCare *daycare)
         trainerIds[i] = GetBoxMonData(&daycare->mons[i].mon, MON_DATA_OT_ID);
         personality = GetBoxMonData(&daycare->mons[i].mon, MON_DATA_PERSONALITY);
         genders[i] = GetGenderFromSpeciesAndPersonality(species[i], personality);
-        eggGroups[i][0] = gSpeciesInfo[species[i]].eggGroups[0];
-        eggGroups[i][1] = gSpeciesInfo[species[i]].eggGroups[1];
+        eggGroups[i][0] = GetBoxMonEggGroup(&daycare->mons[i].mon, 0);
+        eggGroups[i][1] = GetBoxMonEggGroup(&daycare->mons[i].mon, 1);
     }
 
     // check unbreedable egg group
