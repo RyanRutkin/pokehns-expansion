@@ -1,8 +1,10 @@
 #include "global.h"
+#include "daycare.h"
 #include "item.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
 #include "shop.h"
+#include "string_util.h"
 #include "test/test.h"
 
 static const struct ShopPriceOverride sTestSellPriceOverrides[] = {
@@ -25,7 +27,7 @@ TEST("Berserk Gene profile id is stored in BoxPokemon data")
     struct Pokemon mon;
     u16 profileId = MAX_BERSERK_GENE_PROFILES;
 
-    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&mon, SPECIES_VAPOREON, 5, 0, OTID_STRUCT_PLAYER_ID);
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
     EXPECT_EQ(GetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
@@ -280,7 +282,7 @@ TEST("Fusion mon can evolve using stored potential evolution")
     profileId = AllocBerserkGeneProfile();
     profile = GetBerserkGeneProfile(profileId);
 
-    evo.targetSpecies = SPECIES_VAPOREON;
+    evo.targetSpecies = SPECIES_JOLTEON;
     evo.param = 10;
     evo.methodAndSourceParent = EVO_LEVEL;
     evo.conditionSetId = 0;
@@ -291,7 +293,27 @@ TEST("Fusion mon can evolve using stored potential evolution")
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     SetMonData(&mon, MON_DATA_LEVEL, &(u8){15});
 
-    EXPECT_EQ(GetEvolutionTargetSpecies(&mon, EVO_MODE_NORMAL, ITEM_NONE, NULL, &canStopEvo, CHECK_EVO), SPECIES_VAPOREON);
+    EXPECT_EQ(GetEvolutionTargetSpecies(&mon, EVO_MODE_NORMAL, ITEM_NONE, NULL, &canStopEvo, CHECK_EVO), SPECIES_JOLTEON);
+}
+
+TEST("Fusion potential evolution overrides the nominal species evolution")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+    bool32 canStopEvo = TRUE;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->potentialEvolutions[0].targetSpecies = SPECIES_APPLETUN;
+    profile->potentialEvolutions[0].param = ITEM_THUNDER_STONE;
+    profile->potentialEvolutions[0].methodAndSourceParent = EVO_ITEM;
+    profile->potentialEvolutionCount = 1;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    EXPECT_EQ(GetEvolutionTargetSpecies(&mon, EVO_MODE_ITEM_USE, ITEM_THUNDER_STONE, NULL, &canStopEvo, CHECK_EVO), SPECIES_APPLETUN);
 }
 
 TEST("Fusion display name uses the stored parent priority")

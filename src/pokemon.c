@@ -7681,7 +7681,10 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
 
     evolutions = GetSpeciesEvolutions(species);
 
-    if (evolutions == NULL)
+    potentialEvolutions = GetMonPotentialEvolutions(mon, &potentialEvolutionCount);
+    if (potentialEvolutions != NULL)
+        evolutions = NULL;
+    if (evolutions == NULL && potentialEvolutions == NULL)
         return SPECIES_NONE;
 
     if (heldItem == ITEM_ENIGMA_BERRY_E_READER)
@@ -7699,8 +7702,8 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
         && (P_KADABRA_EVERSTONE < GEN_4 || species != SPECIES_KADABRA))
         return SPECIES_NONE;
 
-    // Get potential evolutions from profile if the mon is a fusion
-    potentialEvolutions = GetMonPotentialEvolutions(mon, &potentialEvolutionCount);
+    if (evolutions == NULL)
+        return CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
 
     switch (mode)
     {
