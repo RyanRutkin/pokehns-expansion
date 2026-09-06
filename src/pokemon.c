@@ -5796,6 +5796,33 @@ enum Ability GetMonAbility(struct Pokemon *mon)
     return GetAbilityBySpecies(species, abilityNum);
 }
 
+enum Ability GetBoxMonAbility(struct BoxPokemon *boxMon)
+{
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+        {
+            u8 activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+            switch (activeSlot)
+            {
+            case 0:
+                return profile->ability1;
+            case 1:
+                return profile->ability2;
+            default:
+                return profile->abilityHidden;
+            }
+        }
+    }
+
+    u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
+    u8 abilityNum = GetBoxMonData(boxMon, MON_DATA_ABILITY_NUM);
+    return GetAbilityBySpecies(species, abilityNum);
+}
+
 u32 GetMonBaseStat(struct Pokemon *mon, u32 statIndex)
 {
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
@@ -5808,6 +5835,20 @@ u32 GetMonBaseStat(struct Pokemon *mon, u32 statIndex)
     }
 
     return GetSpeciesBaseStat(GetMonData(mon, MON_DATA_SPECIES), statIndex);
+}
+
+u32 GetBoxMonBaseStat(struct BoxPokemon *boxMon, u32 statIndex)
+{
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->baseStats[statIndex];
+    }
+
+    return GetSpeciesBaseStat(GetBoxMonData(boxMon, MON_DATA_SPECIES), statIndex);
 }
 
 void CreateSecretBaseEnemyParty(struct SecretBase *secretBaseRecord)

@@ -189,3 +189,26 @@ TEST("Berserk Gene profile overrides concrete mon base stats and active ability"
     EXPECT_EQ(GetMonBaseStat(&mon, STAT_ATK), 45);
     EXPECT_EQ(GetMonAbility(&mon), ABILITY_INTIMIDATE);
 }
+
+TEST("Berserk Gene profile overrides box-mon base stats and active ability")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->baseStats[STAT_HP] = 99;
+    profile->baseStats[STAT_DEF] = 77;
+    profile->ability1 = ABILITY_COMPOUND_EYES;
+    profile->ability2 = ABILITY_NONE;
+    profile->abilityHidden = ABILITY_NONE;
+    profile->inheritanceFlags = 0;
+    SetBoxMonData(&mon.box, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    EXPECT_EQ(GetBoxMonBaseStat(&mon.box, STAT_HP), 99);
+    EXPECT_EQ(GetBoxMonBaseStat(&mon.box, STAT_DEF), 77);
+    EXPECT_EQ(GetBoxMonAbility(&mon.box), ABILITY_COMPOUND_EYES);
+}
