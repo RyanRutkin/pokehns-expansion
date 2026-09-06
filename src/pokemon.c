@@ -4211,11 +4211,29 @@ u8 GetDefaultMoveTarget(enum BattlerId battlerId)
 
 u8 GetMonGender(struct Pokemon *mon)
 {
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->gender;
+    }
+
     return GetBoxMonGender(&mon->box);
 }
 
 u8 GetBoxMonGender(struct BoxPokemon *boxMon)
 {
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->gender;
+    }
+
     u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
     u32 personality = GetBoxMonData(boxMon, MON_DATA_PERSONALITY);
 
@@ -4231,6 +4249,34 @@ u8 GetBoxMonGender(struct BoxPokemon *boxMon)
         return MON_FEMALE;
     else
         return MON_MALE;
+}
+
+enum Type GetMonType(struct Pokemon *mon, u8 slot)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return slot == 0 ? profile->type1 : profile->type2;
+    }
+
+    return GetSpeciesType(GetMonData(mon, MON_DATA_SPECIES), slot);
+}
+
+enum Type GetBoxMonType(struct BoxPokemon *boxMon, u8 slot)
+{
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return slot == 0 ? profile->type1 : profile->type2;
+    }
+
+    return GetSpeciesType(GetBoxMonData(boxMon, MON_DATA_SPECIES), slot);
 }
 
 u8 GetGenderFromSpeciesAndPersonality(u16 species, u32 personality)
@@ -5611,40 +5657,43 @@ enum Ability GetAbilityBySpecies(u16 species, u8 abilityNum)
     return gLastUsedAbility;
 }
 
-
-
 enum Ability GetMonAbility(struct Pokemon *mon)
 {
-    u16 species = GetMonData(mon, MON_DATA_SPECIES);
-    u8 abilityNum = GetMonData(mon, MON_DATA_ABILITY_NUM);
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
-    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
 
-    if (profile != NULL)
+    if (profileId != 0)
     {
-        u8 activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
-
-        switch (activeSlot)
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
         {
-        case 0:
-            return profile->ability1;
-        case 1:
-            return profile->ability2;
-        case 2:
-            return profile->abilityHidden;
+            u8 activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+            switch (activeSlot)
+            {
+            case 0:
+                return profile->ability1;
+            case 1:
+                return profile->ability2;
+            default:
+                return profile->abilityHidden;
+            }
         }
     }
 
+    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+    u8 abilityNum = GetMonData(mon, MON_DATA_ABILITY_NUM);
     return GetAbilityBySpecies(species, abilityNum);
 }
 
 u32 GetMonBaseStat(struct Pokemon *mon, u32 statIndex)
 {
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
-    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
 
-    if (profile != NULL && statIndex < NUM_STATS)
-        return profile->baseStats[statIndex];
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->baseStats[statIndex];
+    }
 
     return GetSpeciesBaseStat(GetMonData(mon, MON_DATA_SPECIES), statIndex);
 }

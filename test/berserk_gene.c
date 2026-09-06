@@ -137,6 +137,26 @@ TEST("Moving a mon keeps its Berserk Gene profile slot allocated")
     EXPECT_EQ(GetBoxMonDataAt(0, 0, MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
 }
 
+TEST("Berserk Gene profile overrides concrete mon type and gender")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->type1 = TYPE_FIRE;
+    profile->type2 = TYPE_FLYING;
+    profile->gender = MON_MALE;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    EXPECT_EQ(GetMonType(&mon, 0), TYPE_FIRE);
+    EXPECT_EQ(GetMonType(&mon, 1), TYPE_FLYING);
+    EXPECT_EQ(GetMonGender(&mon), MON_MALE);
+}
+
 TEST("Berserk Gene profile overrides concrete mon base stats and active ability")
 {
     struct Pokemon mon;

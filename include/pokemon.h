@@ -838,6 +838,8 @@ void SetBoxMonMoveSlot(struct BoxPokemon *mon, enum Move move, u8 slot);
 void SetBattleMonMoveSlot(struct BattlePokemon *mon, enum Move move, u8 slot);
 void GiveMonInitialMoveset(struct Pokemon *mon);
 void GiveBoxMonInitialMoveset(struct BoxPokemon *boxMon);
+enum Type GetMonType(struct Pokemon *mon, u8 slot);
+enum Type GetBoxMonType(struct BoxPokemon *boxMon, u8 slot);
 void GiveMonDefaultMove(struct Pokemon *mon, u32 slot);
 void GiveBoxMonDefaultMove(struct BoxPokemon *boxMon, u32 slot);
 enum Move MonTryLearningNewMoveAtLevel(struct Pokemon *mon, bool32 firstMove, u32 level);
