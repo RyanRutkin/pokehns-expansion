@@ -6182,16 +6182,42 @@ const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon 
 
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
 {
+    static u8 sDisplayName[POKEMON_NAME_BUFFER_SIZE];
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
 
     if (profileId != 0)
     {
         struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
-        if (profile != NULL && profile->parentSpeciesA != SPECIES_NONE)
+        if (profile != NULL
+         && profile->parentSpeciesA != SPECIES_NONE
+         && profile->parentSpeciesB != SPECIES_NONE)
         {
-            // For fusion display, show both parent species names
-            // This will be formatted by the display layer
-            return GetSpeciesName(profile->parentSpeciesA);
+            u16 leadingSpecies = profile->parentSpeciesA;
+            u16 trailingSpecies = profile->parentSpeciesB;
+            const u8 *leadingName;
+            const u8 *trailingName;
+            u8 leadingLength;
+            u8 trailingLength;
+            u8 leadingCount;
+            u8 trailingCount;
+
+            if (profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT)
+            {
+                leadingSpecies = profile->parentSpeciesB;
+                trailingSpecies = profile->parentSpeciesA;
+            }
+
+            leadingName = GetSpeciesName(leadingSpecies);
+            trailingName = GetSpeciesName(trailingSpecies);
+            leadingLength = StringLength(leadingName);
+            trailingLength = StringLength(trailingName);
+            leadingCount = (leadingLength + 1) / 2;
+            trailingCount = (trailingLength + 1) / 2;
+
+            StringCopyN(sDisplayName, leadingName, leadingCount);
+            StringCopyN(sDisplayName + leadingCount, trailingName + trailingLength - trailingCount, trailingCount);
+            sDisplayName[leadingCount + trailingCount] = EOS;
+            return sDisplayName;
         }
     }
 

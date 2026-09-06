@@ -293,3 +293,24 @@ TEST("Fusion mon can evolve using stored potential evolution")
 
     EXPECT_EQ(GetEvolutionTargetSpecies(&mon, EVO_MODE_NORMAL, ITEM_NONE, NULL, &canStopEvo, CHECK_EVO), SPECIES_VAPOREON);
 }
+
+TEST("Fusion display name uses the stored parent priority")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    profile->evolutionFlags = 0;
+    EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Eevlin")) == 0);
+
+    profile->evolutionFlags = BERSERK_GENE_NAME_PRIORITY_PARENT;
+    EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Appvee")) == 0);
+}

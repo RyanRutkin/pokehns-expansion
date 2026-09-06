@@ -173,7 +173,15 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     profile->parentSpeciesA = species[0];
     profile->parentSpeciesB = species[1];
     if (geneHolders >= 2)
+    {
         flags |= BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
+        if (Random() & 1)
+            profile->evolutionFlags |= BERSERK_GENE_NAME_PRIORITY_PARENT;
+    }
+    else if (!DaycareMonHasBerserkGene(daycare, 0))
+    {
+        profile->evolutionFlags |= BERSERK_GENE_NAME_PRIORITY_PARENT;
+    }
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
     {

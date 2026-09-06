@@ -4612,7 +4612,9 @@ static void PrintMonInfo(u32 num, u32 value, u32 owned, u32 newEntry)
         profileId = GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL);
         isFusion = profileId != 0 && GetBerserkGeneProfile(profileId) != NULL;
     }
-    if (species)
+    if (isFusion)
+        name = GetMonDisplaySpeciesName(sPokedexView->displayMon);
+    else if (species)
         name = GetSpeciesName(species);
     else
         name = sText_TenDashes;
