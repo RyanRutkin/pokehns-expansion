@@ -6180,6 +6180,47 @@ const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon 
     return profile->potentialEvolutions;
 }
 
+void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies)
+{
+    struct BerserkGeneProfile *profile;
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    u8 i;
+
+    if (profileId == 0)
+        return;
+
+    profile = GetBerserkGeneProfile(profileId);
+    if (profile == NULL)
+        return;
+
+    for (i = 0; i < profile->potentialEvolutionCount; i++)
+    {
+        const struct FusionPotentialEvolution *potentialEvolution = &profile->potentialEvolutions[i];
+        bool8 sourceParentB;
+        u8 type1Parent;
+        u8 type1Slot;
+        u8 type2Parent;
+        u8 type2Slot;
+
+        if (potentialEvolution->targetSpecies != targetSpecies)
+            continue;
+
+        sourceParentB = potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT;
+        if (sourceParentB)
+            profile->parentSpeciesB = targetSpecies;
+        else
+            profile->parentSpeciesA = targetSpecies;
+
+        type1Parent = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE1_SOURCE_PARENT) != 0;
+        type1Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE1_SOURCE_SLOT) != 0;
+        type2Parent = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT) != 0;
+        type2Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT) != 0;
+        profile->type1 = GetSpeciesType(type1Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type1Slot);
+        profile->type2 = GetSpeciesType(type2Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type2Slot);
+        return;
+    }
+}
+
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
 {
     static u8 sDisplayName[POKEMON_NAME_BUFFER_SIZE];

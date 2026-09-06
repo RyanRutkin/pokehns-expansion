@@ -916,6 +916,7 @@ const u16 *GetSpeciesTeachableLearnset(u16 species);
 const u16 *GetSpeciesEggMoves(u16 species);
 const struct Evolution *GetSpeciesEvolutions(u16 species);
 const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount);
+void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies);
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon);
 const u8 *GetMonDisplayCategory(struct Pokemon *mon);
 const u8 *GetMonDisplayPokedexDescription(struct Pokemon *mon);

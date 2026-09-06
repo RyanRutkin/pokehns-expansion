@@ -314,3 +314,29 @@ TEST("Fusion display name uses the stored parent priority")
     profile->evolutionFlags = BERSERK_GENE_NAME_PRIORITY_PARENT;
     EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Appvee")) == 0);
 }
+
+TEST("Fusion evolution updates its source parent and sticky type provenance")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT;
+    profile->potentialEvolutions[0].targetSpecies = SPECIES_APPLETUN;
+    profile->potentialEvolutions[0].methodAndSourceParent = EVO_ITEM | EVO_POTENTIAL_SOURCE_PARENT_BIT;
+    profile->potentialEvolutionCount = 1;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_APPLETUN);
+
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_EEVEE);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_APPLETUN);
+    EXPECT_EQ(profile->type1, GetSpeciesType(SPECIES_EEVEE, 0));
+    EXPECT_EQ(profile->type2, GetSpeciesType(SPECIES_APPLETUN, 0));
+}
