@@ -4138,7 +4138,7 @@ static void Task_LoadAreaScreen(u8 taskId)
         gMain.state++;
         break;
     case 2:
-        DisplayPokedexAreaScreen(NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum), &sPokedexView->screenSwitchState, gAreaTimeOfDay, DEX_SHOW_AREA_SCREEN);
+        DisplayPokedexAreaScreen(NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum), &sPokedexView->screenSwitchState, gAreaTimeOfDay, DEX_SHOW_AREA_SCREEN, sPokedexView->displayMon != NULL && GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL) != 0);
         SetVBlankCallback(gPokedexVBlankCB);
         sPokedexView->screenSwitchState = 0;
         gMain.state = 0;
@@ -4162,7 +4162,7 @@ static void Task_ReloadAreaScreen(u8 taskId)
         gMain.state++;
         break;
     case 2:
-        DisplayPokedexAreaScreen(NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum), &sPokedexView->screenSwitchState, gAreaTimeOfDay, DEX_UPDATE_AREA_SCREEN);
+        DisplayPokedexAreaScreen(NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum), &sPokedexView->screenSwitchState, gAreaTimeOfDay, DEX_UPDATE_AREA_SCREEN, sPokedexView->displayMon != NULL && GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL) != 0);
         gMain.state = 0;
         gTasks[taskId].func = Task_WaitForAreaScreenInput;
         break;
@@ -4748,12 +4748,38 @@ static u16 CreateMonSpriteFromNationalDexNumberHGSS(u16 nationalNum, s16 x, s16 
 
 static u16 GetPokemonScaleFromNationalDexNumber(u16 nationalNum)
 {
+    u16 profileId;
+
+    if (sPokedexView->displayMon != NULL)
+    {
+        profileId = GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL);
+        if (profileId != 0)
+        {
+            struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+            if (profile != NULL)
+                return profile->pokemonScale;
+        }
+    }
+
     nationalNum = NationalPokedexNumToSpeciesHGSS(nationalNum);
     return gSpeciesInfo[nationalNum].pokemonScale;
 }
 
 static u16 GetPokemonOffsetFromNationalDexNumber(u16 nationalNum)
 {
+    u16 profileId;
+
+    if (sPokedexView->displayMon != NULL)
+    {
+        profileId = GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL);
+        if (profileId != 0)
+        {
+            struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+            if (profile != NULL)
+                return profile->pokemonOffset;
+        }
+    }
+
     nationalNum = NationalPokedexNumToSpeciesHGSS(nationalNum);
     return gSpeciesInfo[nationalNum].pokemonOffset;
 }
@@ -4980,6 +5006,7 @@ static void ResetStatsWindows(void)
 static void SaveMonDataInStruct(void)
 {
     u16 species = NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum);
+    struct BerserkGeneProfile *profile = NULL;
     u8 evs[NUM_STATS] =
     {
         [STAT_HP]    = gSpeciesInfo[species].evYield_HP,
@@ -5024,6 +5051,44 @@ static void SaveMonDataInStruct(void)
     sPokedexView->sPokemonStats.ability0            = GetAbilityBySpecies(species, 0);
     sPokedexView->sPokemonStats.ability1            = GetAbilityBySpecies(species, 1);
     sPokedexView->sPokemonStats.abilityHidden       = GetAbilityBySpecies(species, 2);
+
+    if (sPokedexView->displayMon != NULL)
+    {
+        u16 profileId = GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL);
+        profile = GetBerserkGeneProfile(profileId);
+    }
+
+    if (profile != NULL)
+    {
+        sPokedexView->sPokemonStats.genderRatio = profile->gender;
+        sPokedexView->sPokemonStats.baseHP = profile->baseStats[STAT_HP];
+        sPokedexView->sPokemonStats.baseSpeed = profile->baseStats[STAT_SPEED];
+        sPokedexView->sPokemonStats.baseAttack = profile->baseStats[STAT_ATK];
+        sPokedexView->sPokemonStats.baseSpAttack = profile->baseStats[STAT_SPATK];
+        sPokedexView->sPokemonStats.baseDefense = profile->baseStats[STAT_DEF];
+        sPokedexView->sPokemonStats.baseSpDefense = profile->baseStats[STAT_SPDEF];
+        sPokedexView->sPokemonStats.growthRate = profile->growthRate;
+        sPokedexView->sPokemonStats.eggGroup1 = profile->eggGroup1;
+        sPokedexView->sPokemonStats.eggGroup2 = profile->eggGroup2;
+        sPokedexView->sPokemonStats.eggCycles = profile->eggCycles;
+        sPokedexView->sPokemonStats.friendship = profile->friendship;
+        sPokedexView->sPokemonStats.ability0 = profile->ability1;
+        sPokedexView->sPokemonStats.ability1 = profile->ability2;
+        sPokedexView->sPokemonStats.abilityHidden = profile->abilityHidden;
+        sPokedexView->sPokemonStats.evYield_HP = (profile->evYields >> (STAT_HP * 2)) & 3;
+        sPokedexView->sPokemonStats.evYield_Speed = (profile->evYields >> (STAT_SPEED * 2)) & 3;
+        sPokedexView->sPokemonStats.evYield_Attack = (profile->evYields >> (STAT_ATK * 2)) & 3;
+        sPokedexView->sPokemonStats.evYield_SpAttack = (profile->evYields >> (STAT_SPATK * 2)) & 3;
+        sPokedexView->sPokemonStats.evYield_Defense = (profile->evYields >> (STAT_DEF * 2)) & 3;
+        sPokedexView->sPokemonStats.evYield_SpDefense = (profile->evYields >> (STAT_SPDEF * 2)) & 3;
+
+        sPokedexView->sPokemonStats.differentEVs = 0;
+        for (i = 0; i < NUM_STATS; i++)
+        {
+            if (((profile->evYields >> (i * 2)) & 3) != 0)
+                sPokedexView->sPokemonStats.differentEVs++;
+        }
+    }
 }
 
 #define tMonSpriteId data[4]
@@ -7561,7 +7626,11 @@ static void Task_HandleCryScreenInput(u8 taskId)
     if (JOY_NEW(A_BUTTON))
     {
         LoadPlayArrowPalette(TRUE);
-        CryScreenPlayButton(NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum));
+        if (sPokedexView->displayMon != NULL
+         && GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL) != 0)
+            CryScreenPlayButtonByCryId(GetMonCryId(sPokedexView->displayMon));
+        else
+            CryScreenPlayButton(NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum));
         return;
     }
     else if (!gPaletteFade.active)

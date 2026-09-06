@@ -115,6 +115,7 @@ struct
     /*0xFBC*/ u8 areaUnknownGraphicsBuffer[0x600];
     /*0xFC0*/ u8 areaScreenLabelIds[NUM_LABEL_WINDOWS];
     /*0xFC8*/ u8 areaState;
+    /*0xFC9*/ bool8 forceUnknown;
 } static EWRAM_DATA *sPokedexAreaScreen = NULL;
 
 EWRAM_DATA u8 gAreaTimeOfDay = 0;
@@ -309,6 +310,9 @@ static void FindMapsWithMon(u16 species)
 
     sPokedexAreaScreen->numOverworldAreas = 0;
     sPokedexAreaScreen->numSpecialAreas = 0;
+
+    if (sPokedexAreaScreen->forceUnknown)
+        return;
 
     // Check if this species should be hidden from the area map.
     // This only applies to Wynaut, to hide the encounters on Mirage Island.
@@ -727,7 +731,7 @@ bool32 ShouldShowAreaUnknownLabel(void)
 
 #define tState data[0]
 
-void DisplayPokedexAreaScreen(u16 species, u8 *screenSwitchState, enum TimeOfDay timeOfDay, enum PokedexAreaScreenState areaState)
+void DisplayPokedexAreaScreen(u16 species, u8 *screenSwitchState, enum TimeOfDay timeOfDay, enum PokedexAreaScreenState areaState, bool8 forceUnknown)
 {
     u8 taskId;
 
@@ -735,6 +739,7 @@ void DisplayPokedexAreaScreen(u16 species, u8 *screenSwitchState, enum TimeOfDay
     sPokedexAreaScreen->species = species;
     sPokedexAreaScreen->screenSwitchState = screenSwitchState;
     sPokedexAreaScreen->areaState = areaState;
+    sPokedexAreaScreen->forceUnknown = forceUnknown;
     gAreaTimeOfDay = timeOfDay;
     if (gAreaTimeOfDay == TIME_MORNING || gAreaTimeOfDay == TIME_EVENING)
         gAreaTimeOfDay = TIME_DAY;

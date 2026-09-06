@@ -380,6 +380,24 @@ void PlayCry_NormalNoDucking(u16 species, s8 pan, s8 volume, u8 priority)
     PlayCryInternal(species, pan, volume, priority, CRY_MODE_NORMAL);
 }
 
+void PlayCryId_NormalNoDucking(enum PokemonCry cryId, s8 pan, s8 volume, u8 priority)
+{
+    if (cryId == CRY_NONE)
+        return;
+
+    SetPokemonCryVolume(volume);
+    SetPokemonCryPanpot(pan);
+    SetPokemonCryPitch(15360);
+    SetPokemonCryLength(210);
+    SetPokemonCryProgress(0);
+    SetPokemonCryRelease(0);
+    SetPokemonCryChorus(0);
+    SetPokemonCryPriority(priority);
+
+    cryId--;
+    gMPlay_PokemonCry = SetPokemonCryTone(&gCryTable[cryId]);
+}
+
 // Assuming it's not CRY_MODE_DOUBLES, this is equivalent to PlayCry_Normal except it allows other modes.
 void PlayCry_ByMode(u16 species, s8 pan, u8 mode)
 {

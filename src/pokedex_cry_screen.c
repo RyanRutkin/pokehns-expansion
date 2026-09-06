@@ -5,6 +5,7 @@
 #include "malloc.h"
 #include "palette.h"
 #include "pokedex_cry_screen.h"
+#include "pokemon.h"
 #include "sound.h"
 #include "trig.h"
 #include "window.h"
@@ -44,12 +45,12 @@ struct PokedexCryScreen
     u8 waveformPreviousY;
     u16 unk; // Never read
     u8 playStartPos;
-    u16 species;
+    enum PokemonCry cryId;
     u8 cryOverrideCountdown;
     u8 cryRepeatDelay;
 };
 
-static void PlayCryScreenCry(u16);
+static void PlayCryScreenCry(enum PokemonCry cryId);
 static void BufferCryWaveformSegment(void);
 static void DrawWaveformFlatline(void);
 static void AdvancePlayhead(u8);
@@ -283,7 +284,7 @@ void UpdateCryWaveformWindow(u8 windowId)
         sDexCryScreen->cryOverrideCountdown--;
         if (!sDexCryScreen->cryOverrideCountdown)
         {
-            PlayCryScreenCry(sDexCryScreen->species);
+            PlayCryScreenCry(sDexCryScreen->cryId);
             DrawWaveformFlatline();
             return;
         }
@@ -324,6 +325,11 @@ void UpdateCryWaveformWindow(u8 windowId)
 
 void CryScreenPlayButton(u16 species)
 {
+    CryScreenPlayButtonByCryId(GetCryIdBySpecies(species));
+}
+
+void CryScreenPlayButtonByCryId(enum PokemonCry cryId)
+{
     if (gMPlayInfo_BGM.status & MUSICPLAYER_STATUS_PAUSE && !sDexCryScreen->cryOverrideCountdown)
     {
         if (!sDexCryScreen->cryRepeatDelay)
@@ -332,20 +338,20 @@ void CryScreenPlayButton(u16 species)
             if (IsCryPlaying() == TRUE)
             {
                 StopCry();
-                sDexCryScreen->species = species;
+                sDexCryScreen->cryId = cryId;
                 sDexCryScreen->cryOverrideCountdown = 2;
             }
             else
             {
-                PlayCryScreenCry(species);
+                PlayCryScreenCry(cryId);
             }
         }
     }
 }
 
-static void PlayCryScreenCry(u16 species)
+static void PlayCryScreenCry(enum PokemonCry cryId)
 {
-    PlayCry_NormalNoDucking(species, 0, CRY_VOLUME_RS, CRY_PRIORITY_NORMAL);
+    PlayCryId_NormalNoDucking(cryId, 0, CRY_VOLUME_RS, CRY_PRIORITY_NORMAL);
     sDexCryScreen->cryState = 1;
 }
 
