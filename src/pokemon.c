@@ -6160,6 +6160,26 @@ const struct Evolution *GetSpeciesEvolutions(u16 species)
     return evolutions;
 }
 
+const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (outCount != NULL)
+        *outCount = 0;
+
+    if (profileId == 0)
+        return NULL;
+
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+    if (profile == NULL)
+        return NULL;
+
+    if (outCount != NULL)
+        *outCount = profile->potentialEvolutionCount;
+
+    return profile->potentialEvolutions;
+}
+
 u8 GetEvolutionConditionSetId(const struct EvolutionParam *params)
 {
     u8 conditionSetId;
@@ -7384,6 +7404,68 @@ static bool32 IsSpeciesAlreadyEvolved(u32 species)
     return FALSE;
 }
 
+static u32 CheckMonPotentialEvolutions(struct Pokemon *mon, enum EvolutionMode mode, u16 evolutionItem, struct Pokemon *tradePartner, const struct FusionPotentialEvolution *potentialEvolutions, u8 potentialEvolutionCount, bool32 *canStopEvo, enum EvoState evoState)
+{
+    u32 i;
+    u32 level = GetMonData(mon, MON_DATA_LEVEL, 0);
+
+    for (i = 0; i < potentialEvolutionCount; i++)
+    {
+        u8 method = potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK;
+        bool32 conditionsMet = FALSE;
+
+        if (SanitizeSpeciesId(potentialEvolutions[i].targetSpecies) == SPECIES_NONE)
+            continue;
+
+        // Check if the method matches the evolution mode
+        switch (mode)
+        {
+        case EVO_MODE_NORMAL:
+        case EVO_MODE_BATTLE_ONLY:
+            if (method == EVO_LEVEL)
+            {
+                if (potentialEvolutions[i].param <= level)
+                    conditionsMet = TRUE;
+            }
+            else if (method == EVO_LEVEL_BATTLE_ONLY)
+            {
+                if (mode == EVO_MODE_BATTLE_ONLY && potentialEvolutions[i].param <= level)
+                    conditionsMet = TRUE;
+            }
+            break;
+        case EVO_MODE_TRADE:
+            if (method == EVO_TRADE)
+                conditionsMet = TRUE;
+            break;
+        case EVO_MODE_ITEM_USE:
+        case EVO_MODE_ITEM_CHECK:
+            if (method == EVO_ITEM && potentialEvolutions[i].param == evolutionItem)
+                conditionsMet = TRUE;
+            break;
+        case EVO_MODE_BATTLE_SPECIAL:
+            if (method == EVO_BATTLE_END)
+                conditionsMet = TRUE;
+            break;
+        case EVO_MODE_OVERWORLD_SPECIAL:
+        case EVO_MODE_SCRIPT_TRIGGER:
+            // Skip potential evolutions in overworld special and script trigger modes for now
+            continue;
+        }
+
+        if (conditionsMet)
+        {
+            // Check additional conditions using the condition set ID
+            const struct EvolutionParam *params = GetEvolutionConditionSet(potentialEvolutions[i].conditionSetId);
+            if (DoesMonMeetAdditionalConditions(mon, params, tradePartner, PARTY_SIZE, canStopEvo, evoState))
+            {
+                return potentialEvolutions[i].targetSpecies;
+            }
+        }
+    }
+
+    return SPECIES_NONE;
+}
+
 u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 evolutionItem, struct Pokemon *tradePartner, bool32 *canStopEvo, enum EvoState evoState)
 {
     int i;
@@ -7393,6 +7475,8 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
     u32 level = GetMonData(mon, MON_DATA_LEVEL, 0);
     enum HoldEffect holdEffect;
     const struct Evolution *evolutions;
+    const struct FusionPotentialEvolution *potentialEvolutions;
+    u8 potentialEvolutionCount;
 
     u8 evoLimit = gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit;
     if (evoLimit == 2)
@@ -7424,6 +7508,9 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
         && mode != EVO_MODE_ITEM_CHECK
         && (P_KADABRA_EVERSTONE < GEN_4 || species != SPECIES_KADABRA))
         return SPECIES_NONE;
+
+    // Get potential evolutions from profile if the mon is a fusion
+    potentialEvolutions = GetMonPotentialEvolutions(mon, &potentialEvolutionCount);
 
     switch (mode)
     {
@@ -7457,6 +7544,12 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
                 break;
             }
         }
+        
+        // Check potential evolutions if no vanilla evolution was found
+        if (targetSpecies == SPECIES_NONE && potentialEvolutions != NULL)
+        {
+            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
+        }
         break;
     case EVO_MODE_TRADE:
         for (i = 0; evolutions[i].method != EVOLUTIONS_END; i++)
@@ -7480,6 +7573,12 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
                 targetSpecies = evolutions[i].targetSpecies;
                 break;
             }
+        }
+        
+        // Check potential evolutions if no vanilla evolution was found
+        if (targetSpecies == SPECIES_NONE && potentialEvolutions != NULL)
+        {
+            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
         }
         break;
     case EVO_MODE_ITEM_USE:
@@ -7509,6 +7608,12 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
                 break;
             }
         }
+        
+        // Check potential evolutions if no vanilla evolution was found
+        if (targetSpecies == SPECIES_NONE && potentialEvolutions != NULL)
+        {
+            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
+        }
         break;
     // Battle evolution without leveling; party slot is being passed into the evolutionItem arg.
     case EVO_MODE_BATTLE_SPECIAL:
@@ -7533,6 +7638,12 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
                 targetSpecies = evolutions[i].targetSpecies;
                 break;
             }
+        }
+        
+        // Check potential evolutions if no vanilla evolution was found
+        if (targetSpecies == SPECIES_NONE && potentialEvolutions != NULL)
+        {
+            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
         }
         break;
     // Overworld evolution without leveling; evolution method is being passed into the evolutionItem arg.

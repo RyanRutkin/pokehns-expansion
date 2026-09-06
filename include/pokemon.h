@@ -915,6 +915,7 @@ const struct LevelUpMove *GetSpeciesLevelUpLearnset(u16 species);
 const u16 *GetSpeciesTeachableLearnset(u16 species);
 const u16 *GetSpeciesEggMoves(u16 species);
 const struct Evolution *GetSpeciesEvolutions(u16 species);
+const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount);
 u8 GetEvolutionConditionSetId(const struct EvolutionParam *params);
 const struct EvolutionParam *GetEvolutionConditionSet(u8 conditionSetId);
 const u16 *GetSpeciesFormTable(u16 species);

@@ -266,3 +266,30 @@ TEST("Daycare compatibility respects parent profile egg groups")
 
     EXPECT_NE(GetDaycareCompatibilityScore(&daycare), PARENTS_INCOMPATIBLE);
 }
+
+TEST("Fusion mon can evolve using stored potential evolution")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+    struct FusionPotentialEvolution evo;
+    bool32 canStopEvo = TRUE;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+
+    evo.targetSpecies = SPECIES_VAPOREON;
+    evo.param = 10;
+    evo.methodAndSourceParent = EVO_LEVEL;
+    evo.conditionSetId = 0;
+
+    profile->potentialEvolutions[0] = evo;
+    profile->potentialEvolutionCount = 1;
+
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    SetMonData(&mon, MON_DATA_LEVEL, &(u8){15});
+
+    EXPECT_EQ(GetEvolutionTargetSpecies(&mon, EVO_MODE_NORMAL, ITEM_NONE, NULL, &canStopEvo, CHECK_EVO), SPECIES_VAPOREON);
+}
