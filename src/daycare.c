@@ -36,7 +36,8 @@
 // Number of the two daycare mons (0, 1, or 2) holding the Berserk Gene.
 static bool8 DaycareMonHasBerserkGene(struct DayCare *daycare, u8 i)
 {
-    return GetItemHoldEffect(GetBoxMonData(&daycare->mons[i].mon, MON_DATA_HELD_ITEM)) == HOLD_EFFECT_BERSERK_GENE;
+    return P_BERSERK_GENE_EDITING
+        && GetItemHoldEffect(GetBoxMonData(&daycare->mons[i].mon, MON_DATA_HELD_ITEM)) == HOLD_EFFECT_BERSERK_GENE;
 }
 
 static u8 CountBerserkGeneHolders(struct DayCare *daycare)
