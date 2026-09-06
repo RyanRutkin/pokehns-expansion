@@ -584,6 +584,7 @@ static void Task_HandleEvolutionScreenInput(u8 taskId);
 static void Task_SwitchScreensFromEvolutionScreen(u8 taskId);
 static void Task_ExitEvolutionScreen(u8 taskId);
 static void PrintEvolutionTargetSpeciesAndMethod(u8 taskId, u16 species, u8 depth, u32 *depth_i, u32 alreadyPrintedIcons[], u32 *icon_depth_i, u32 numLines, u32 *totalLines, u16 baseSpecies);
+static void PrintMonPotentialEvolutions(u8 taskId);
 static u8 PrintPreEvolutions(u8 taskId, u16 species);
 //Stat bars on scrolling screens
 static void TryDestroyStatBars(void);
@@ -6288,12 +6289,16 @@ static void Task_LoadEvolutionScreen(u8 taskId)
         {
             u32 species = NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum);
             u32 personality = GetPokedexMonPersonality(species);
+            u16 profileId = 0;
             sPokedexView->selectedScreen = EVO_SCREEN;
             ResetEvoScreenDataStruct();
+            if (sPokedexView->displayMon != NULL)
+                profileId = GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL);
             //Icon
             FreeMonIconPalettes(); //Free space for new pallete
             LoadMonIconPalettePersonality(species, personality); //Loads pallete for current mon
-            PrintPreEvolutions(taskId, species);
+            if (profileId == 0 || GetBerserkGeneProfile(profileId) == NULL)
+                PrintPreEvolutions(taskId, species);
             gTasks[taskId].data[4] = CreateMonIcon(species, SpriteCB_MonIcon, 18 + 32*sPokedexView->numPreEvolutions, 31, 4, personality); //Create pokemon sprite
             EvoFormsPage_PrintNavigationButtons(); // Navigation buttons
             gSprites[gTasks[taskId].data[4]].oam.priority = 0;
@@ -6309,7 +6314,11 @@ static void Task_LoadEvolutionScreen(u8 taskId)
         u16 baseSpecies = NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum);
         //Print evo info and icons
         gTasks[taskId].data[3] = sPokedexView->numPreEvolutions;
-        PrintEvolutionTargetSpeciesAndMethod(taskId, baseSpecies, 0, &depth, alreadyPrintedIcons, &iconDepth, 0, &totalLines, baseSpecies);
+        if (sPokedexView->displayMon != NULL
+         && GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL) != 0)
+            PrintMonPotentialEvolutions(taskId);
+        else
+            PrintEvolutionTargetSpeciesAndMethod(taskId, baseSpecies, 0, &depth, alreadyPrintedIcons, &iconDepth, 0, &totalLines, baseSpecies);
         LoadSpritePalette(&gSpritePalette_Arrow);
         TryLoadDarkModeArrowPalette();
         GetSeenFlagTargetSpecies();
@@ -6421,6 +6430,7 @@ static void Task_HandleEvolutionScreenInput(u8 taskId)
             sPokedexListItem->dexNum = dexNum;
             sPokedexListItem->seen   = GetSetPokedexFlag(dexNum, FLAG_GET_SEEN);
             sPokedexListItem->owned  = GetSetPokedexFlag(dexNum, FLAG_GET_CAUGHT);
+            sPokedexView->displayMon = NULL;
 
                 if (GetSpeciesFormTable(targetSpecies) != NULL)
                     sPokedexView->formSpecies = targetSpecies;
@@ -6724,6 +6734,85 @@ bool32 IsSpeciesAlcremie(u32 targetSpecies)
 bool32 IsItemSweet(enum Item item)
 {
     return item >= ITEM_STRAWBERRY_SWEET && item <= ITEM_RIBBON_SWEET;
+}
+
+static void PrintMonPotentialEvolutions(u8 taskId)
+{
+    const struct FusionPotentialEvolution *potentialEvolutions;
+    u8 potentialEvolutionCount;
+    u8 printed = 0;
+    u8 i;
+    const u32 baseX = 21;
+    const u32 baseY = 51;
+    const u32 baseYOffset = 9;
+
+    potentialEvolutions = GetMonPotentialEvolutions(sPokedexView->displayMon, &potentialEvolutionCount);
+    if (potentialEvolutions == NULL || potentialEvolutionCount == 0)
+    {
+        StringCopy(gStringVar1, GetMonDisplaySpeciesName(sPokedexView->displayMon));
+        StringExpandPlaceholders(gStringVar4, sText_EVO_NONE);
+        PrintInfoScreenTextSmall(gStringVar4, FONT_SMALL, baseX - 14, baseY);
+        return;
+    }
+
+    for (i = 0; i < potentialEvolutionCount && printed < MAX_EVO_METHOD_LINES; i++)
+    {
+        u16 targetSpecies = SanitizeSpeciesId(potentialEvolutions[i].targetSpecies);
+        u8 method = potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK;
+        u32 nameWidth;
+        u32 methodX;
+        u32 maxMethodWidth;
+        u32 fontId;
+
+        if (targetSpecies == SPECIES_NONE || !IsSpeciesEnabled(targetSpecies))
+            continue;
+
+        sPokedexView->sEvoScreenData.targetSpecies[printed] = targetSpecies;
+        sPokedexView->sEvoScreenData.arrowSpriteDist[printed] = 0;
+        sPokedexView->sEvoScreenData.numAllEvolutions++;
+        HandleTargetSpeciesPrintIcon(taskId, targetSpecies, printed, potentialEvolutionCount);
+        CreateCaughtBallEvolutionScreen(targetSpecies, baseX - 9, baseY + baseYOffset * printed, 0);
+        HandleTargetSpeciesPrintText(targetSpecies, baseX, baseY, baseYOffset, printed, 0);
+
+        StringCopy(gStringVar4, COMPOUND_STRING("Unknown"));
+        switch ((enum EvolutionMethods)method)
+        {
+        case EVO_LEVEL:
+        case EVO_LEVEL_BATTLE_ONLY:
+            StringCopy(gStringVar4, COMPOUND_STRING("{LV}{UP_ARROW}"));
+            if (potentialEvolutions[i].param > 1)
+            {
+                ConvertIntToDecimalStringN(gStringVar2, potentialEvolutions[i].param, STR_CONV_MODE_LEFT_ALIGN, EVO_SCREEN_LVL_DIGITS);
+                StringAppend(gStringVar4, gStringVar2);
+            }
+            if (method == EVO_LEVEL_BATTLE_ONLY)
+                StringAppend(gStringVar4, COMPOUND_STRING(", in battle"));
+            break;
+        case EVO_TRADE:
+            StringCopy(gStringVar4, COMPOUND_STRING("Trading"));
+            break;
+        case EVO_ITEM:
+            CopyItemName(potentialEvolutions[i].param, gStringVar2);
+            StringCopy(gStringVar4, gStringVar2);
+            StringAppend(gStringVar4, COMPOUND_STRING(" is used"));
+            break;
+        case EVO_BATTLE_END:
+            StringCopy(gStringVar4, COMPOUND_STRING("End battle"));
+            break;
+        case EVO_NONE:
+        case EVO_SPLIT_FROM_EVO:
+        case EVO_SCRIPT_TRIGGER:
+        case EVO_SPIN:
+            break;
+        }
+
+        nameWidth = GetSpeciesNameWidthInChars(GetSpeciesName(targetSpecies));
+        methodX = baseX + 8 + nameWidth * GetFontAttribute(GetSpeciesNameFontId(nameWidth), FONTATTR_MAX_LETTER_WIDTH);
+        maxMethodWidth = 230 - methodX;
+        fontId = GetFontIdToFit(gStringVar4, FONT_SMALL, 0, maxMethodWidth);
+        PrintInfoScreenTextSmall(gStringVar4, fontId, methodX, baseY + baseYOffset * printed);
+        printed++;
+    }
 }
 
 static void PrintEvolutionTargetSpeciesAndMethod(u8 taskId, u16 species, u8 depth, u32 *depth_i, u32 alreadyPrintedIcons[], u32 *icon_depth_i, u32 numLines, u32 *totalLines, u16 baseSpecies)
