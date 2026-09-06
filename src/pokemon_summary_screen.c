@@ -1774,7 +1774,7 @@ static void Task_OpenPokedexFromSummary(u8 taskId)
 {
     if (!gPaletteFade.active)
     {
-        u16 species = sMonSummaryScreen->summary.species;
+        struct Pokemon mon = sMonSummaryScreen->currentMon;
         
         // Save summary screen state before cleaning up
         sSavedSummaryMode = sMonSummaryScreen->mode;
@@ -1795,8 +1795,7 @@ static void Task_OpenPokedexFromSummary(u8 taskId)
         FreeSummaryScreen();
         DestroyTask(taskId);
         
-        // Open the Pokédex info screen for this specific Pokémon
-        OpenPokedexInfoScreen(species, CB2_ReturnToSummaryFromPokedex);
+        OpenPokedexInfoScreenForMon(&mon, CB2_ReturnToSummaryFromPokedex);
     }
 }
 

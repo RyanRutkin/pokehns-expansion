@@ -30,6 +30,7 @@
 #include "pokemon_summary_screen.h"
 #include "region_map.h"
 #include "pokemon.h"
+#include "pokemon_storage_system.h"
 #include "reset_rtc_screen.h"
 #include "rtc.h"
 #include "scanline_effect.h"
@@ -300,6 +301,7 @@ static EWRAM_DATA u16 sLastSelectedPokemon = 0;
 static EWRAM_DATA u8 sPokeBallRotation = 0;
 static EWRAM_DATA struct PokedexListItem *sPokedexListItem = NULL;
 static EWRAM_DATA void (*sExternalReturnCallback)(void) = NULL;
+static EWRAM_DATA struct Pokemon sSummaryMonForDex;
 //Pokedex Plus HGSS_Ui
 
 
@@ -448,6 +450,7 @@ struct PokedexView
     s16 menuY;     //Menu Y position (inverted because we use REG_BG0VOFS for this)
     u8 unkArr2[8]; // Cleared, never read
     u8 unkArr3[8]; // Cleared, never read
+    struct Pokemon *displayMon;
 };
 
 static void ResetPokedexView(struct PokedexView *pokedexView);
@@ -4529,12 +4532,21 @@ static void SetTypeIconPosAndPal(u8 typeId, u8 x, u8 y, u8 spriteArrayId)
 static void PrintCurrentSpeciesTypeInfo(u8 newEntry, u16 species)
 {
     enum Type type1, type2;
+    u16 profileId = 0;
 
-    if (!newEntry)
+    if (sPokedexView->displayMon != NULL)
+        profileId = GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL);
+
+    if (profileId != 0 && GetBerserkGeneProfile(profileId) != NULL)
     {
-        species = NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum);
+        type1 = GetMonType(sPokedexView->displayMon, 0);
+        type2 = GetMonType(sPokedexView->displayMon, 1);
     }
-    //type icon(s)
+    else
+    {
+        if (!newEntry)
+            species = NationalPokedexNumToSpeciesHGSS(sPokedexListItem->dexNum);
+        //type icon(s)
     #ifdef TX_RANDOMIZER_AND_CHALLENGES
         type1 = GetTypeBySpecies(species, 1);
         type2 = GetTypeBySpecies(species, 2);
@@ -4542,8 +4554,9 @@ static void PrintCurrentSpeciesTypeInfo(u8 newEntry, u16 species)
         type1 = GetSpeciesType(species, 0);
         type2 = GetSpeciesType(species, 1);
     #endif
-    if (species == SPECIES_NONE)
-        type1 = type2 = TYPE_MYSTERY;
+        if (species == SPECIES_NONE)
+            type1 = type2 = TYPE_MYSTERY;
+    }
 
     if (type1 == type2)
     {
@@ -4577,8 +4590,10 @@ static void CreateTypeIconSprites(void)
 static void PrintMonInfo(u32 num, u32 value, u32 owned, u32 newEntry)
 {
     u8 str[16];
-    u8 str2[32];
+    u8 str2[128];
     u16 species;
+    u16 profileId = 0;
+    bool8 isFusion = FALSE;
     const u8 *name;
     const u8 *category;
     const u8 *description;
@@ -4591,12 +4606,21 @@ static void PrintMonInfo(u32 num, u32 value, u32 owned, u32 newEntry)
     ConvertIntToDecimalStringN(StringCopy(str, gText_NumberClear01), value, STR_CONV_MODE_LEADING_ZEROS, digitCount);
     PrintInfoScreenTextWhite(str, 123, 17);
     species = NationalPokedexNumToSpeciesHGSS(num);
+    if (sPokedexView->displayMon != NULL)
+    {
+        profileId = GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID, NULL);
+        isFusion = profileId != 0 && GetBerserkGeneProfile(profileId) != NULL;
+    }
     if (species)
         name = GetSpeciesName(species);
     else
         name = sText_TenDashes;
     PrintInfoScreenTextWhite(name, 139 + (6 * digitCount), 17);
-    if (owned)
+    if (isFusion)
+    {
+        category = GetMonDisplayCategory(sPokedexView->displayMon);
+    }
+    else if (owned)
     {
         CopyMonCategoryText(species, str2);
         category = str2;
@@ -4606,8 +4630,16 @@ static void PrintMonInfo(u32 num, u32 value, u32 owned, u32 newEntry)
         category = gText_5MarksPokemon;
     }
     PrintInfoScreenText(category, 123, 31);
-    PrintMonMeasurements(species,owned);
-    if (owned)
+    if (isFusion)
+        PrintMonMeasurementsForMon(sPokedexView->displayMon);
+    else
+        PrintMonMeasurements(species, owned);
+    if (isFusion)
+    {
+        GetMonFusionDescriptionText(sPokedexView->displayMon, str2);
+        description = str2;
+    }
+    else if (owned)
         description = GetSpeciesPokedexDescription(species);
     else
         description = sExpandedPlaceholder_PokedexDescription;
@@ -4744,6 +4776,12 @@ static u16 CreateSizeScreenTrainerPic(u16 species, s16 x, s16 y, s8 paletteSlot)
 }
 
 #undef TYPE_INFO_PALETTE_NUM_OFFSET
+void OpenPokedexInfoScreenForMon(struct Pokemon *mon, void (*returnCallback)(void))
+{
+    sSummaryMonForDex = *mon;
+    OpenPokedexInfoScreen(GetMonData(mon, MON_DATA_SPECIES, NULL), returnCallback);
+    sPokedexView->displayMon = &sSummaryMonForDex;
+}
 
 //************************************
 //*                                  *

@@ -6180,6 +6180,129 @@ const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon 
     return profile->potentialEvolutions;
 }
 
+const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL && profile->parentSpeciesA != SPECIES_NONE)
+        {
+            // For fusion display, show both parent species names
+            // This will be formatted by the display layer
+            return GetSpeciesName(profile->parentSpeciesA);
+        }
+    }
+
+    return GetSpeciesName(GetMonData(mon, MON_DATA_SPECIES, 0));
+}
+
+const u8 *GetMonDisplayCategory(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        // Fusion mons show "Fusion Pokemon" as category
+        extern const u8 gText_FusionPokemon[];
+        return gText_FusionPokemon;
+    }
+
+    u16 species = GetMonData(mon, MON_DATA_SPECIES, 0);
+    return GetSpeciesCategory(species);
+}
+
+const u8 *GetMonDisplayPokedexDescription(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+        {
+            // Return a fusion description using parent species
+            // This will be set by the calling display code to a pre-formatted string
+            extern const u8 gText_FusionDescription[];
+            return gText_FusionDescription;
+        }
+    }
+
+    u16 species = GetMonData(mon, MON_DATA_SPECIES, 0);
+    return GetSpeciesPokedexDescription(species);
+}
+
+u32 GetMonDisplayHeight(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL && profile->height != 0)
+        {
+            return profile->height;
+        }
+    }
+
+    u16 species = GetMonData(mon, MON_DATA_SPECIES, 0);
+    return GetSpeciesHeight(species);
+}
+
+u32 GetMonDisplayWeight(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL && profile->weight != 0)
+        {
+            return profile->weight;
+        }
+    }
+
+    u16 species = GetMonData(mon, MON_DATA_SPECIES, 0);
+    return GetSpeciesWeight(species);
+}
+
+// Generate a fusion description string from the profile's parent species
+// Buffer must be at least 128 bytes
+void GetMonFusionDescriptionText(struct Pokemon *mon, u8 *buffer)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    static const u8 sEmptyString[] = _("");
+    const u8 *parentNameA = sEmptyString;
+    const u8 *parentNameB = sEmptyString;
+    
+    if (profileId == 0)
+    {
+        StringCopy(buffer, gText_FusionDescription);
+        return;
+    }
+
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+    if (profile == NULL)
+    {
+        StringCopy(buffer, gText_FusionDescription);
+        return;
+    }
+
+    // Get current parent species names (which may have evolved)
+    if (profile->parentSpeciesA != SPECIES_NONE)
+        parentNameA = GetSpeciesName(profile->parentSpeciesA);
+    if (profile->parentSpeciesB != SPECIES_NONE)
+        parentNameB = GetSpeciesName(profile->parentSpeciesB);
+
+    // Format: "It appears to be a fusion of [ParentA] and [ParentB]."
+    StringCopy(buffer, gText_ItAppears);
+    StringAppend(buffer, parentNameA);
+    StringAppend(buffer, gText_And);
+    StringAppend(buffer, parentNameB);
+    StringAppend(buffer, gText_Period);
+}
+
 u8 GetEvolutionConditionSetId(const struct EvolutionParam *params)
 {
     u8 conditionSetId;

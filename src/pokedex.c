@@ -4240,6 +4240,26 @@ void PrintMonMeasurements(u16 species, u32 owned)
         PrintUnknownMonMeasurements();
 }
 
+void PrintMonMeasurementsForMon(struct Pokemon *mon)
+{
+    u32 x = GetMeasurementTextPositions(DEX_HEADER_X);
+    u32 yTop = GetMeasurementTextPositions(DEX_Y_TOP);
+    u32 yBottom = GetMeasurementTextPositions(DEX_Y_BOTTOM);
+    u8 *heightString;
+    u8 *weightString;
+
+    PrintInfoScreenText(gText_HTHeight, x, yTop);
+    PrintInfoScreenText(gText_WTWeight, x, yBottom);
+
+    x = GetMeasurementTextPositions(DEX_MEASUREMENT_X);
+    heightString = ConvertMonHeightToString(GetMonHeight(mon));
+    weightString = ConvertMonWeightToString(GetMonWeight(mon));
+    PrintInfoScreenText(heightString, x, yTop);
+    PrintInfoScreenText(weightString, x, yBottom);
+    Free(heightString);
+    Free(weightString);
+}
+
 static u32 GetMeasurementTextPositions(u32 textElement)
 {
     if (!POKEDEX_PLUS_HGSS)

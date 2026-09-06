@@ -1313,3 +1313,10 @@ const u8 gText_Both[] = _("Both");
 const u8 gText_GreenStone[] = _("GREEN STONE");
 const u8 gText_RedStone[] = _("RED STONE");
 const u8 gText_BlueStone[] = _("BLUE STONE");
+
+// Fusion Pokemon display strings
+const u8 gText_FusionPokemon[] = _("Fusion Pokémon");
+const u8 gText_FusionDescription[] = _("It appears to be a fusion\nof multiple Pokémon.");
+const u8 gText_ItAppears[] = _("It appears to be a fusion\nof ");
+const u8 gText_And[] = _(" and ");
+const u8 gText_Period[] = _(".");

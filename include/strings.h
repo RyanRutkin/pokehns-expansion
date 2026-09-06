@@ -2473,4 +2473,11 @@ extern const u8 gText_GreenStone[];
 extern const u8 gText_RedStone[];
 extern const u8 gText_BlueStone[];
 
+// Fusion Pokemon display strings
+extern const u8 gText_FusionPokemon[];
+extern const u8 gText_FusionDescription[];
+extern const u8 gText_ItAppears[];
+extern const u8 gText_And[];
+extern const u8 gText_Period[];
+
 #endif // GUARD_STRINGS_H
