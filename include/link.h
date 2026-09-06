@@ -166,6 +166,8 @@ enum
     LAG_SLAVE,
 };
 
+#define LINK_VERSION_BERSERK_GENE_EDITING (1 << 15)
+
 struct LinkPlayer
 {
     /* 0x00 */ u16 version;

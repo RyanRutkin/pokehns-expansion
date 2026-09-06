@@ -97,6 +97,7 @@ enum {
     MSG_MON_CANT_BE_TRADED,
     MSG_EGG_CANT_BE_TRADED,
     MSG_FRIENDS_MON_CANT_BE_TRADED,
+    MSG_PARTNER_NO_BERSERK_GENE_SUPPORT,
 };
 
 // IDs for QueueAction
@@ -110,6 +111,7 @@ enum {
     QUEUE_MON_CANT_BE_TRADED,
     QUEUE_EGG_CANT_BE_TRADED,
     QUEUE_FRIENDS_MON_CANT_BE_TRADED,
+    QUEUE_PARTNER_NO_BERSERK_GENE_SUPPORT,
 };
 
 #define QUEUE_DELAY_MSG   3
@@ -1531,6 +1533,10 @@ static void CB_ProcessSelectedMonInput(void)
             QueueAction(QUEUE_DELAY_MSG, QUEUE_EGG_CANT_BE_TRADED);
             sTradeMenu->callbackId = CB_HANDLE_TRADE_CANCELED;
             break;
+        case CANT_TRADE_PARTNER_NO_BERSERK_GENE_SUPPORT:
+            QueueAction(QUEUE_DELAY_MSG, QUEUE_PARTNER_NO_BERSERK_GENE_SUPPORT);
+            sTradeMenu->callbackId = CB_HANDLE_TRADE_CANCELED;
+            break;
         }
         break;
     }
@@ -2205,6 +2211,9 @@ static void DoQueuedActions(void)
                 case QUEUE_FRIENDS_MON_CANT_BE_TRADED:
                     PrintTradeMessage(MSG_FRIENDS_MON_CANT_BE_TRADED);
                     break;
+                case QUEUE_PARTNER_NO_BERSERK_GENE_SUPPORT:
+                    PrintTradeMessage(MSG_PARTNER_NO_BERSERK_GENE_SUPPORT);
+                    break;
                 }
                 sTradeMenu->queuedActions[i].active = FALSE;
             }
@@ -2405,6 +2414,11 @@ static u32 CanTradeSelectedMon(struct Pokemon *playerParty, int partyCount, int 
     }
 
     partner = &gLinkPlayers[GetMultiplayerId() ^ 1];
+    if (GetMonData(&playerParty[monIdx], MON_DATA_BERSERK_GENE_PROFILE_ID) != 0
+     && GetBerserkGeneProfile(GetMonData(&playerParty[monIdx], MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL
+     && !(partner->version & LINK_VERSION_BERSERK_GENE_EDITING))
+        return CANT_TRADE_PARTNER_NO_BERSERK_GENE_SUPPORT;
+
     if ((partner->version & 0xFF) != VERSION_RUBY &&
         (partner->version & 0xFF) != VERSION_SAPPHIRE)
     {

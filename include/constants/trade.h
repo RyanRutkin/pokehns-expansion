@@ -43,6 +43,7 @@ enum InGameTradeID
 #define CANT_TRADE_EGG_YET         3
 #define CANT_TRADE_INVALID_MON     4
 #define CANT_TRADE_PARTNER_EGG_YET 5
+#define CANT_TRADE_PARTNER_NO_BERSERK_GENE_SUPPORT 6
 
 // Return values for CheckValidityOfTradeMons
 #define PLAYER_MON_INVALID   0

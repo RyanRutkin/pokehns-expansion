@@ -315,7 +315,7 @@ static void InitLocalLinkPlayer(void)
     gLocalLinkPlayer.gender = gSaveBlock2Ptr->playerGender;
     gLocalLinkPlayer.linkType = gLinkType;
     gLocalLinkPlayer.language = gGameLanguage;
-    gLocalLinkPlayer.version = gGameVersion + 0x4000;
+    gLocalLinkPlayer.version = gGameVersion + 0x4000 + LINK_VERSION_BERSERK_GENE_EDITING;
     gLocalLinkPlayer.lp_field_2 = 0x8000;
     gLocalLinkPlayer.progressFlags = IsNationalPokedexEnabled();
     if (FlagGet(FLAG_IS_CHAMPION))
