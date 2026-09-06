@@ -157,6 +157,8 @@ struct __attribute__((packed)) FusionPotentialEvolution
 #define EVO_POTENTIAL_METHOD_MASK         0x0F
 #define EVO_POTENTIAL_SOURCE_PARENT_BIT   (1 << 4) // 0 = parentSpeciesA, 1 = parentSpeciesB
 #define EVO_POTENTIAL_PAIRED_WITH_SIBLING (1 << 5) // always select/apply together with the adjacent merged-phase entry
+#define EVO_POTENTIAL_PHASE_2             (1 << 6) // 0 = Phase 1, 1 = Phase 2 lineage node
+#define EVO_POTENTIAL_SELECTED             (1 << 7) // selected target for the profile's current evolution phase
 
 // BerserkGeneProfile.inheritanceFlags bits: which parent (A=0/B=1) and which of that parent's
 // own type slots (primary=0/secondary=1) each resolved type was drawn from, plus whether the
@@ -174,6 +176,15 @@ struct __attribute__((packed)) FusionPotentialEvolution
 // BerserkGeneProfile.evolutionFlags bits: which parent's name segment leads on an exact 50/50
 // name-priority tie (decided once, by coin flip, at breeding time).
 #define BERSERK_GENE_NAME_PRIORITY_PARENT (1 << 0) // 0 = parentSpeciesA leads, 1 = parentSpeciesB
+#define BERSERK_GENE_EVOLUTION_PHASE_SHIFT 1
+#define BERSERK_GENE_EVOLUTION_PHASE_MASK  (3 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT)
+
+enum BerserkGeneEvolutionPhase
+{
+    BERSERK_GENE_PHASE_1,
+    BERSERK_GENE_PHASE_2,
+    BERSERK_GENE_PHASE_COMPLETE,
+};
 
 struct BerserkGeneProfile
 {
