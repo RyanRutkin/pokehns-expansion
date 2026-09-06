@@ -430,8 +430,12 @@ canonical birth-selected lineage-node store rather than an immediate active menu
 - bit 7 records the player-selected node for the current resolved phase.
 `conditionSetId` remains a full byte; it must not be repacked because the generated registry has
 more than 64 possible IDs. `evolutionFlags` bit 0 remains name priority; its spare bits store the
-current evolution phase/state. Existing age storage is retained only while re-breeding still uses
-it; it is not used to reroll an existing fusion's own lineage.
+current evolution phase/state. The four bytes previously named `potentialEvolutionAge` are
+repurposed as one nibble per node containing that node's owning Phase 1 root index. A Phase 1 node
+stores its own index; every Phase 2 descendant stores the index of its originating Phase 1 node.
+This explicit linkage is required because the source-parent bit alone cannot distinguish multiple
+selected Phase 1 roots belonging to the same parent. Age-based pruning no longer applies to an
+already-created deterministic lineage; birth-time capacity selection operates on whole roots.
 
 At birth, selecting a root line reserves node capacity for that root's complete Phase 1/Phase 2
 subtree. A root is never partially stored: if adding its complete selected subtree would exceed
@@ -439,11 +443,10 @@ the eight-node cap, that root is not selected (or an already-selected whole root
 documented birth-time priority rule). Individual Phase 2 nodes must never be silently discarded.
 This keeps every stored line deterministic and preserves the existing profile size.
 
-Phase-2 membership is derived from the stored source-parent Phase 1 node whose target species has
-the matching direct evolution entry (method, parameter, target, and condition-set ID). Therefore
-no additional per-node root index is needed. The selected-node bit plus the profile phase state
-identifies the Phase 1 choice, and the retained Phase 1 nodes identify the opposite-side
-pseudo-fusion membership.
+The selected-node bit plus the profile phase state identifies the Phase 1 choice. The stored root
+index identifies every eligible Phase 2 descendant exactly, and the retained opposite-side roots
+identify pseudo-fusion membership without re-querying or re-sampling native species evolution
+data.
 
 ### Pre-merging simple, unconditional, same-phase level-up lines
 After the initial per-parent line selection (above), lines are checked for merging: if, at a

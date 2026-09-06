@@ -360,6 +360,8 @@ TEST("Fusion evolution updates its source parent and sticky type provenance")
 
     EXPECT_EQ(profile->parentSpeciesA, SPECIES_EEVEE);
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_APPLETUN);
+    EXPECT(profile->potentialEvolutions[0].methodAndSourceParent & EVO_POTENTIAL_SELECTED);
+    EXPECT_EQ(GetMonBerserkGeneEvolutionPhase(&mon), BERSERK_GENE_PHASE_2);
     EXPECT_EQ(profile->type1, GetSpeciesType(SPECIES_EEVEE, 0));
     EXPECT_EQ(profile->type2, GetSpeciesType(SPECIES_APPLETUN, 0));
     EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Eevetun")) == 0);
@@ -394,6 +396,40 @@ TEST("Paired fusion potential evolution updates both parent species")
 
     EXPECT_EQ(profile->parentSpeciesA, SPECIES_JOLTEON);
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_APPLETUN);
+    EXPECT(profile->potentialEvolutions[0].methodAndSourceParent & EVO_POTENTIAL_SELECTED);
+    EXPECT(profile->potentialEvolutions[1].methodAndSourceParent & EVO_POTENTIAL_SELECTED);
+    EXPECT_EQ(GetMonBerserkGeneEvolutionPhase(&mon), BERSERK_GENE_PHASE_2);
     EXPECT_EQ(profile->type1, GetSpeciesType(SPECIES_JOLTEON, 0));
     EXPECT_EQ(profile->type2, GetSpeciesType(SPECIES_APPLETUN, 0));
+}
+
+TEST("Fusion potential evolution reader returns only the active lineage phase")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const struct FusionPotentialEvolution *potentialEvolutions;
+    u16 profileId;
+    u8 count;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->potentialEvolutions[0].targetSpecies = SPECIES_JOLTEON;
+    profile->potentialEvolutions[0].methodAndSourceParent = EVO_ITEM;
+    profile->potentialEvolutions[1].targetSpecies = SPECIES_HYDRAPPLE;
+    profile->potentialEvolutions[1].methodAndSourceParent = EVO_ITEM | EVO_POTENTIAL_PHASE_2;
+    profile->potentialEvolutionCount = 2;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    potentialEvolutions = GetMonPotentialEvolutions(&mon, &count);
+    EXPECT_EQ(GetMonBerserkGeneEvolutionPhase(&mon), BERSERK_GENE_PHASE_1);
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(potentialEvolutions[0].targetSpecies, SPECIES_JOLTEON);
+
+    profile->evolutionFlags |= BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+    potentialEvolutions = GetMonPotentialEvolutions(&mon, &count);
+    EXPECT_EQ(GetMonBerserkGeneEvolutionPhase(&mon), BERSERK_GENE_PHASE_2);
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(potentialEvolutions[0].targetSpecies, SPECIES_HYDRAPPLE);
 }
