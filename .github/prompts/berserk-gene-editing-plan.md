@@ -416,6 +416,35 @@ Phase 1 relationship for every selected target) plus a persisted phase-selection
 flat `potentialEvolutions[]` array can remain a derived active-menu projection, but it is not by
 itself sufficient to reconstruct deterministic Phase 2 choices or pseudo-fusion membership.
 
+### Deterministic lineage storage and capacity (audited 2026-09-06)
+The current storage budget is fixed: `FusionPotentialEvolution` is 6 bytes,
+`BerserkGeneProfile` is 96 bytes, and 15 profile slots make `PokemonStorage` 35,680 bytes against
+a 35,712-byte save capacity. The deterministic model must therefore not grow either structure.
+
+Retain the existing eight-entry `potentialEvolutions[]` allocation, but redefine it as the
+canonical birth-selected lineage-node store rather than an immediate active menu:
+- bits 0-3 of `methodAndSourceParent` remain the evolution method;
+- bit 4 remains source parent;
+- bit 5 remains paired-with-sibling;
+- bit 6 records a Phase 2 node (`0` means Phase 1);
+- bit 7 records the player-selected node for the current resolved phase.
+`conditionSetId` remains a full byte; it must not be repacked because the generated registry has
+more than 64 possible IDs. `evolutionFlags` bit 0 remains name priority; its spare bits store the
+current evolution phase/state. Existing age storage is retained only while re-breeding still uses
+it; it is not used to reroll an existing fusion's own lineage.
+
+At birth, selecting a root line reserves node capacity for that root's complete Phase 1/Phase 2
+subtree. A root is never partially stored: if adding its complete selected subtree would exceed
+the eight-node cap, that root is not selected (or an already-selected whole root is evicted by the
+documented birth-time priority rule). Individual Phase 2 nodes must never be silently discarded.
+This keeps every stored line deterministic and preserves the existing profile size.
+
+Phase-2 membership is derived from the stored source-parent Phase 1 node whose target species has
+the matching direct evolution entry (method, parameter, target, and condition-set ID). Therefore
+no additional per-node root index is needed. The selected-node bit plus the profile phase state
+identifies the Phase 1 choice, and the retained Phase 1 nodes identify the opposite-side
+pseudo-fusion membership.
+
 ### Pre-merging simple, unconditional, same-phase level-up lines
 After the initial per-parent line selection (above), lines are checked for merging: if, at a
 given phase, **both** parents' lines resolve to a plain level-up evolution with no extra
