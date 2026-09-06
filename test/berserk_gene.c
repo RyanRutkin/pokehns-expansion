@@ -137,7 +137,7 @@ TEST("Moving a mon keeps its Berserk Gene profile slot allocated")
     EXPECT_EQ(GetBoxMonDataAt(0, 0, MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
 }
 
-TEST("Berserk Gene profile overrides concrete mon type and gender")
+TEST("Berserk Gene profile overrides concrete mon type, gender, cry, size, and egg groups")
 {
     struct Pokemon mon;
     struct BerserkGeneProfile *profile;
@@ -150,11 +150,21 @@ TEST("Berserk Gene profile overrides concrete mon type and gender")
     profile->type1 = TYPE_FIRE;
     profile->type2 = TYPE_FLYING;
     profile->gender = MON_MALE;
+    profile->cryId = CRY_CHARIZARD;
+    profile->height = 123;
+    profile->weight = 456;
+    profile->eggGroup1 = EGG_GROUP_MONSTER;
+    profile->eggGroup2 = EGG_GROUP_DRAGON;
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
     EXPECT_EQ(GetMonType(&mon, 0), TYPE_FIRE);
     EXPECT_EQ(GetMonType(&mon, 1), TYPE_FLYING);
     EXPECT_EQ(GetMonGender(&mon), MON_MALE);
+    EXPECT_EQ(GetMonCryId(&mon), CRY_CHARIZARD);
+    EXPECT_EQ(GetMonHeight(&mon), 123);
+    EXPECT_EQ(GetMonWeight(&mon), 456);
+    EXPECT_EQ(GetMonEggGroup(&mon, 0), EGG_GROUP_MONSTER);
+    EXPECT_EQ(GetMonEggGroup(&mon, 1), EGG_GROUP_DRAGON);
 }
 
 TEST("Berserk Gene profile overrides concrete mon base stats and active ability")

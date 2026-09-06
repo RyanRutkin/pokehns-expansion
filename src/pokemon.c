@@ -4279,6 +4279,118 @@ enum Type GetBoxMonType(struct BoxPokemon *boxMon, u8 slot)
     return GetSpeciesType(GetBoxMonData(boxMon, MON_DATA_SPECIES), slot);
 }
 
+u32 GetMonHeight(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->height;
+    }
+
+    return GetSpeciesHeight(GetMonData(mon, MON_DATA_SPECIES));
+}
+
+u32 GetBoxMonHeight(struct BoxPokemon *boxMon)
+{
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->height;
+    }
+
+    return GetSpeciesHeight(GetBoxMonData(boxMon, MON_DATA_SPECIES));
+}
+
+u32 GetMonWeight(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->weight;
+    }
+
+    return GetSpeciesWeight(GetMonData(mon, MON_DATA_SPECIES));
+}
+
+u32 GetBoxMonWeight(struct BoxPokemon *boxMon)
+{
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->weight;
+    }
+
+    return GetSpeciesWeight(GetBoxMonData(boxMon, MON_DATA_SPECIES));
+}
+
+enum PokemonCry GetMonCryId(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->cryId;
+    }
+
+    return GetCryIdBySpecies(GetMonData(mon, MON_DATA_SPECIES));
+}
+
+enum PokemonCry GetBoxMonCryId(struct BoxPokemon *boxMon)
+{
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return profile->cryId;
+    }
+
+    return GetCryIdBySpecies(GetBoxMonData(boxMon, MON_DATA_SPECIES));
+}
+
+u8 GetMonEggGroup(struct Pokemon *mon, u8 slot)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return slot == 0 ? profile->eggGroup1 : profile->eggGroup2;
+    }
+
+    return gSpeciesInfo[GetMonData(mon, MON_DATA_SPECIES)].eggGroups[slot];
+}
+
+u8 GetBoxMonEggGroup(struct BoxPokemon *boxMon, u8 slot)
+{
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+        if (profile != NULL)
+            return slot == 0 ? profile->eggGroup1 : profile->eggGroup2;
+    }
+
+    return gSpeciesInfo[GetBoxMonData(boxMon, MON_DATA_SPECIES)].eggGroups[slot];
+}
+
 u8 GetGenderFromSpeciesAndPersonality(u16 species, u32 personality)
 {
     switch (gSpeciesInfo[species].genderRatio)
