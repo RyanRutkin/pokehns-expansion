@@ -443,6 +443,35 @@ the eight-node cap, that root is not selected (or an already-selected whole root
 documented birth-time priority rule). Individual Phase 2 nodes must never be silently discarded.
 This keeps every stored line deterministic and preserves the existing profile size.
 
+### Finalized iterative capacity pruning rule (resolved 2026-09-19)
+The eight-node cap is applied to total stored lineage nodes, but pruning is iterative and stops
+immediately when the count reaches eight. It must not reduce every branch to a smaller symmetric
+shape. The birth-time process is:
+1. Preserve at least one Phase 1 root from each parent whenever either parent has a selectable root.
+2. While over eight nodes, remove exactly one eligible Phase 2 node at a time, preferring the oldest
+  eligible node and randomizing equal-age ties.
+3. Do not remove the last Phase 2 descendant of a retained root while any other removable Phase 2
+  node exists. A root with descendants therefore retains at least one continuation until that
+  root is itself purged.
+4. Recount after every removal and stop immediately at eight nodes.
+5. Only if no Phase 2 node can be removed without violating the continuation rule, remove one whole
+  root and all of its retained descendants at a time, again preferring the oldest root and
+  randomizing equal-age ties. Continue until the count is at most eight.
+
+For example, an 11-node graph with roots of sizes 4, 4, and 3 is reduced by exactly three Phase 2
+node removals to eight nodes, not flattened to six nodes. The final distribution depends on age and
+tie-breaking, but every retained root keeps a Phase 2 continuation whenever possible. This entire
+pruning process happens at birth; evolution never re-rolls, re-samples, or reprunes the lineage.
+
+### Resume checkpoint
+The next implementation pass must replace the current age-based per-entry candidate selection in
+`BuildBerserkGeneProfile()` atomically. It must collect complete Phase 1 roots with their Phase 2
+descendants, apply birth-time line weighting, perform the iterative pruning rule above, and write
+root-link metadata into the existing nibble storage. Do not enable phase filtering or reinterpret
+the nibble bytes until that collector replacement and its re-breeding path are complete. Then add
+deterministic tests for Slowpoke x Poliwag (Slowbro -> Slowking alongside Poliwrath/Politoed) and
+for an 11-node graph stopping exactly at eight.
+
 The selected-node bit plus the profile phase state identifies the Phase 1 choice. The stored root
 index identifies every eligible Phase 2 descendant exactly, and the retained opposite-side roots
 identify pseudo-fusion membership without re-querying or re-sampling native species evolution
