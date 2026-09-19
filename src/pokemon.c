@@ -6162,11 +6162,7 @@ const struct Evolution *GetSpeciesEvolutions(u16 species)
 
 const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount)
 {
-    static struct FusionPotentialEvolution sActivePotentialEvolutions[MAX_FUSION_POTENTIAL_EVOLUTIONS];
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
-    enum BerserkGeneEvolutionPhase phase;
-    u8 activeCount = 0;
-    u8 i;
 
     if (outCount != NULL)
         *outCount = 0;
@@ -6178,44 +6174,16 @@ const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon 
     if (profile == NULL)
         return NULL;
 
-    phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
-    if (phase == BERSERK_GENE_PHASE_COMPLETE)
-        return sActivePotentialEvolutions;
-
-    for (i = 0; i < profile->potentialEvolutionCount; i++)
-    {
-        bool8 isPhase2 = profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2;
-
-        if ((phase == BERSERK_GENE_PHASE_2) == isPhase2)
-            sActivePotentialEvolutions[activeCount++] = profile->potentialEvolutions[i];
-    }
-
     if (outCount != NULL)
-        *outCount = activeCount;
+        *outCount = profile->potentialEvolutionCount;
 
-    return sActivePotentialEvolutions;
-}
-
-enum BerserkGeneEvolutionPhase GetMonBerserkGeneEvolutionPhase(struct Pokemon *mon)
-{
-    struct BerserkGeneProfile *profile;
-    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
-
-    if (profileId == 0)
-        return BERSERK_GENE_PHASE_COMPLETE;
-
-    profile = GetBerserkGeneProfile(profileId);
-    if (profile == NULL)
-        return BERSERK_GENE_PHASE_COMPLETE;
-
-    return (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+    return profile->potentialEvolutions;
 }
 
 void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies)
 {
     struct BerserkGeneProfile *profile;
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
-    enum BerserkGeneEvolutionPhase phase;
     u8 oldDisplayName[POKEMON_NAME_BUFFER_SIZE];
     u8 nickname[POKEMON_NAME_BUFFER_SIZE];
     u8 language;
@@ -6231,22 +6199,19 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
     StringCopy(oldDisplayName, GetMonDisplaySpeciesName(mon));
     GetMonData(mon, MON_DATA_NICKNAME, nickname);
     language = GetMonData(mon, MON_DATA_LANGUAGE);
-    phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
 
     for (i = 0; i < profile->potentialEvolutionCount; i++)
     {
-        struct FusionPotentialEvolution *potentialEvolution = &profile->potentialEvolutions[i];
+        const struct FusionPotentialEvolution *potentialEvolution = &profile->potentialEvolutions[i];
         bool8 sourceParentB;
         u8 type1Parent;
         u8 type1Slot;
         u8 type2Parent;
         u8 type2Slot;
 
-        if (potentialEvolution->targetSpecies != targetSpecies
-         || ((potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2) != 0) != (phase == BERSERK_GENE_PHASE_2))
+        if (potentialEvolution->targetSpecies != targetSpecies)
             continue;
 
-        potentialEvolution->methodAndSourceParent |= EVO_POTENTIAL_SELECTED;
         sourceParentB = potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT;
         if (sourceParentB)
             profile->parentSpeciesB = targetSpecies;
@@ -6267,7 +6232,6 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
                  && (sibling->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == (potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK)
                  && sibling->param == potentialEvolution->param)
                 {
-                    profile->potentialEvolutions[siblingIndex].methodAndSourceParent |= EVO_POTENTIAL_SELECTED;
                     if (siblingSourceParentB)
                         profile->parentSpeciesB = sibling->targetSpecies;
                     else
@@ -6282,11 +6246,6 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
         type2Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT) != 0;
         profile->type1 = GetSpeciesType(type1Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type1Slot);
         profile->type2 = GetSpeciesType(type2Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type2Slot);
-        profile->evolutionFlags &= ~BERSERK_GENE_EVOLUTION_PHASE_MASK;
-        if (phase == BERSERK_GENE_PHASE_1)
-            profile->evolutionFlags |= BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
-        else
-            profile->evolutionFlags |= BERSERK_GENE_PHASE_COMPLETE << BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
         if (language == GAME_LANGUAGE && !StringCompare(oldDisplayName, nickname))
             SetMonData(mon, MON_DATA_NICKNAME, GetMonDisplaySpeciesName(mon));
         return;
