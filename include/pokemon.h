@@ -192,10 +192,8 @@ struct BerserkGeneProfile
     u16 parentSpeciesA;
     u16 parentSpeciesB;
     struct FusionPotentialEvolution potentialEvolutions[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-    // Nibble-packed per-entry age stamp (0-15, two entries per byte) used to find the oldest
-    // stored potential-evolution line(s) when purging down to the MAX_FUSION_POTENTIAL_EVOLUTIONS
-    // cap. Array position alone isn't reliable, since re-selection during re-breeding can leave
-    // older and newer lines interleaved.
+    // Nibble-packed per-entry age stamp (0-15, two entries per byte), kept aligned with the
+    // root-contiguous lineage-node array for oldest-first pruning and re-breeding propagation.
     u8 potentialEvolutionAge[MAX_FUSION_POTENTIAL_EVOLUTIONS / 2];
     u8 potentialEvolutionCount;
     u8 inheritanceFlags;

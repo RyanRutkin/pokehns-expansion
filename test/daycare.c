@@ -612,7 +612,7 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
 {
     u16 profileId;
     struct BerserkGeneProfile *profile;
-    bool32 sawRattataLine = FALSE, sawPidgeyLine = FALSE;
+    bool32 sawRattataLine = FALSE, sawPidgeyLine = FALSE, sawPidgeotContinuation = FALSE;
     u8 i;
 
     ZeroPlayerPartyMons();
@@ -625,7 +625,7 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
     profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
     profile = GetBerserkGeneProfile(profileId);
     EXPECT(profile != NULL);
-    EXPECT_EQ(profile->potentialEvolutionCount, 2);
+    EXPECT_EQ(profile->potentialEvolutionCount, 3);
 
     for (i = 0; i < profile->potentialEvolutionCount; i++)
     {
@@ -641,16 +641,23 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
             EXPECT_EQ(profile->potentialEvolutions[i].param, 18);
             EXPECT_NE(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT, 0);
         }
+        else if (profile->potentialEvolutions[i].targetSpecies == SPECIES_PIDGEOT)
+        {
+            sawPidgeotContinuation = TRUE;
+            EXPECT_NE(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2, 0);
+        }
     }
     EXPECT(sawRattataLine);
     EXPECT(sawPidgeyLine);
+    EXPECT(sawPidgeotContinuation);
 }
 
 TEST("(Daycare) Matching unconditional level evolutions are stored as a paired fusion phase")
 {
     u16 profileId;
     struct BerserkGeneProfile *profile;
-    bool32 sawPupitar = FALSE, sawRaticate = FALSE;
+    bool32 sawPupitar = FALSE, sawRaticate = FALSE, sawTyranitar = FALSE;
+    u8 phase1Count = 0;
     u8 i;
 
     ZeroPlayerPartyMons();
@@ -663,20 +670,150 @@ TEST("(Daycare) Matching unconditional level evolutions are stored as a paired f
     profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
     profile = GetBerserkGeneProfile(profileId);
     EXPECT(profile != NULL);
-    EXPECT_EQ(profile->potentialEvolutionCount, 2);
+    EXPECT_EQ(profile->potentialEvolutionCount, 3);
 
     for (i = 0; i < profile->potentialEvolutionCount; i++)
     {
-        EXPECT_EQ(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK, EVO_LEVEL);
-        EXPECT_EQ(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING, EVO_POTENTIAL_PAIRED_WITH_SIBLING);
-        EXPECT_EQ(profile->potentialEvolutions[i].param, 25);
-        if (profile->potentialEvolutions[i].targetSpecies == SPECIES_PUPITAR)
-            sawPupitar = TRUE;
-        if (profile->potentialEvolutions[i].targetSpecies == SPECIES_RATICATE)
-            sawRaticate = TRUE;
+        struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
+        if (evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+        {
+            EXPECT_EQ(evolution->targetSpecies, SPECIES_TYRANITAR);
+            EXPECT_EQ(evolution->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING, 0);
+            sawTyranitar = TRUE;
+        }
+        else
+        {
+            phase1Count++;
+            EXPECT_EQ(evolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK, EVO_LEVEL);
+            EXPECT_EQ(evolution->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING, EVO_POTENTIAL_PAIRED_WITH_SIBLING);
+            EXPECT_EQ(evolution->param, 25);
+            if (evolution->targetSpecies == SPECIES_PUPITAR)
+                sawPupitar = TRUE;
+            if (evolution->targetSpecies == SPECIES_RATICATE)
+                sawRaticate = TRUE;
+        }
     }
+    EXPECT_EQ(phase1Count, 2);
     EXPECT(sawPupitar);
     EXPECT(sawRaticate);
+    EXPECT(sawTyranitar);
+}
+
+TEST("(Daycare) A Berserk Gene egg stores and projects the selected Poliwag line's Phase 2 branches")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+    const struct FusionPotentialEvolution *active;
+    bool32 sawPoliwhirl = FALSE, sawPoliwrath = FALSE, sawPolitoed = FALSE;
+    u8 activeCount, i;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_SLOWPOKE, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_POLIWAG, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT(profile->potentialEvolutionCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS);
+
+    for (i = 0; i < profile->potentialEvolutionCount; i++)
+    {
+        struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
+        if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+        {
+            if (evolution->targetSpecies == SPECIES_POLIWHIRL)
+                sawPoliwhirl = TRUE;
+        }
+        else if (sawPoliwhirl || i > 0)
+        {
+            // Phase 2 entries must immediately follow their owning Phase 1 root.
+            if (evolution->targetSpecies == SPECIES_POLIWRATH)
+                sawPoliwrath = TRUE;
+            if (evolution->targetSpecies == SPECIES_POLITOED)
+                sawPolitoed = TRUE;
+        }
+    }
+    EXPECT(sawPoliwhirl);
+    EXPECT(sawPoliwrath);
+    EXPECT(sawPolitoed);
+
+    active = GetMonPotentialEvolutions(&gPlayerParty[0], &activeCount);
+    EXPECT(active != NULL);
+    for (i = 0; i < activeCount; i++)
+        EXPECT_EQ(active[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2, 0);
+
+    // Resolve the Phase 1 Poliwag root and verify only its stored descendants are exposed next.
+    UpdateBerserkGeneProfileAfterEvolution(&gPlayerParty[0], SPECIES_POLIWHIRL);
+    active = GetMonPotentialEvolutions(&gPlayerParty[0], &activeCount);
+    EXPECT(activeCount >= 2);
+    sawPoliwrath = FALSE;
+    sawPolitoed = FALSE;
+    for (i = 0; i < activeCount; i++)
+    {
+        EXPECT_NE(active[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2, 0);
+        if (active[i].targetSpecies == SPECIES_POLIWRATH)
+            sawPoliwrath = TRUE;
+        if (active[i].targetSpecies == SPECIES_POLITOED)
+            sawPolitoed = TRUE;
+    }
+    EXPECT(sawPoliwrath);
+    EXPECT(sawPolitoed);
+}
+
+TEST("(Daycare) Berserk Gene lineage pruning stops at eight nodes and preserves each root continuation")
+{
+    struct FusionPotentialEvolution nodes[11] = {0};
+    u8 ages[11] = {0};
+    u8 rootIds[11] = {0};
+    u16 count = ARRAY_COUNT(nodes);
+    u8 roots[3] = {0};
+    u8 descendants[3] = {0};
+    u8 i;
+
+    // Three roots with subtree sizes 4, 4, and 3 (11 nodes total).
+    nodes[0].methodAndSourceParent = EVO_LEVEL;
+    nodes[4].methodAndSourceParent = EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT;
+    nodes[8].methodAndSourceParent = EVO_LEVEL;
+    rootIds[4] = 1;
+    rootIds[8] = 2;
+    for (i = 1; i <= 3; i++)
+    {
+        nodes[i].methodAndSourceParent = EVO_LEVEL | EVO_POTENTIAL_PHASE_2;
+        rootIds[i] = 0;
+        ages[i] = 3 - (i - 1);
+    }
+    for (i = 5; i <= 7; i++)
+    {
+        nodes[i].methodAndSourceParent = EVO_LEVEL | EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SOURCE_PARENT_BIT;
+        rootIds[i] = 1;
+        ages[i] = 3 - (i - 5);
+    }
+    for (i = 9; i <= 10; i++)
+    {
+        nodes[i].methodAndSourceParent = EVO_LEVEL | EVO_POTENTIAL_PHASE_2;
+        rootIds[i] = 2;
+        ages[i] = 3 - (i - 9);
+    }
+
+    PruneBerserkGeneLineage(nodes, ages, rootIds, &count);
+
+    EXPECT_EQ(count, MAX_FUSION_POTENTIAL_EVOLUTIONS);
+    for (i = 0; i < count; i++)
+    {
+        if (nodes[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+            descendants[rootIds[i]]++;
+        else
+            roots[rootIds[i]]++;
+    }
+    EXPECT_EQ(roots[0], 1);
+    EXPECT_EQ(roots[1], 1);
+    EXPECT_EQ(roots[2], 1);
+    EXPECT(descendants[0] >= 1);
+    EXPECT(descendants[1] >= 1);
+    EXPECT(descendants[2] >= 1);
 }
 
 TEST("(Daycare) Conditional evolution entries round-trip through stable condition-set IDs")

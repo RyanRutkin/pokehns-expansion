@@ -74,6 +74,29 @@ static s32 BerserkGeneBlendNumeric(s32 pGeneValue, s32 pOtherValue, u8 numGeneHo
     return (pGeneValue * 62 + pOtherValue * 38 + 50) / 100;
 }
 
+// Current species data has at most 72 literal evolution entries for one species (Alcremie).
+// The persistent profile remains capped at eight selected lineage nodes.
+#define MAX_BERSERK_GENE_EVOLUTION_CANDIDATES 72
+
+struct BerserkGeneEvolutionCandidate
+{
+    struct FusionPotentialEvolution evolution;
+    u8 age;
+    u8 profileIndex;
+};
+
+// Keep the full-line collector's bounded scratch in EWRAM rather than consuming the GBA's small
+// C stack. Egg/profile construction is synchronous, so one shared workspace is sufficient.
+EWRAM_DATA static struct BerserkGeneEvolutionCandidate sEvolutionCandidatesA[MAX_BERSERK_GENE_EVOLUTION_CANDIDATES] = {0};
+EWRAM_DATA static struct BerserkGeneEvolutionCandidate sEvolutionCandidatesB[MAX_BERSERK_GENE_EVOLUTION_CANDIDATES] = {0};
+EWRAM_DATA static bool8 sEvolutionCandidatesTakenA[MAX_BERSERK_GENE_EVOLUTION_CANDIDATES] = {0};
+EWRAM_DATA static bool8 sEvolutionCandidatesTakenB[MAX_BERSERK_GENE_EVOLUTION_CANDIDATES] = {0};
+EWRAM_DATA static struct FusionPotentialEvolution sEvolutionLineageNodes[MAX_FUSION_POTENTIAL_EVOLUTIONS * (MAX_BERSERK_GENE_EVOLUTION_CANDIDATES + 1)] = {0};
+EWRAM_DATA static u8 sEvolutionLineageAges[MAX_FUSION_POTENTIAL_EVOLUTIONS * (MAX_BERSERK_GENE_EVOLUTION_CANDIDATES + 1)] = {0};
+EWRAM_DATA static u8 sEvolutionLineageRootIds[MAX_FUSION_POTENTIAL_EVOLUTIONS * (MAX_BERSERK_GENE_EVOLUTION_CANDIDATES + 1)] = {0};
+EWRAM_DATA static struct BerserkGeneEvolutionCandidate *sSelectedEvolutionCandidates[MAX_FUSION_POTENTIAL_EVOLUTIONS] = {0};
+EWRAM_DATA static bool8 sSelectedEvolutionParentB[MAX_FUSION_POTENTIAL_EVOLUTIONS] = {0};
+
 static u8 GetPotentialEvolutionAge(const struct BerserkGeneProfile *profile, u8 index)
 {
     u8 ages = profile->potentialEvolutionAge[index / 2];
@@ -88,11 +111,10 @@ static void SetPotentialEvolutionAge(struct BerserkGeneProfile *profile, u8 inde
     *ages = (index & 1) ? (*ages & 0x0F) | ((age & 0xF) << 4) : (*ages & 0xF0) | (age & 0xF);
 }
 
-// Collect a species' (or a fusion parent's own currently-stored) immediate next-stage evolution
-// candidates. A fusion parent contributes only its own stored potentialEvolutions[], never its
-// full native ancestry, to keep repeated re-breeding bounded.
+// Collect available Phase 1 roots from a species or an existing fusion. For a fusion, preserve
+// its canonical nodes as the source of truth; the caller copies the selected root's Phase 2 group.
 static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sourceParentB,
-                                      struct FusionPotentialEvolution *outCandidates, u8 *outAges, u8 maxCandidates)
+                                      struct BerserkGeneEvolutionCandidate *outCandidates, u8 maxCandidates)
 {
     u16 profileId = GetBoxMonData(&daycare->mons[mon].mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
     u8 count = 0;
@@ -100,15 +122,57 @@ static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sour
     if (profileId != 0)
     {
         struct BerserkGeneProfile *parentProfile = GetBerserkGeneProfile(profileId);
+        u8 selectedParentMask = 0;
+        u8 phase = (parentProfile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
+                 >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
         u8 i;
+
+        if (phase == BERSERK_GENE_PHASE_COMPLETE)
+            return 0;
+
+        if (phase == BERSERK_GENE_PHASE_2)
+        {
+            for (i = 0; i < parentProfile->potentialEvolutionCount; i++)
+            {
+                struct FusionPotentialEvolution *root = &parentProfile->potentialEvolutions[i];
+                if (!(root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                 && (root->methodAndSourceParent & EVO_POTENTIAL_SELECTED))
+                    selectedParentMask |= 1 << ((root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0);
+            }
+        }
 
         for (i = 0; i < parentProfile->potentialEvolutionCount && count < maxCandidates; i++)
         {
-            outCandidates[count] = parentProfile->potentialEvolutions[i];
-            outCandidates[count].methodAndSourceParent =
-                (outCandidates[count].methodAndSourceParent & ~(EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PAIRED_WITH_SIBLING))
+            struct FusionPotentialEvolution *evolution = &parentProfile->potentialEvolutions[i];
+            bool8 isPhase2 = (evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2) != 0;
+            u8 rootIndex = i;
+            struct FusionPotentialEvolution *root;
+            bool8 rootActive;
+
+            if ((phase == BERSERK_GENE_PHASE_1 && isPhase2)
+             || (phase == BERSERK_GENE_PHASE_2 && !isPhase2))
+                continue;
+
+            if (phase == BERSERK_GENE_PHASE_2)
+            {
+                while (rootIndex > 0
+                    && (parentProfile->potentialEvolutions[rootIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                    rootIndex--;
+                root = &parentProfile->potentialEvolutions[rootIndex];
+                rootActive = (root->methodAndSourceParent & EVO_POTENTIAL_SELECTED)
+                    || !(selectedParentMask & (1 << ((root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0)));
+                if (!rootActive)
+                    continue;
+            }
+
+            outCandidates[count].evolution = *evolution;
+            outCandidates[count].evolution.methodAndSourceParent =
+                (outCandidates[count].evolution.methodAndSourceParent
+                 & ~(EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PAIRED_WITH_SIBLING
+                     | EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SELECTED))
                 | (sourceParentB ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0);
-            outAges[count] = min(GetPotentialEvolutionAge(parentProfile, i) + 1, 15);
+            outCandidates[count].age = min(GetPotentialEvolutionAge(parentProfile, i) + 1, 15);
+            outCandidates[count].profileIndex = i;
             count++;
         }
     }
@@ -124,17 +188,204 @@ static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sour
             if (evolutions[i].params != NULL && conditionSetId == 0)
                 continue; // malformed/unregistered source data; never discard conditions silently
 
-            outCandidates[count].targetSpecies = evolutions[i].targetSpecies;
-            outCandidates[count].param = evolutions[i].param;
-            outCandidates[count].methodAndSourceParent = (evolutions[i].method & EVO_POTENTIAL_METHOD_MASK)
+            outCandidates[count].evolution.targetSpecies = evolutions[i].targetSpecies;
+            outCandidates[count].evolution.param = evolutions[i].param;
+            outCandidates[count].evolution.methodAndSourceParent = (evolutions[i].method & EVO_POTENTIAL_METHOD_MASK)
                 | (sourceParentB ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0);
-            outCandidates[count].conditionSetId = conditionSetId;
-            outAges[count] = 0;
+            outCandidates[count].evolution.conditionSetId = conditionSetId;
+            outCandidates[count].age = 0;
+            outCandidates[count].profileIndex = 0xFF;
             count++;
         }
     }
 
     return count;
+}
+
+static void CollectSelectedLineDescendants(struct DayCare *daycare, u8 parentMon, bool8 sourceParentB,
+                                           const struct BerserkGeneEvolutionCandidate *rootCandidate,
+                                           u8 rootId, struct FusionPotentialEvolution *nodes,
+                                           u8 *ages, u8 *rootIds, u16 *nodeCount)
+{
+    u16 profileId = GetBoxMonData(&daycare->mons[parentMon].mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    u8 i;
+
+    if (profileId != 0)
+    {
+        struct BerserkGeneProfile *parentProfile = GetBerserkGeneProfile(profileId);
+        u8 phase = (parentProfile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
+                 >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+
+        // A Phase 1 root in an existing fusion already owns its birth-selected descendants.
+        // Reuse them instead of re-querying native evolution data or rerolling branches.
+        if (phase == BERSERK_GENE_PHASE_1
+         && rootCandidate->profileIndex < parentProfile->potentialEvolutionCount)
+        {
+            for (i = rootCandidate->profileIndex + 1; i < parentProfile->potentialEvolutionCount; i++)
+            {
+                struct FusionPotentialEvolution *evolution = &parentProfile->potentialEvolutions[i];
+
+                if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                    break;
+                if (*nodeCount < MAX_FUSION_POTENTIAL_EVOLUTIONS * (MAX_BERSERK_GENE_EVOLUTION_CANDIDATES + 1))
+                {
+                    nodes[*nodeCount] = *evolution;
+                    nodes[*nodeCount].methodAndSourceParent =
+                        (nodes[*nodeCount].methodAndSourceParent
+                         & ~(EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_SELECTED | EVO_POTENTIAL_PAIRED_WITH_SIBLING))
+                        | (sourceParentB ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0)
+                        | EVO_POTENTIAL_PHASE_2;
+                    ages[*nodeCount] = min(GetPotentialEvolutionAge(parentProfile, i) + 1, 15);
+                    rootIds[*nodeCount] = rootId;
+                    (*nodeCount)++;
+                }
+            }
+            return;
+        }
+
+        // Phase 2 options from an already-evolved fusion become fresh roots in the child's line;
+        // they do not carry a further saved phase in the two-phase storage model.
+        return;
+    }
+
+    {
+        const struct Evolution *evolutions = GetSpeciesEvolutions(rootCandidate->evolution.targetSpecies);
+        u16 seen = 0;
+
+        for (i = 0; evolutions[i].method != EVOLUTIONS_END; i++)
+        {
+            struct FusionPotentialEvolution candidate;
+            u8 conditionSetId = GetEvolutionConditionSetId(evolutions[i].params);
+
+            if (evolutions[i].params != NULL && conditionSetId == 0)
+                continue;
+
+            candidate.targetSpecies = evolutions[i].targetSpecies;
+            candidate.param = evolutions[i].param;
+            candidate.methodAndSourceParent = (evolutions[i].method & EVO_POTENTIAL_METHOD_MASK)
+                | (sourceParentB ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0)
+                | EVO_POTENTIAL_PHASE_2;
+            candidate.conditionSetId = conditionSetId;
+
+            if (seen < MAX_BERSERK_GENE_EVOLUTION_CANDIDATES
+             && *nodeCount < MAX_FUSION_POTENTIAL_EVOLUTIONS * (MAX_BERSERK_GENE_EVOLUTION_CANDIDATES + 1))
+            {
+                nodes[*nodeCount] = candidate;
+                ages[*nodeCount] = 0;
+                rootIds[*nodeCount] = rootId;
+                (*nodeCount)++;
+            }
+            seen++;
+        }
+    }
+}
+
+static void RemoveLineageNode(struct FusionPotentialEvolution *nodes, u8 *ages, u8 *rootIds, u16 *count, u16 index)
+{
+    u16 i;
+
+    for (i = index; i + 1 < *count; i++)
+    {
+        nodes[i] = nodes[i + 1];
+        ages[i] = ages[i + 1];
+        rootIds[i] = rootIds[i + 1];
+    }
+    (*count)--;
+}
+
+void PruneBerserkGeneLineage(struct FusionPotentialEvolution *nodes, u8 *ages, u8 *rootIds, u16 *count)
+{
+    while (*count > MAX_FUSION_POTENTIAL_EVOLUTIONS)
+    {
+        u8 oldestAge = 0;
+        u16 tieCount = 0;
+        u16 i;
+        u16 pick;
+
+        // First remove one Phase 2 node at a time, never removing a root's final continuation
+        // while a different continuation can be removed.
+        for (i = 0; i < *count; i++)
+        {
+            u16 j;
+            u8 descendants = 0;
+            if (!(nodes[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                continue;
+            for (j = 0; j < *count; j++)
+                if ((nodes[j].methodAndSourceParent & EVO_POTENTIAL_PHASE_2) && rootIds[j] == rootIds[i])
+                    descendants++;
+            if (descendants > 1 && (tieCount == 0 || ages[i] > oldestAge))
+            {
+                oldestAge = ages[i];
+                tieCount = 0;
+            }
+            if (descendants > 1 && ages[i] == oldestAge)
+                tieCount++;
+        }
+
+        if (tieCount != 0)
+        {
+            pick = Random() % tieCount;
+            for (i = 0; i < *count; i++)
+            {
+                u16 j;
+                u8 descendants = 0;
+                if (!(nodes[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2) || ages[i] != oldestAge)
+                    continue;
+                for (j = 0; j < *count; j++)
+                    if ((nodes[j].methodAndSourceParent & EVO_POTENTIAL_PHASE_2) && rootIds[j] == rootIds[i])
+                        descendants++;
+                if (descendants > 1 && pick-- == 0)
+                    break;
+            }
+            RemoveLineageNode(nodes, ages, rootIds, count, i);
+            continue;
+        }
+
+        // No Phase 2 node is removable without losing a root's final continuation. Remove one
+        // oldest whole root, while keeping at least one root from each parent when possible.
+        {
+            u8 rootCount[2] = {0, 0};
+            u16 candidateRoots[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+            u8 candidateCount = 0;
+            u8 oldestRootAge = 0;
+
+            for (i = 0; i < *count; i++)
+            {
+                bool8 isRoot = !(nodes[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2);
+                bool8 parentB;
+                if (!isRoot)
+                    continue;
+                parentB = (nodes[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                rootCount[parentB]++;
+            }
+
+            for (i = 0; i < *count; i++)
+            {
+                u16 rootIndex;
+                bool8 parentB;
+                if (nodes[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                    continue;
+                rootIndex = i;
+                parentB = (nodes[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                if (rootCount[parentB] == 1 && rootCount[!parentB] != 0)
+                    continue;
+                if (candidateCount == 0 || ages[rootIndex] > oldestRootAge)
+                {
+                    oldestRootAge = ages[rootIndex];
+                    candidateCount = 0;
+                }
+                if (ages[rootIndex] == oldestRootAge)
+                    candidateRoots[candidateCount++] = rootIndex;
+            }
+
+            if (candidateCount == 0)
+                return;
+            i = candidateRoots[Random() % candidateCount];
+            RemoveLineageNode(nodes, ages, rootIds, count, i);
+            while (i < *count && (nodes[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                RemoveLineageNode(nodes, ages, rootIds, count, i);
+        }
+    }
 }
 
 // Steps 1-2 of the Berserk Gene trait inheritance order: primary/secondary type, drawn from a
@@ -480,144 +731,93 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
         profile->evYields = evYields;
     }
 
-    // Evolutionary line selection (birth-time only for now): guarantee at least one candidate
-    // from each parent that has any, then fill the remaining slotCount slots via the usual
-    // gene-weighted roll. Conditional-branch merging/pseudo-fusion and multi-generation
-    // age-based purging are not yet implemented; every entry from this call keeps its
-    // zero-initialized age stamp (this profile was just freshly allocated).
+    // Select whole Phase 1 roots, then persist each selected root's Phase 2 descendants directly
+    // after it. The profile remains an eight-node canonical lineage graph, not an active menu.
     {
-        struct FusionPotentialEvolution candidatesA[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-        struct FusionPotentialEvolution candidatesB[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-        u8 candidateAgesA[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-        u8 candidateAgesB[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-        bool8 takenA[MAX_FUSION_POTENTIAL_EVOLUTIONS] = {FALSE};
-        bool8 takenB[MAX_FUSION_POTENTIAL_EVOLUTIONS] = {FALSE};
-        u8 countA = CollectEvolutionCandidates(daycare, 0, FALSE, candidatesA, candidateAgesA, MAX_FUSION_POTENTIAL_EVOLUTIONS);
-        u8 countB = CollectEvolutionCandidates(daycare, 1, TRUE, candidatesB, candidateAgesB, MAX_FUSION_POTENTIAL_EVOLUTIONS);
-        u8 lowCount = (countA < countB) ? countA : countB;
-        u8 highCount = (countA > countB) ? countA : countB;
-        u32 rFixed = Random() % 1001; // fixed-point r in [0, 1], scaled by 1000
-        u8 slotCount = lowCount + (highCount * rFixed + 999) / 1000;
-        u8 combinedCount = countA + countB;
-        u8 remainingA = countA, remainingB = countB;
-        u8 stored = 0;
+        struct BerserkGeneEvolutionCandidate *candidatesA = sEvolutionCandidatesA;
+        struct BerserkGeneEvolutionCandidate *candidatesB = sEvolutionCandidatesB;
+        bool8 *takenA = sEvolutionCandidatesTakenA;
+        bool8 *takenB = sEvolutionCandidatesTakenB;
+        struct FusionPotentialEvolution *nodes = sEvolutionLineageNodes;
+        u8 *nodeAges = sEvolutionLineageAges;
+        u8 *nodeRootIds = sEvolutionLineageRootIds;
+        struct BerserkGeneEvolutionCandidate **selectedCandidates = sSelectedEvolutionCandidates;
+        bool8 *selectedParentB = sSelectedEvolutionParentB;
+        u8 countA, countB;
+        u8 lowCount, highCount, slotCount, minRoots;
+        u32 rFixed;
+        u8 selectedCount = 0;
+        u16 nodeCount = 0;
+        u8 i;
 
-        if (slotCount > combinedCount)
-            slotCount = combinedCount;
+        memset(takenA, FALSE, sizeof(sEvolutionCandidatesTakenA));
+        memset(takenB, FALSE, sizeof(sEvolutionCandidatesTakenB));
+        countA = CollectEvolutionCandidates(daycare, 0, FALSE, candidatesA, MAX_BERSERK_GENE_EVOLUTION_CANDIDATES);
+        countB = CollectEvolutionCandidates(daycare, 1, TRUE, candidatesB, MAX_BERSERK_GENE_EVOLUTION_CANDIDATES);
+        lowCount = (countA < countB) ? countA : countB;
+        highCount = (countA > countB) ? countA : countB;
+        rFixed = Random() % 1001; // fixed-point r in [0, 1], scaled by 1000
+        slotCount = lowCount + (highCount * rFixed + 999) / 1000;
+        minRoots = (countA != 0) + (countB != 0);
+
+        if (slotCount < minRoots)
+            slotCount = minRoots;
+        if (slotCount > countA + countB)
+            slotCount = countA + countB;
         if (slotCount > MAX_FUSION_POTENTIAL_EVOLUTIONS)
             slotCount = MAX_FUSION_POTENTIAL_EVOLUTIONS;
 
-        // At the profile cap, preserve the one-per-parent floor and evict the oldest remaining
-        // candidate first; equally-old candidates are removed uniformly at random.
-        while (combinedCount > MAX_FUSION_POTENTIAL_EVOLUTIONS)
-        {
-            u8 oldestAge = 0;
-            u8 oldestCount = 0;
-            u8 targetParent = 0;
-            u8 targetIndex = 0;
-            u8 pick;
-            u8 candidateIndex;
-
-            for (candidateIndex = 0; candidateIndex < countA; candidateIndex++)
-            {
-                if (countA > 1 && candidateAgesA[candidateIndex] > oldestAge)
-                    oldestAge = candidateAgesA[candidateIndex];
-            }
-            for (candidateIndex = 0; candidateIndex < countB; candidateIndex++)
-            {
-                if (countB > 1 && candidateAgesB[candidateIndex] > oldestAge)
-                    oldestAge = candidateAgesB[candidateIndex];
-            }
-            for (candidateIndex = 0; candidateIndex < countA; candidateIndex++)
-            {
-                if (countA > 1 && candidateAgesA[candidateIndex] == oldestAge)
-                    oldestCount++;
-            }
-            for (candidateIndex = 0; candidateIndex < countB; candidateIndex++)
-            {
-                if (countB > 1 && candidateAgesB[candidateIndex] == oldestAge)
-                    oldestCount++;
-            }
-
-            pick = Random() % oldestCount;
-            for (candidateIndex = 0; candidateIndex < countA; candidateIndex++)
-            {
-                if (countA > 1 && candidateAgesA[candidateIndex] == oldestAge && pick-- == 0)
-                {
-                    targetParent = 0;
-                    targetIndex = candidateIndex;
-                    break;
-                }
-            }
-            if (candidateIndex == countA)
-            {
-                for (candidateIndex = 0; candidateIndex < countB; candidateIndex++)
-                {
-                    if (countB > 1 && candidateAgesB[candidateIndex] == oldestAge && pick-- == 0)
-                    {
-                        targetParent = 1;
-                        targetIndex = candidateIndex;
-                        break;
-                    }
-                }
-            }
-
-            if (targetParent == 0)
-            {
-                for (candidateIndex = targetIndex; candidateIndex + 1 < countA; candidateIndex++)
-                {
-                    candidatesA[candidateIndex] = candidatesA[candidateIndex + 1];
-                    candidateAgesA[candidateIndex] = candidateAgesA[candidateIndex + 1];
-                }
-                countA--;
-            }
-            else
-            {
-                for (candidateIndex = targetIndex; candidateIndex + 1 < countB; candidateIndex++)
-                {
-                    candidatesB[candidateIndex] = candidatesB[candidateIndex + 1];
-                    candidateAgesB[candidateIndex] = candidateAgesB[candidateIndex + 1];
-                }
-                countB--;
-            }
-            combinedCount--;
-        }
-
-        remainingA = countA;
-        remainingB = countB;
-
-        if (countA > 0 && stored < slotCount)
+        // Guarantee one root per contributing parent before weighted root selection.
+        if (countA != 0 && selectedCount < slotCount)
         {
             u8 pick = Random() % countA;
-            profile->potentialEvolutions[stored++] = candidatesA[pick];
-            SetPotentialEvolutionAge(profile, stored - 1, candidateAgesA[pick]);
+            selectedCandidates[selectedCount] = &candidatesA[pick];
+            selectedParentB[selectedCount] = FALSE;
             takenA[pick] = TRUE;
-            remainingA--;
+            selectedCount++;
         }
-        if (countB > 0 && stored < slotCount)
+        if (countB != 0 && selectedCount < slotCount)
         {
             u8 pick = Random() % countB;
-            profile->potentialEvolutions[stored++] = candidatesB[pick];
-            SetPotentialEvolutionAge(profile, stored - 1, candidateAgesB[pick]);
+            selectedCandidates[selectedCount] = &candidatesB[pick];
+            selectedParentB[selectedCount] = TRUE;
             takenB[pick] = TRUE;
-            remainingB--;
+            selectedCount++;
         }
 
-        while (stored < slotCount && (remainingA > 0 || remainingB > 0))
+        while (selectedCount < slotCount)
         {
-            bool8 pickFromA;
-            u8 pick, seen, idx;
-
-            if (remainingA == 0)
-                pickFromA = FALSE;
-            else if (remainingB == 0)
-                pickFromA = TRUE;
-            else
-                pickFromA = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders);
+            bool8 pickFromA = countA != 0 && (countB == 0
+                || BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders));
+            u8 available = 0, pick, seen, idx;
 
             if (pickFromA)
             {
-                pick = Random() % remainingA;
+                for (idx = 0; idx < countA; idx++)
+                    if (!takenA[idx])
+                        available++;
+                if (available == 0)
+                    pickFromA = FALSE;
+            }
+            if (!pickFromA)
+            {
+                available = 0;
+                for (idx = 0; idx < countB; idx++)
+                    if (!takenB[idx])
+                        available++;
+                if (available == 0)
+                    pickFromA = TRUE;
+            }
+
+            if (pickFromA)
+            {
+                available = 0;
+                for (idx = 0; idx < countA; idx++)
+                    if (!takenA[idx])
+                        available++;
+                if (available == 0)
+                    break;
+                pick = Random() % available;
                 for (idx = 0, seen = 0; idx < countA; idx++)
                 {
                     if (!takenA[idx])
@@ -627,14 +827,15 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
                         seen++;
                     }
                 }
-                profile->potentialEvolutions[stored] = candidatesA[idx];
-                SetPotentialEvolutionAge(profile, stored, candidateAgesA[idx]);
+                selectedCandidates[selectedCount] = &candidatesA[idx];
+                selectedParentB[selectedCount] = FALSE;
                 takenA[idx] = TRUE;
-                remainingA--;
             }
             else
             {
-                pick = Random() % remainingB;
+                if (available == 0)
+                    break;
+                pick = Random() % available;
                 for (idx = 0, seen = 0; idx < countB; idx++)
                 {
                     if (!takenB[idx])
@@ -644,30 +845,67 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
                         seen++;
                     }
                 }
-                profile->potentialEvolutions[stored] = candidatesB[idx];
-                SetPotentialEvolutionAge(profile, stored, candidateAgesB[idx]);
+                selectedCandidates[selectedCount] = &candidatesB[idx];
+                selectedParentB[selectedCount] = TRUE;
                 takenB[idx] = TRUE;
-                remainingB--;
             }
-            stored++;
+            selectedCount++;
         }
 
-        // A single plain level-up line from each side becomes one paired fusion phase.
-        if (countA == 1 && countB == 1 && stored == 2
-         && profile->potentialEvolutions[0].conditionSetId == 0
-         && profile->potentialEvolutions[1].conditionSetId == 0
-         && (profile->potentialEvolutions[0].methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_LEVEL
-         && (profile->potentialEvolutions[1].methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_LEVEL)
+        for (i = 0; i < selectedCount; i++)
         {
-            u16 mergedLevel = (profile->potentialEvolutions[0].param + profile->potentialEvolutions[1].param + 1) / 2;
-
-            profile->potentialEvolutions[0].param = mergedLevel;
-            profile->potentialEvolutions[1].param = mergedLevel;
-            profile->potentialEvolutions[0].methodAndSourceParent |= EVO_POTENTIAL_PAIRED_WITH_SIBLING;
-            profile->potentialEvolutions[1].methodAndSourceParent |= EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+            nodes[nodeCount] = selectedCandidates[i]->evolution;
+            nodeAges[nodeCount] = selectedCandidates[i]->age;
+            nodeRootIds[nodeCount] = i;
+            nodeCount++;
+            CollectSelectedLineDescendants(daycare, selectedParentB[i], selectedParentB[i], selectedCandidates[i],
+                                           i, nodes, nodeAges, nodeRootIds, &nodeCount);
         }
 
-        profile->potentialEvolutionCount = stored;
+        // Preserve the established unconditional level-up pairing for the one-root-per-parent
+        // case. Root groups may now have descendants, so matching is by flags/source, not adjacency.
+        if (selectedCount == 2 && selectedParentB[0] != selectedParentB[1])
+        {
+            struct FusionPotentialEvolution *rootA = NULL;
+            struct FusionPotentialEvolution *rootB = NULL;
+            u16 nodeIndex;
+
+            for (nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++)
+            {
+                if (nodes[nodeIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                    continue;
+                if (nodes[nodeIndex].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT)
+                    rootB = &nodes[nodeIndex];
+                else
+                    rootA = &nodes[nodeIndex];
+            }
+            if (rootA != NULL && rootB != NULL
+             && rootA->conditionSetId == 0 && rootB->conditionSetId == 0
+             && (rootA->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_LEVEL
+             && (rootB->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_LEVEL)
+            {
+                u16 mergedLevel = (rootA->param + rootB->param + 1) / 2;
+                rootA->param = rootB->param = mergedLevel;
+                rootA->methodAndSourceParent |= EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+                rootB->methodAndSourceParent |= EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+            }
+        }
+
+        PruneBerserkGeneLineage(nodes, nodeAges, nodeRootIds, &nodeCount);
+
+        // Rebuild canonical root-contiguous order and keep the age nibbles aligned with entries.
+        for (i = 0; i < selectedCount; i++)
+        {
+            u16 nodeIndex;
+            for (nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++)
+            {
+                if (nodeRootIds[nodeIndex] != i)
+                    continue;
+                profile->potentialEvolutions[profile->potentialEvolutionCount] = nodes[nodeIndex];
+                SetPotentialEvolutionAge(profile, profile->potentialEvolutionCount, nodeAges[nodeIndex]);
+                profile->potentialEvolutionCount++;
+            }
+        }
     }
 
     profile->inheritanceFlags = flags;

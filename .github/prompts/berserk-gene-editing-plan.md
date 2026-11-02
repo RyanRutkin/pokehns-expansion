@@ -405,11 +405,12 @@ concrete side. Every active Phase 2 target on the opposite side is folded into t
 pseudo-fusion side, even if there is only one such target. No Phase 1 target can reappear, and no
 further potential evolutions remain unless a future design explicitly introduces a Phase 3.
 
-**Slowpoke x Poliwag example:** if birth selection includes `Slowbro -> Slowking` and
-`Poliwhirl -> {Poliwrath, Politoed}`, choosing Slowbro at Phase 1 produces
-Slowbro x Poliwhirl. The active Phase 2 menu is Slowking, Poliwrath, and Politoed. Choosing
-Poliwrath then combines Poliwrath with the opposite-side Slowking pseudo-fusion; neither side has
-a later phase, so the profile has no remaining evolution choices.
+**Slowpoke x Poliwag example:** repository evolution data makes Slowbro and Slowking alternative
+Phase 1 targets from Slowpoke; Slowbro does not evolve into Slowking. Poliwag's Phase 1 target is
+Poliwhirl, whose Phase 2 entries include Poliwrath and conditional Politoed options. Choosing
+Poliwhirl at Phase 1 therefore exposes its stored Phase 2 branches (plus any retained descendants
+from selected opposite-side Slowpoke roots). This test must follow the actual species evolution
+tables rather than treating Slowbro -> Slowking as a native line.
 
 This model requires a persisted, birth-selected lineage graph (phase, source parent, and parent
 Phase 1 relationship for every selected target) plus a persisted phase-selection state. The current
@@ -430,18 +431,20 @@ canonical birth-selected lineage-node store rather than an immediate active menu
 - bit 7 records the player-selected node for the current resolved phase.
 `conditionSetId` remains a full byte; it must not be repacked because the generated registry has
 more than 64 possible IDs. `evolutionFlags` bit 0 remains name priority; its spare bits store the
-current evolution phase/state. The four bytes previously named `potentialEvolutionAge` are
-repurposed as one nibble per node containing that node's owning Phase 1 root index. A Phase 1 node
-stores its own index; every Phase 2 descendant stores the index of its originating Phase 1 node.
-This explicit linkage is required because the source-parent bit alone cannot distinguish multiple
-selected Phase 1 roots belonging to the same parent. Age-based pruning no longer applies to an
-already-created deterministic lineage; birth-time capacity selection operates on whole roots.
+current evolution phase/state. Keep the four-byte `potentialEvolutionAge` field as one 4-bit age
+stamp per node (0-15); pruning and re-breeding still need age information, so these nibbles cannot
+also hold root indices. Instead, store nodes contiguously by root: each Phase 1 root is followed
+immediately by all of its retained Phase 2 descendants, and the next Phase 1 root starts the next
+group. A Phase 2 node's owning root is found by scanning backward to the nearest Phase 1 node
+(identified by `EVO_POTENTIAL_PHASE_2` being clear). This remains unambiguous when multiple roots
+come from the same source parent, requires no additional bytes, and keeps each node's age directly
+associated with its array index. Any operation that inserts, removes, or compacts nodes must move
+the corresponding age nibbles in lockstep and preserve this root-grouped order.
 
-At birth, selecting a root line reserves node capacity for that root's complete Phase 1/Phase 2
-subtree. A root is never partially stored: if adding its complete selected subtree would exceed
-the eight-node cap, that root is not selected (or an already-selected whole root is evicted by the
-documented birth-time priority rule). Individual Phase 2 nodes must never be silently discarded.
-This keeps every stored line deterministic and preserves the existing profile size.
+At birth, select and store Phase 1 roots with their eligible Phase 2 descendants, preserving each
+root's group contiguously. Capacity pruning may remove individual Phase 2 nodes under the finalized
+continuation-preserving rule below; it must never remove a root while retaining any of that root's
+descendants. The selected root and all retained descendants remain deterministic after birth.
 
 ### Finalized iterative capacity pruning rule (resolved 2026-09-19)
 The eight-node cap is applied to total stored lineage nodes, but pruning is iterative and stops
@@ -464,18 +467,25 @@ tie-breaking, but every retained root keeps a Phase 2 continuation whenever poss
 pruning process happens at birth; evolution never re-rolls, re-samples, or reprunes the lineage.
 
 ### Resume checkpoint
-The next implementation pass must replace the current age-based per-entry candidate selection in
-`BuildBerserkGeneProfile()` atomically. It must collect complete Phase 1 roots with their Phase 2
-descendants, apply birth-time line weighting, perform the iterative pruning rule above, and write
-root-link metadata into the existing nibble storage. Do not enable phase filtering or reinterpret
-the nibble bytes until that collector replacement and its re-breeding path are complete. Then add
-deterministic tests for Slowpoke x Poliwag (Slowbro -> Slowking alongside Poliwrath/Politoed) and
-for an 11-node graph stopping exactly at eight.
+Implementation progress (2026-10-31): the age-preserving, root-contiguous collector and active
+Phase 1/Phase 2 projection have been started in `daycare.c` and `pokemon.c`. It now collects
+conditional Phase 2 entries through the stable condition-set registry, carries stored descendants
+when a fusion parent is rebred, and prunes the temporary node graph to the eight-node cap. Tests
+cover the real Poliwag branches, a simple two-stage line, and the 11-to-8 pruning case.
 
-The selected-node bit plus the profile phase state identifies the Phase 1 choice. The stored root
-index identifies every eligible Phase 2 descendant exactly, and the retained opposite-side roots
-identify pseudo-fusion membership without re-querying or re-sampling native species evolution
-data.
+Before treating this phase as complete, review/fix the new code and extend coverage for ambiguous
+same-side roots and re-breeding after each evolution phase. Then complete the full deterministic
+evolution resolution in `UpdateBerserkGeneProfileAfterEvolution()`: pseudo-fusion aggregation,
+consumption of sibling roots, paired Phase 1 behavior across their descendants, and Phase 2
+counterpart resolution. Add tests for those transitions and the 11-node case, then run the test
+binary when the HNS test-runner build blocker is resolved. Do not claim full Berserk Gene evolution
+completion until those transitions are implemented and validated.
+
+The selected-node bit plus the profile phase state identifies the Phase 1 choice. A Phase 2 node's
+root is identified by its contiguous group, not by a stored root index; retained opposite-side
+roots identify pseudo-fusion membership without re-querying or re-sampling native species
+evolution data. The existing per-entry age nibble remains available for oldest-first pruning and
+age propagation when a fusion is bred again.
 
 ### Pre-merging simple, unconditional, same-phase level-up lines
 After the initial per-parent line selection (above), lines are checked for merging: if, at a

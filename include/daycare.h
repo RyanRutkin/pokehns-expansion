@@ -3,6 +3,8 @@
 
 #include "constants/daycare.h"
 
+struct FusionPotentialEvolution;
+
 struct RecordMixingDaycareMail
 {
     struct DaycareMail mail[DAYCARE_MON_COUNT];
@@ -36,5 +38,6 @@ u8 GetEggMovesBySpecies(u16 species, u16 *eggMoves);
 bool8 SpeciesCanLearnEggMove(u16 species, enum Move move);
 void StorePokemonInDaycare(struct Pokemon *mon, struct DaycareMon *daycareMon);
 u8 GetEggMoves(struct Pokemon *pokemon, u16 *eggMoves);
+void PruneBerserkGeneLineage(struct FusionPotentialEvolution *nodes, u8 *ages, u8 *rootIds, u16 *count);
 
 #endif // GUARD_DAYCARE_H
