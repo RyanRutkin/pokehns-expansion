@@ -523,6 +523,11 @@ pre-evolution chain. Regression coverage checks bounded level-up merging, unchan
 the teachable union, and both-parent egg-move sampling. Species-wide reference views and ordinary
 Pokémon remain on their existing species-keyed code paths.
 
+Move-relearner follow-up (2026-11-02): added BoxPokemon-safe level-up, egg, and teachable
+accessors and routed PC move-relearner listing/availability through them. Fusion level-up and egg
+lists do not traverse the nominal species' ancestry; TM/tutor eligibility includes the fusion's
+teachable union. Species-only routines for ordinary Pokémon are unchanged.
+
 The selected-node bit plus the profile phase state identifies the Phase 1 choice. A Phase 2 node's
 root is identified by its contiguous group, not by a stored root index; retained opposite-side
 roots identify pseudo-fusion membership without re-querying or re-sampling native species

@@ -6360,7 +6360,7 @@ const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon)
     countA = CountMoveList(learnsetA);
     countB = CountMoveList(learnsetB);
     takeA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT)
-        ? EGG_MOVES_ARRAY_COUNT / 2
+        ? (EGG_MOVES_ARRAY_COUNT - 1 + 1) / 2
         : ((profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) ? 7 : 11);
     takeB = EGG_MOVES_ARRAY_COUNT - 1 - takeA;
     takeA = min(takeA, countA);

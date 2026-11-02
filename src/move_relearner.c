@@ -1193,13 +1193,12 @@ static u32 GetRelearnerLevelUpMoves(struct BoxPokemon *mon, u16 *moves)
         return 0;
 
     bool8 isFusion = GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0;
+    const struct LevelUpMove *fusionLearnset = isFusion ? GetBoxMonLevelUpLearnset(mon) : NULL;
 
     u32 level = (P_ENABLE_ALL_LEVEL_UP_MOVES ? MAX_LEVEL : GetLevelFromBoxMonExp(mon));
     do
     {
-        const struct LevelUpMove *learnset = isFusion
-            ? GetBoxMonLevelUpLearnset(mon)
-            : GetSpeciesLevelUpLearnset(species);
+        const struct LevelUpMove *learnset = isFusion ? fusionLearnset : GetSpeciesLevelUpLearnset(species);
 
         for (u32 i = 0; i < MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
         {
@@ -1362,12 +1361,12 @@ static bool32 HasRelearnerLevelUpMoves(struct BoxPokemon *boxMon)
         return FALSE;
 
     u32 level = (P_ENABLE_ALL_LEVEL_UP_MOVES == TRUE) ? MAX_LEVEL : GetLevelFromBoxMonExp(boxMon);
+    bool8 isFusion = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0;
+    const struct LevelUpMove *fusionLearnset = isFusion ? GetBoxMonLevelUpLearnset(boxMon) : NULL;
 
     do
     {
-        const struct LevelUpMove *learnset = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID)
-            ? GetBoxMonLevelUpLearnset(boxMon)
-            : GetSpeciesLevelUpLearnset(species);
+        const struct LevelUpMove *learnset = isFusion ? fusionLearnset : GetSpeciesLevelUpLearnset(species);
 
         for (u32 i = 0; i < MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
         {
@@ -1378,8 +1377,7 @@ static bool32 HasRelearnerLevelUpMoves(struct BoxPokemon *boxMon)
                 return TRUE;
         }
 
-        species = (P_PRE_EVO_MOVES && GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID) == 0
-            ? GetSpeciesPreEvolution(species) : SPECIES_NONE);
+        species = (P_PRE_EVO_MOVES && !isFusion ? GetSpeciesPreEvolution(species) : SPECIES_NONE);
 
     } while (species != SPECIES_NONE);
 
