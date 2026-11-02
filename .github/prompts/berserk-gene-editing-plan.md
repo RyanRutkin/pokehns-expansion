@@ -516,11 +516,12 @@ use this projection; species-only helpers and initial BoxPokemon moves remain un
 moves are not modified by the evolution hook. Added `GetMonTeachableLearnset()` as a deduplicated
 union of both current parent species' teachable lists, sorted with fusion-type moves first, and
 `GetMonEggMoveLearnset()` as a weighted, evenly sampled, capped merge with type-relevant moves
-prioritized. Regression coverage checks the teachable union and both-parent egg-move sampling.
-Evolution-time checks that known move slots remain unchanged; full randomized-move/type-priority
-sampling details and playtest coverage remain. The profile-aware level-up/egg/teachable projections
-are now used by the fusion Pokédex STATS tab, and party-menu teachable-move eligibility accepts the
-fusion's teachable union. The species-wide Pokédex path remains unchanged.
+prioritized. The Pokédex STATS tab uses these profile-aware projections for owned fusion entries,
+and the party menu plus PC move relearner accept the fusion teachable union. The PC move relearner
+also uses the fusion level-up and egg-move projections without walking the nominal species'
+pre-evolution chain. Regression coverage checks bounded level-up merging, unchanged known moves,
+the teachable union, and both-parent egg-move sampling. Species-wide reference views and ordinary
+Pokémon remain on their existing species-keyed code paths.
 
 The selected-node bit plus the profile phase state identifies the Phase 1 choice. A Phase 2 node's
 root is identified by its contiguous group, not by a stored root index; retained opposite-side

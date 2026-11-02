@@ -6163,9 +6163,10 @@ const struct Evolution *GetSpeciesEvolutions(u16 species)
 EWRAM_DATA static struct LevelUpMove sBerserkGeneLevelUpMoves[MAX_LEVEL_UP_MOVES + 1] = {0};
 EWRAM_DATA static u16 sBerserkGeneEggMoves[EGG_MOVES_ARRAY_COUNT] = {0};
 // Current generated learnable data tops out at 372 moves for one species; two full parent lists
-// therefore fit within this fixed, bounded union buffer without profile/save growth.
+// therefore fit within this fixed, bounded union buffer without profile/save growth. This large
+// transient workspace uses IWRAM because EWRAM is nearly full in the HNS ROM.
 #define MAX_BERSERK_GENE_TEACHABLE_MOVES 744
-EWRAM_DATA static u16 sBerserkGeneTeachableMoves[MAX_BERSERK_GENE_TEACHABLE_MOVES + 1] = {0};
+IWRAM_DATA static u16 sBerserkGeneTeachableMoves[MAX_BERSERK_GENE_TEACHABLE_MOVES + 1] = {0};
 
 static u16 CountLevelUpMoves(const struct LevelUpMove *learnset)
 {
@@ -6175,13 +6176,13 @@ static u16 CountLevelUpMoves(const struct LevelUpMove *learnset)
     return count;
 }
 
-static bool8 IsBerserkGeneMoveTypeRelevant(struct Pokemon *mon, enum Move move)
+static bool8 IsBerserkGeneMoveTypeRelevant(enum Type type1, enum Type type2, enum Move move)
 {
     enum Type moveType = GetMoveType(move);
-    return moveType == GetMonType(mon, 0) || moveType == GetMonType(mon, 1);
+    return moveType == type1 || moveType == type2;
 }
 
-static void AddBerserkGeneLearnsetMove(struct Pokemon *mon, const struct LevelUpMove *move, u8 *count)
+static void AddBerserkGeneLearnsetMove(const struct LevelUpMove *move, u8 *count)
 {
     u8 i;
 
@@ -6196,13 +6197,11 @@ static void AddBerserkGeneLearnsetMove(struct Pokemon *mon, const struct LevelUp
     }
     if (*count < MAX_LEVEL_UP_MOVES)
         sBerserkGeneLevelUpMoves[(*count)++] = *move;
-    (void)mon;
 }
 
-const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon)
+static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u16 profileId,
+                                                                  enum Type type1, enum Type type2)
 {
-    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
-    u16 species = GetMonData(mon, MON_DATA_SPECIES);
     struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
     const struct LevelUpMove *learnsetA, *learnsetB;
     u16 countA, countB;
@@ -6236,9 +6235,9 @@ const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon)
     takeB = min(takeB, countB);
 
     for (i = 0; i < takeA; i++)
-        AddBerserkGeneLearnsetMove(mon, &learnsetA[(i * countA) / takeA], &count);
+        AddBerserkGeneLearnsetMove(&learnsetA[(i * countA) / takeA], &count);
     for (i = 0; i < takeB; i++)
-        AddBerserkGeneLearnsetMove(mon, &learnsetB[(i * countB) / takeB], &count);
+        AddBerserkGeneLearnsetMove(&learnsetB[(i * countB) / takeB], &count);
 
     // Keep learnset ordering level-first, then favor moves matching the current fusion typing
     // within a shared level. This preserves the assumptions in level-up and move-relearner scans.
@@ -6246,11 +6245,11 @@ const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon)
     {
         struct LevelUpMove entry = sBerserkGeneLevelUpMoves[i];
         u16 j = i;
-        bool8 entryRelevant = IsBerserkGeneMoveTypeRelevant(mon, entry.move);
+        bool8 entryRelevant = IsBerserkGeneMoveTypeRelevant(type1, type2, entry.move);
         while (j > 0)
         {
             struct LevelUpMove *previous = &sBerserkGeneLevelUpMoves[j - 1];
-            bool8 previousRelevant = IsBerserkGeneMoveTypeRelevant(mon, previous->move);
+            bool8 previousRelevant = IsBerserkGeneMoveTypeRelevant(type1, type2, previous->move);
             if (previous->level < entry.level
              || (previous->level == entry.level && (previousRelevant || !entryRelevant)))
                 break;
@@ -6265,6 +6264,17 @@ const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon)
     return sBerserkGeneLevelUpMoves;
 }
 
+const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon)
+{
+    return BuildBerserkGeneLevelUpLearnset(GetMonData(mon, MON_DATA_SPECIES),
+        GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID), GetMonType(mon, 0), GetMonType(mon, 1));
+}
+
+const struct LevelUpMove *GetBoxMonLevelUpLearnset(struct BoxPokemon *boxMon)
+{
+    return BuildBerserkGeneLevelUpLearnset(GetBoxMonData(boxMon, MON_DATA_SPECIES),
+        GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID), GetBoxMonType(boxMon, 0), GetBoxMonType(boxMon, 1));
+}
 static u16 CountMoveList(const u16 *moves)
 {
     u16 count = 0;
@@ -6285,10 +6295,10 @@ static bool8 AppendUniqueMove(u16 *output, u16 move, u16 *count, u16 capacity)
     return TRUE;
 }
 
-const u16 *GetMonTeachableLearnset(struct Pokemon *mon)
+const u16 *GetBoxMonTeachableLearnset(struct BoxPokemon *boxMon)
 {
-    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
-    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
     struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
     const u16 *learnsetA, *learnsetB;
     u16 countA, countB, count = 0, i;
@@ -6311,11 +6321,12 @@ const u16 *GetMonTeachableLearnset(struct Pokemon *mon)
     for (i = 1; i < count; i++)
     {
         u16 move = sBerserkGeneTeachableMoves[i];
-        bool8 moveRelevant = IsBerserkGeneMoveTypeRelevant(mon, move);
+        bool8 moveRelevant = GetMoveType(move) == GetBoxMonType(boxMon, 0) || GetMoveType(move) == GetBoxMonType(boxMon, 1);
         u16 j = i;
         while (j > 0)
         {
-            bool8 previousRelevant = IsBerserkGeneMoveTypeRelevant(mon, sBerserkGeneTeachableMoves[j - 1]);
+            bool8 previousRelevant = GetMoveType(sBerserkGeneTeachableMoves[j - 1]) == GetBoxMonType(boxMon, 0)
+                || GetMoveType(sBerserkGeneTeachableMoves[j - 1]) == GetBoxMonType(boxMon, 1);
             if (previousRelevant || !moveRelevant)
                 break;
             sBerserkGeneTeachableMoves[j] = sBerserkGeneTeachableMoves[j - 1];
@@ -6327,10 +6338,15 @@ const u16 *GetMonTeachableLearnset(struct Pokemon *mon)
     return sBerserkGeneTeachableMoves;
 }
 
-const u16 *GetMonEggMoveLearnset(struct Pokemon *mon)
+const u16 *GetMonTeachableLearnset(struct Pokemon *mon)
 {
-    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
-    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+    return GetBoxMonTeachableLearnset(&mon->box);
+}
+
+const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon)
+{
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
     struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
     const u16 *learnsetA, *learnsetB;
     u16 countA, countB, count = 0, i;
@@ -6358,11 +6374,12 @@ const u16 *GetMonEggMoveLearnset(struct Pokemon *mon)
     for (i = 1; i < count; i++)
     {
         u16 move = sBerserkGeneEggMoves[i];
-        bool8 moveRelevant = IsBerserkGeneMoveTypeRelevant(mon, move);
+        bool8 moveRelevant = GetMoveType(move) == GetBoxMonType(boxMon, 0) || GetMoveType(move) == GetBoxMonType(boxMon, 1);
         u16 j = i;
         while (j > 0)
         {
-            bool8 previousRelevant = IsBerserkGeneMoveTypeRelevant(mon, sBerserkGeneEggMoves[j - 1]);
+            bool8 previousRelevant = GetMoveType(sBerserkGeneEggMoves[j - 1]) == GetBoxMonType(boxMon, 0)
+                || GetMoveType(sBerserkGeneEggMoves[j - 1]) == GetBoxMonType(boxMon, 1);
             if (previousRelevant || !moveRelevant)
                 break;
             sBerserkGeneEggMoves[j] = sBerserkGeneEggMoves[j - 1];
@@ -6372,6 +6389,11 @@ const u16 *GetMonEggMoveLearnset(struct Pokemon *mon)
     }
     sBerserkGeneEggMoves[count] = MOVE_UNAVAILABLE;
     return sBerserkGeneEggMoves;
+}
+
+const u16 *GetMonEggMoveLearnset(struct Pokemon *mon)
+{
+    return GetBoxMonEggMoveLearnset(&mon->box);
 }
 
 static struct FusionPotentialEvolution sPotentialEvolutionProjection[MAX_FUSION_POTENTIAL_EVOLUTIONS];

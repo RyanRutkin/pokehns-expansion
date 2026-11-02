@@ -1167,6 +1167,23 @@ static void SortMovesAlphabetically(u16 *moves, u32 numMoves)
         QuickSortMoves(moves, 0, numMoves - 1);
 }
 
+static bool8 BoxMonCanLearnTeachableMove(struct BoxPokemon *mon, u16 species, enum Move move)
+{
+    const u16 *fusionLearnset;
+    u16 i;
+
+    if (CanLearnTeachableMove(species, move))
+        return TRUE;
+    if (GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID) == 0)
+        return FALSE;
+
+    fusionLearnset = GetBoxMonTeachableLearnset(mon);
+    for (i = 0; fusionLearnset[i] != MOVE_UNAVAILABLE; i++)
+        if (fusionLearnset[i] == move)
+            return TRUE;
+    return FALSE;
+}
+
 static u32 GetRelearnerLevelUpMoves(struct BoxPokemon *mon, u16 *moves)
 {
     u32 numMoves = 0;
@@ -1175,10 +1192,14 @@ static u32 GetRelearnerLevelUpMoves(struct BoxPokemon *mon, u16 *moves)
     if (species == SPECIES_EGG)
         return 0;
 
+    bool8 isFusion = GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0;
+
     u32 level = (P_ENABLE_ALL_LEVEL_UP_MOVES ? MAX_LEVEL : GetLevelFromBoxMonExp(mon));
     do
     {
-        const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species);
+        const struct LevelUpMove *learnset = isFusion
+            ? GetBoxMonLevelUpLearnset(mon)
+            : GetSpeciesLevelUpLearnset(species);
 
         for (u32 i = 0; i < MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
         {
@@ -1198,7 +1219,7 @@ static u32 GetRelearnerLevelUpMoves(struct BoxPokemon *mon, u16 *moves)
                 moves[numMoves++] = learnset[i].move;
         }
 
-        species = (P_PRE_EVO_MOVES ? GetSpeciesPreEvolution(species) : SPECIES_NONE);
+        species = (P_PRE_EVO_MOVES && !isFusion ? GetSpeciesPreEvolution(species) : SPECIES_NONE);
     } while (species != SPECIES_NONE);
 
     if (P_SORT_MOVES)
@@ -1218,10 +1239,16 @@ static u32 GetRelearnerEggMoves(struct BoxPokemon *mon, u16 *moves)
         return 0;
 
     u32 numMoves = 0;
-    while (GetSpeciesPreEvolution(species) != SPECIES_NONE)
-        species = GetSpeciesPreEvolution(species);
-
-    const u16 *eggMoves = GetSpeciesEggMoves(species);
+    bool8 isFusion = GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0;
+    const u16 *eggMoves;
+    if (isFusion)
+        eggMoves = GetBoxMonEggMoveLearnset(mon);
+    else
+    {
+        while (GetSpeciesPreEvolution(species) != SPECIES_NONE)
+            species = GetSpeciesPreEvolution(species);
+        eggMoves = GetSpeciesEggMoves(species);
+    }
 
     if (eggMoves == sNoneEggMoveLearnset)
         return 0;
@@ -1261,7 +1288,7 @@ static u32 GetRelearnerTMMoves(struct BoxPokemon *mon, u16 *moves)
         if (!P_ENABLE_ALL_TM_MOVES && !CheckBagHasItem(item, 1))
             continue;
 
-        if (!CanLearnTeachableMove(species, move))
+        if (!BoxMonCanLearnTeachableMove(mon, species, move))
             continue;
 
         if (!BoxMonKnowsMove(mon, move))
@@ -1290,7 +1317,7 @@ static u32 GetRelearnerTutorMoves(struct BoxPokemon *mon, u16 *moves)
     {
         enum Move move = gTutorMoves[i];
 
-        if (!CanLearnTeachableMove(species, move))
+        if (!BoxMonCanLearnTeachableMove(mon, species, move))
             continue;
 
         if (!BoxMonKnowsMove(mon, move))
@@ -1338,7 +1365,9 @@ static bool32 HasRelearnerLevelUpMoves(struct BoxPokemon *boxMon)
 
     do
     {
-        const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species);
+        const struct LevelUpMove *learnset = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID)
+            ? GetBoxMonLevelUpLearnset(boxMon)
+            : GetSpeciesLevelUpLearnset(species);
 
         for (u32 i = 0; i < MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
         {
@@ -1349,7 +1378,8 @@ static bool32 HasRelearnerLevelUpMoves(struct BoxPokemon *boxMon)
                 return TRUE;
         }
 
-        species = (P_PRE_EVO_MOVES ? GetSpeciesPreEvolution(species) : SPECIES_NONE);
+        species = (P_PRE_EVO_MOVES && GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID) == 0
+            ? GetSpeciesPreEvolution(species) : SPECIES_NONE);
 
     } while (species != SPECIES_NONE);
 
@@ -1366,10 +1396,16 @@ static bool32 HasRelearnerEggMoves(struct BoxPokemon *boxMon)
     if (species == SPECIES_EGG)
         return FALSE;
 
-    while (GetSpeciesPreEvolution(species) != SPECIES_NONE)
-        species = GetSpeciesPreEvolution(species);
-
-    const u16 *eggMoves = GetSpeciesEggMoves(species);
+    bool8 isFusion = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0;
+    const u16 *eggMoves;
+    if (isFusion)
+        eggMoves = GetBoxMonEggMoveLearnset(boxMon);
+    else
+    {
+        while (GetSpeciesPreEvolution(species) != SPECIES_NONE)
+            species = GetSpeciesPreEvolution(species);
+        eggMoves = GetSpeciesEggMoves(species);
+    }
 
     if (eggMoves == sNoneEggMoveLearnset)
         return FALSE;
@@ -1404,7 +1440,7 @@ static bool32 HasRelearnerTMMoves(struct BoxPokemon *boxMon)
         if (!P_ENABLE_ALL_TM_MOVES && !CheckBagHasItem(item, 1))
             continue;
 
-        if (!CanLearnTeachableMove(species, move))
+        if (!BoxMonCanLearnTeachableMove(boxMon, species, move))
             continue;
 
         if (!BoxMonKnowsMove(boxMon, move))
@@ -1428,7 +1464,7 @@ static bool32 HasRelearnerTutorMoves(struct BoxPokemon *boxMon)
     {
         enum Move move = gTutorMoves[i];
 
-        if (!CanLearnTeachableMove(species, move))
+        if (!BoxMonCanLearnTeachableMove(boxMon, species, move))
             continue;
 
         if (!BoxMonKnowsMove(boxMon, move))
