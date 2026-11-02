@@ -494,8 +494,10 @@ and cry between the evolved target and the currently displayed species for the c
 using the saved gene-holder weighting. Existing Wonder Guard and Flying/Levitate safeguards remain
 in place. Sprite-source parent is also rerolled with the saved weighting, excluding the previous
 displayed species when it remains a candidate; a regression covers the forced alternate-donor case.
-Growth-rate behavior, learnset merging, and name/display aggregation still need to be handled
-according to the pseudo-fusion rules below.
+For a non-paired evolution, the chosen path now leads the fused display-name prefix; paired phases
+retain the birth-time weighted-name priority. Growth-rate behavior, learnset merging, and the
+remaining name/display aggregation still need to be handled according to the pseudo-fusion rules
+below.
 
 Before treating this phase as complete, review/fix the new code and extend coverage for ambiguous
 same-side roots and re-breeding after each evolution phase. Then complete the full deterministic

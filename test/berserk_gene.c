@@ -518,6 +518,7 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_APPLETUN, 0, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
     profile->potentialEvolutions[4] = (struct FusionPotentialEvolution){SPECIES_DIPPLIN, 0, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
     profile->potentialEvolutionCount = 5;
+    profile->evolutionFlags |= BERSERK_GENE_NAME_PRIORITY_PARENT;
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
     branchStatA = GetSpeciesBaseStat(SPECIES_APPLETUN, STAT_HP);
@@ -583,6 +584,7 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     }
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_FLAPPLE); // multi-branch counterpart remains a pseudo side
     EXPECT_EQ(profile->inheritanceFlags & BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT, 0);
+    EXPECT_EQ(profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT, 0);
     EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT,
               BERSERK_GENE_PHASE_COMPLETE);
 }

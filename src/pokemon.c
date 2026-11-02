@@ -6599,6 +6599,16 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
             }
         }
 
+        // A branching evolution's chosen path leads the fused display name from this point on.
+        // Paired phases keep the birth-time weighted parent priority because both paths are
+        // always applied together and neither is the uniquely selected branch.
+        if (!pairedPhase1)
+        {
+            profile->evolutionFlags &= ~BERSERK_GENE_NAME_PRIORITY_PARENT;
+            if (sourceParentB)
+                profile->evolutionFlags |= BERSERK_GENE_NAME_PRIORITY_PARENT;
+        }
+
         if (phase == BERSERK_GENE_PHASE_2)
         {
             u8 oppositeTargetCount = 0;
