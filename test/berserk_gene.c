@@ -586,9 +586,32 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     }
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_FLAPPLE); // multi-branch counterpart remains a pseudo side
     EXPECT_EQ(profile->inheritanceFlags & BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT, 0);
+    EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_ESPEON);
     EXPECT_EQ(profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT, 0);
     EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT,
               BERSERK_GENE_PHASE_COMPLETE);
+}
+
+TEST("Fusion display sprite species follows the stored sprite donor")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_EEVEE);
+    profile->inheritanceFlags |= BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT;
+    EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_APPLIN);
+
+    FreeBerserkGeneProfile(profileId);
+    EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_EEVEE);
 }
 
 TEST("Fusion level-up learnset merges current parent pools without modifying known moves")

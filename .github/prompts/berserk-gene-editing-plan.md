@@ -499,6 +499,12 @@ retain the birth-time weighted-name priority. Growth-rate behavior, learnset mer
 remaining name/display aggregation still need to be handled according to the pseudo-fusion rules
 below.
 
+Sprite display progress (2026-11-02): added `GetMonDisplaySpriteSpecies()` and wired the chosen
+sprite donor into party-menu icons and the summary portrait graphics/palette. The underlying
+species ID remains unchanged for species mechanics and Pokédex indexing. Regression coverage checks
+donor selection, including the forced alternate donor after evolution. Other rendering surfaces
+still need review.
+
 Before treating this phase as complete, review/fix the new code and extend coverage for ambiguous
 same-side roots and re-breeding after each evolution phase. Then complete the full deterministic
 evolution resolution in `UpdateBerserkGeneProfileAfterEvolution()`: pseudo-fusion aggregation for

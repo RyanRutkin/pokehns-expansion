@@ -7036,6 +7036,20 @@ const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
     return GetSpeciesName(GetMonData(mon, MON_DATA_SPECIES, 0));
 }
 
+u16 GetMonDisplaySpriteSpecies(struct Pokemon *mon)
+{
+    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+
+    if (profile == NULL)
+        return species;
+
+    if (profile->inheritanceFlags & BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT)
+        return profile->parentSpeciesB != SPECIES_NONE ? profile->parentSpeciesB : species;
+    return profile->parentSpeciesA != SPECIES_NONE ? profile->parentSpeciesA : species;
+}
+
 const u8 *GetMonDisplayCategory(struct Pokemon *mon)
 {
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
