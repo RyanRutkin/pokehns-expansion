@@ -6222,11 +6222,12 @@ static enum Ability GetEvolutionAbilitySlot(u16 species, u8 slot)
 }
 
 static void ReinheritBerserkGeneEvolutionAppearance(struct BerserkGeneProfile *profile, u16 parentSpeciesA,
-                                                    u16 parentSpeciesB)
+                                                    u16 parentSpeciesB, u16 previousSpecies, bool8 previousSpriteParentB)
 {
     enum Ability *abilitySlots[] = {&profile->ability1, &profile->ability2, &profile->abilityHidden};
     u8 activeCandidates[3];
     u8 activeCandidateCount = 0;
+    u8 spriteParentMask = 3;
     u8 slot;
     bool8 childIsFlying = profile->type1 == TYPE_FLYING || profile->type2 == TYPE_FLYING;
 
@@ -6264,6 +6265,31 @@ static void ReinheritBerserkGeneEvolutionAppearance(struct BerserkGeneProfile *p
     profile->cryId = ShouldInheritEvolutionTraitFromParentB(profile)
         ? gSpeciesInfo[SanitizeSpeciesId(parentSpeciesB)].cryId
         : gSpeciesInfo[SanitizeSpeciesId(parentSpeciesA)].cryId;
+
+    if (previousSpriteParentB)
+    {
+        if (previousSpecies == parentSpeciesB)
+            spriteParentMask &= ~(1 << 1);
+    }
+    else if (previousSpecies == parentSpeciesA)
+    {
+        spriteParentMask &= ~(1 << 0);
+    }
+
+    if (spriteParentMask != 0 && spriteParentMask != 3)
+    {
+        bool8 chooseParentB = spriteParentMask & (1 << 1);
+        if (spriteParentMask == 3)
+            chooseParentB = ShouldInheritEvolutionTraitFromParentB(profile);
+        profile->inheritanceFlags = (profile->inheritanceFlags & ~BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT)
+            | (chooseParentB ? BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT : 0);
+    }
+    else
+    {
+        bool8 chooseParentB = ShouldInheritEvolutionTraitFromParentB(profile);
+        profile->inheritanceFlags = (profile->inheritanceFlags & ~BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT)
+            | (chooseParentB ? BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT : 0);
+    }
 }
 
 // Reblend base stats after an evolution. If the opposite side has several legal targets, its
@@ -6474,6 +6500,8 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
     u8 i;
     u8 phase;
     u8 selectedParentMask = 0;
+    u16 previousSpecies;
+    bool8 previousSpriteParentB;
 
     if (profileId == 0)
         return;
@@ -6490,6 +6518,8 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
     StringCopy(oldDisplayName, GetMonDisplaySpeciesName(mon));
     GetMonData(mon, MON_DATA_NICKNAME, nickname);
     language = GetMonData(mon, MON_DATA_LANGUAGE);
+    previousSpecies = GetMonData(mon, MON_DATA_SPECIES);
+    previousSpriteParentB = (profile->inheritanceFlags & BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT) != 0;
 
     for (i = 0; i < profile->potentialEvolutionCount; i++)
     {
@@ -6708,7 +6738,8 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
         type2Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT) != 0;
         profile->type1 = GetSpeciesType(type1Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type1Slot);
         profile->type2 = GetSpeciesType(type2Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type2Slot);
-        ReinheritBerserkGeneEvolutionAppearance(profile, profile->parentSpeciesA, profile->parentSpeciesB);
+        ReinheritBerserkGeneEvolutionAppearance(profile, profile->parentSpeciesA, profile->parentSpeciesB,
+                             previousSpecies, previousSpriteParentB);
         if (language == GAME_LANGUAGE && !StringCompare(oldDisplayName, nickname))
             SetMonData(mon, MON_DATA_NICKNAME, GetMonDisplaySpeciesName(mon));
         return;

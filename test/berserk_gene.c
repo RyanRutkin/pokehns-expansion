@@ -503,12 +503,13 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     u8 stat;
 
     ResetPokemonStorageSystem();
-    CreateMon(&mon, SPECIES_ESPEON, 25, 0, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&mon, SPECIES_FLAPPLE, 25, 0, OTID_STRUCT_PLAYER_ID);
     profileId = AllocBerserkGeneProfile();
     profile = GetBerserkGeneProfile(profileId);
     profile->parentSpeciesA = SPECIES_JOLTEON;
     profile->parentSpeciesB = SPECIES_FLAPPLE;
     profile->inheritanceFlags = 0; // one gene holder
+    profile->inheritanceFlags |= BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT;
     profile->evolutionFlags = (BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT)
         | BERSERK_GENE_GENE_HOLDER_PARENT_B;
     profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SELECTED, 0};
@@ -581,6 +582,7 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
         EXPECT_EQ((profile->evYields >> (stat * 2)) & 3, expectedYield);
     }
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_FLAPPLE); // multi-branch counterpart remains a pseudo side
+    EXPECT_EQ(profile->inheritanceFlags & BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT, 0);
     EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT,
               BERSERK_GENE_PHASE_COMPLETE);
 }
