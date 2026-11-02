@@ -540,6 +540,28 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     EXPECT_EQ(profile->baseStats[STAT_HP], expectedStat);
     EXPECT_EQ(profile->height, expectedHeight);
     EXPECT_EQ(profile->friendship, expectedFriendship);
+    EXPECT(profile->ability1 == gSpeciesInfo[SPECIES_ESPEON].abilities[0]
+        || profile->ability1 == gSpeciesInfo[SPECIES_FLAPPLE].abilities[0]
+        || profile->ability1 == ABILITY_SAP_SIPPER);
+    EXPECT(profile->ability2 == gSpeciesInfo[SPECIES_ESPEON].abilities[1]
+        || profile->ability2 == gSpeciesInfo[SPECIES_FLAPPLE].abilities[1]
+        || profile->ability2 == ABILITY_SAP_SIPPER);
+    EXPECT(profile->abilityHidden == gSpeciesInfo[SPECIES_ESPEON].abilities[2]
+        || profile->abilityHidden == gSpeciesInfo[SPECIES_FLAPPLE].abilities[2]
+        || profile->abilityHidden == ABILITY_SAP_SIPPER);
+    EXPECT(profile->color == gSpeciesInfo[SPECIES_ESPEON].bodyColor
+        || profile->color == gSpeciesInfo[SPECIES_FLAPPLE].bodyColor);
+    EXPECT(profile->cryId == gSpeciesInfo[SPECIES_ESPEON].cryId
+        || profile->cryId == gSpeciesInfo[SPECIES_FLAPPLE].cryId);
+    {
+        u8 activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK)
+            >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+        enum Ability activeAbility = activeSlot == 1 ? profile->ability2
+            : activeSlot == 2 ? profile->abilityHidden : profile->ability1;
+        EXPECT(activeSlot <= 2);
+        if (profile->type1 == TYPE_FLYING || profile->type2 == TYPE_FLYING)
+            EXPECT_NE(activeAbility, ABILITY_LEVITATE);
+    }
     for (stat = 0; stat < NUM_STATS; stat++)
     {
         u8 branchYieldA, branchYieldB, chosenYield;

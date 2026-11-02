@@ -489,10 +489,11 @@ their per-stat values are averaged first, then blended with the selected target 
 62/38 or 50/50 weighting. The same branch-average-then-blend rule now applies to height, weight,
 sprite scale, and sprite offset. Tests cover multi-branch base stats/height and B-side sole-gene
 holder persistence. Friendship and per-stat EV yields now use the same branch-average-then-blend
-rule, with tests for both. This implements the pseudo-fusion's numeric trait subset, not the
-complete pseudo-profile: growth-rate behavior, ability/type identity, other traits, learnset
-merging, and name/display aggregation still need to be handled according to the pseudo-fusion rules
-below.
+rule, with tests for both. Evolution now also rerolls the three ability slots, active slot, color,
+and cry between the evolved target and the currently displayed species for the counterpart side,
+using the saved gene-holder weighting. Existing Wonder Guard and Flying/Levitate safeguards remain
+in place. Growth-rate behavior, sprite/name identity, learnset merging, and name/display aggregation
+still need to be handled according to the pseudo-fusion rules below.
 
 Before treating this phase as complete, review/fix the new code and extend coverage for ambiguous
 same-side roots and re-breeding after each evolution phase. Then complete the full deterministic

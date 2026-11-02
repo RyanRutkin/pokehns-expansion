@@ -6207,6 +6207,65 @@ static u32 BlendBerserkGeneEvolutionStat(struct BerserkGeneProfile *profile, u32
     return (counterpartValue * 62 + chosenValue * 38 + 50) / 100;
 }
 
+static bool8 ShouldInheritEvolutionTraitFromParentB(struct BerserkGeneProfile *profile)
+{
+    bool8 twoGeneHolders = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT) != 0;
+    bool8 geneParentB = (profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) != 0;
+    u8 chance = twoGeneHolders ? 50 : (geneParentB ? 62 : 38);
+
+    return Random() % 100 < chance;
+}
+
+static enum Ability GetEvolutionAbilitySlot(u16 species, u8 slot)
+{
+    return gSpeciesInfo[SanitizeSpeciesId(species)].abilities[slot];
+}
+
+static void ReinheritBerserkGeneEvolutionAppearance(struct BerserkGeneProfile *profile, u16 parentSpeciesA,
+                                                    u16 parentSpeciesB)
+{
+    enum Ability *abilitySlots[] = {&profile->ability1, &profile->ability2, &profile->abilityHidden};
+    u8 activeCandidates[3];
+    u8 activeCandidateCount = 0;
+    u8 slot;
+    bool8 childIsFlying = profile->type1 == TYPE_FLYING || profile->type2 == TYPE_FLYING;
+
+    for (slot = 0; slot < ARRAY_COUNT(abilitySlots); slot++)
+    {
+        bool8 inheritFromParentB = ShouldInheritEvolutionTraitFromParentB(profile);
+        u16 selectedSpecies = inheritFromParentB ? parentSpeciesB : parentSpeciesA;
+        u16 otherSpecies = inheritFromParentB ? parentSpeciesA : parentSpeciesB;
+        enum Ability ability = GetEvolutionAbilitySlot(selectedSpecies, slot);
+
+        if (ability == ABILITY_WONDER_GUARD)
+            ability = GetEvolutionAbilitySlot(otherSpecies, slot);
+        if (ability == ABILITY_WONDER_GUARD)
+            ability = ABILITY_SAP_SIPPER;
+        *abilitySlots[slot] = ability;
+
+        if (ability != ABILITY_NONE && !(childIsFlying && ability == ABILITY_LEVITATE))
+            activeCandidates[activeCandidateCount++] = slot;
+    }
+
+    if (activeCandidateCount == 0)
+    {
+        // Every slot may be Levitate on a Flying fusion; keep the invariant by selecting the
+        // first non-Levitate slot if available, otherwise Sap Sipper is the safe fallback.
+        profile->ability1 = ABILITY_SAP_SIPPER;
+        activeCandidates[activeCandidateCount++] = 0;
+    }
+    slot = Random() % activeCandidateCount;
+    profile->inheritanceFlags = (profile->inheritanceFlags & ~BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK)
+        | (activeCandidates[slot] << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
+
+    profile->color = ShouldInheritEvolutionTraitFromParentB(profile)
+        ? gSpeciesInfo[SanitizeSpeciesId(parentSpeciesB)].bodyColor
+        : gSpeciesInfo[SanitizeSpeciesId(parentSpeciesA)].bodyColor;
+    profile->cryId = ShouldInheritEvolutionTraitFromParentB(profile)
+        ? gSpeciesInfo[SanitizeSpeciesId(parentSpeciesB)].cryId
+        : gSpeciesInfo[SanitizeSpeciesId(parentSpeciesA)].cryId;
+}
+
 // Reblend base stats after an evolution. If the opposite side has several legal targets, its
 // pseudo-fusion contribution is the per-stat average across every stored active target.
 static void ReblendBerserkGeneEvolutionBaseStats(struct Pokemon *mon, struct BerserkGeneProfile *profile,
@@ -6649,6 +6708,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
         type2Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE2_SOURCE_SLOT) != 0;
         profile->type1 = GetSpeciesType(type1Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type1Slot);
         profile->type2 = GetSpeciesType(type2Parent ? profile->parentSpeciesB : profile->parentSpeciesA, type2Slot);
+        ReinheritBerserkGeneEvolutionAppearance(profile, profile->parentSpeciesA, profile->parentSpeciesB);
         if (language == GAME_LANGUAGE && !StringCompare(oldDisplayName, nickname))
             SetMonData(mon, MON_DATA_NICKNAME, GetMonDisplaySpeciesName(mon));
         return;
