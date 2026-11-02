@@ -880,6 +880,25 @@ TEST("(Daycare) Rebreeding a Phase 1 fusion carries each selected root with its 
     EXPECT(sawJolteonContinuation || sawVaporeonContinuation);
 }
 
+TEST("(Daycare) Evolution profile records when only the second parent held Berserk Gene")
+{
+    u16 profileId;
+    struct BerserkGeneProfile *profile;
+
+    ZeroPlayerPartyMons();
+    RUN_OVERWORLD_SCRIPT(
+        givemon SPECIES_RATTATA, 20, gender=MON_MALE, item=ITEM_NONE;
+        givemon SPECIES_EEVEE, 20, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+    );
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT_EQ(profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT, 0);
+    EXPECT_NE(profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B, 0);
+}
+
 TEST("(Daycare) Conditional evolution entries round-trip through stable condition-set IDs")
 {
     const struct Evolution *evolutions = GetSpeciesEvolutions(SPECIES_DIPPLIN);

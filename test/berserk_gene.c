@@ -486,3 +486,43 @@ TEST("Paired Phase 1 evolution consumes both roots and resolves the fusion count
     EXPECT_NE(active[0].methodAndSourceParent & EVO_POTENTIAL_PHASE_2, 0);
 }
 
+TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-weighted blend")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+    u16 averagedCounterpartStat;
+    u16 expectedStat;
+    u16 branchStatA, branchStatB, chosenStat;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_ESPEON, 25, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_JOLTEON;
+    profile->parentSpeciesB = SPECIES_FLAPPLE;
+    profile->inheritanceFlags = 0; // one gene holder
+    profile->evolutionFlags = (BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT)
+        | BERSERK_GENE_GENE_HOLDER_PARENT_B;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SELECTED, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_ESPEON, 0, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_FLAPPLE, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_APPLETUN, 0, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[4] = (struct FusionPotentialEvolution){SPECIES_DIPPLIN, 0, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutionCount = 5;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    branchStatA = GetSpeciesBaseStat(SPECIES_APPLETUN, STAT_HP);
+    branchStatB = GetSpeciesBaseStat(SPECIES_DIPPLIN, STAT_HP);
+    chosenStat = GetSpeciesBaseStat(SPECIES_ESPEON, STAT_HP);
+    averagedCounterpartStat = (branchStatA + branchStatB + 1) / 2;
+    expectedStat = (averagedCounterpartStat * 62 + chosenStat * 38 + 50) / 100;
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_ESPEON);
+
+    EXPECT_EQ(profile->baseStats[STAT_HP], expectedStat);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_FLAPPLE); // multi-branch counterpart remains a pseudo side
+    EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT,
+              BERSERK_GENE_PHASE_COMPLETE);
+}
+

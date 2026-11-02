@@ -6174,6 +6174,83 @@ static void SetBerserkGeneEvolutionAge(struct BerserkGeneProfile *profile, u8 in
     *ages = (index & 1) ? (*ages & 0x0F) | ((age & 0xF) << 4) : (*ages & 0xF0) | (age & 0xF);
 }
 
+static u16 GetBerserkGeneSpeciesStat(u16 species, u8 stat)
+{
+    return GetSpeciesBaseStat(species, stat);
+}
+
+static u8 BlendBerserkGeneEvolutionStat(struct BerserkGeneProfile *profile, u16 chosenValue, u16 counterpartValue,
+                                        bool8 chosenParentB)
+{
+    bool8 twoGeneHolders = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT) != 0;
+    bool8 geneParentB = (profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) != 0;
+
+    if (twoGeneHolders)
+        return (chosenValue + counterpartValue + 1) / 2;
+    if (chosenParentB == geneParentB)
+        return (chosenValue * 62 + counterpartValue * 38 + 50) / 100;
+    return (counterpartValue * 62 + chosenValue * 38 + 50) / 100;
+}
+
+// Reblend base stats after an evolution. If the opposite side has several legal targets, its
+// pseudo-fusion contribution is the per-stat average across every stored active target.
+static void ReblendBerserkGeneEvolutionBaseStats(struct Pokemon *mon, struct BerserkGeneProfile *profile,
+                                                 u16 targetSpecies, bool8 sourceParentB,
+                                                 enum BerserkGeneEvolutionPhase phase, bool8 pairedPhase1)
+{
+    u16 counterpartSpecies[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 counterpartCount = 0;
+    u8 i, stat;
+
+    if (phase == BERSERK_GENE_PHASE_1 && pairedPhase1)
+    {
+        counterpartSpecies[counterpartCount++] = sourceParentB ? profile->parentSpeciesA : profile->parentSpeciesB;
+    }
+    else if (phase == BERSERK_GENE_PHASE_1)
+    {
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
+        {
+            const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[i];
+            bool8 rootParentB;
+            if (root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                continue;
+            rootParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+            if (rootParentB != sourceParentB && counterpartCount < ARRAY_COUNT(counterpartSpecies))
+                counterpartSpecies[counterpartCount++] = root->targetSpecies;
+        }
+    }
+    else
+    {
+        const struct FusionPotentialEvolution *active;
+        u8 activeCount;
+        active = GetMonPotentialEvolutions(mon, &activeCount);
+        for (i = 0; i < activeCount && counterpartCount < ARRAY_COUNT(counterpartSpecies); i++)
+        {
+            bool8 nodeParentB = (active[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+            if (nodeParentB != sourceParentB)
+                counterpartSpecies[counterpartCount++] = active[i].targetSpecies;
+        }
+    }
+
+    if (counterpartCount == 0)
+    {
+        counterpartSpecies[counterpartCount++] = sourceParentB ? profile->parentSpeciesA : profile->parentSpeciesB;
+    }
+    if (counterpartCount == 1 && counterpartSpecies[0] == SPECIES_NONE)
+        return;
+
+    for (stat = 0; stat < NUM_STATS; stat++)
+    {
+        u32 counterpartTotal = 0;
+        u16 counterpartAverage;
+        for (i = 0; i < counterpartCount; i++)
+            counterpartTotal += GetBerserkGeneSpeciesStat(counterpartSpecies[i], stat);
+        counterpartAverage = (counterpartTotal + counterpartCount / 2) / counterpartCount;
+        profile->baseStats[stat] = BlendBerserkGeneEvolutionStat(profile,
+            GetBerserkGeneSpeciesStat(targetSpecies, stat), counterpartAverage, sourceParentB);
+    }
+}
+
 const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount)
 {
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
@@ -6409,6 +6486,8 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
                     profile->parentSpeciesB = oppositeTarget;
             }
         }
+
+        ReblendBerserkGeneEvolutionBaseStats(mon, profile, targetSpecies, sourceParentB, phase, pairedPhase1);
 
         // A selected Phase 1 path consumes every sibling root on that same source side. Their
         // descendants must not leak into the Phase 2 menu; opposite-side roots remain available

@@ -479,13 +479,23 @@ opposite-side root groups, and removes consumed same-side sibling groups while p
 age metadata. When the opposite side has exactly one Phase 1 target, that target is applied to the
 fusion immediately. Phase 2 similarly applies a unique opposite-side Phase 2 target and then marks
 the lineage complete. Regression tests cover same-side sibling filtering, paired Phase 1, and
-single-target counterpart resolution. Multi-root pseudo-fusion aggregation remains unimplemented.
+single-target counterpart resolution. Full multi-root pseudo-fusion aggregation remains
+incomplete; only its base-stat averaging/blending slice is now implemented.
+
+Implementation progress (2026-11-02, next slice): persisted the sole gene-holder side in unused
+`evolutionFlags` bit 3 (no profile-size growth). Phase 1/Phase 2 evolution now recomputes base stats
+using the selected target and the opposite-side candidate set; when that set has multiple targets,
+their per-stat values are averaged first, then blended with the selected target using the original
+62/38 or 50/50 weighting. This implements the numeric base-stat part of a transient pseudo-fusion,
+not the complete pseudo-profile: ability/type identity, other scalar traits, learnset merging, and
+name/display aggregation still need to be handled according to the pseudo-fusion rules below.
 
 Before treating this phase as complete, review/fix the new code and extend coverage for ambiguous
 same-side roots and re-breeding after each evolution phase. Then complete the full deterministic
-evolution resolution in `UpdateBerserkGeneProfileAfterEvolution()`: pseudo-fusion aggregation,
-consumption of sibling roots, paired Phase 1 behavior across their descendants, and Phase 2
-counterpart resolution. Add tests for those transitions and the 11-node case, then run the test
+evolution resolution in `UpdateBerserkGeneProfileAfterEvolution()`: pseudo-fusion aggregation for
+the remaining traits and learnsets, rebreeding across both phases, consumption of sibling roots,
+paired Phase 1 behavior across their descendants, and Phase 2 counterpart resolution. Add tests for
+those transitions and the 11-node case, then run the test
 binary when the HNS test-runner build blocker is resolved. Do not claim full Berserk Gene evolution
 completion until those transitions are implemented and validated.
 
