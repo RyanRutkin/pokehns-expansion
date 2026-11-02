@@ -398,3 +398,91 @@ TEST("Paired fusion potential evolution updates both parent species")
     EXPECT_EQ(profile->type2, GetSpeciesType(SPECIES_APPLETUN, 0));
 }
 
+TEST("Phase 2 projection selects the chosen same-side root and preserves opposite-side descendants")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const struct FusionPotentialEvolution *active;
+    u16 profileId;
+    u8 activeCount, i;
+    bool8 sawEspeon = FALSE, sawAppletun = FALSE, sawGlaceon = FALSE;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_ESPEON, 0, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_VAPOREON, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_GLACEON, 0, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[4] = (struct FusionPotentialEvolution){SPECIES_FLAPPLE, ITEM_TART_APPLE, EVO_ITEM | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[5] = (struct FusionPotentialEvolution){SPECIES_APPLETUN, ITEM_SWEET_APPLE, EVO_ITEM | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutionCount = 6;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    active = GetMonPotentialEvolutions(&mon, &activeCount);
+    EXPECT_EQ(activeCount, 3);
+    for (i = 0; i < activeCount; i++)
+        EXPECT_EQ(active[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2, 0);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_JOLTEON);
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_JOLTEON);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_FLAPPLE);
+    active = GetMonPotentialEvolutions(&mon, &activeCount);
+    EXPECT_EQ(activeCount, 2);
+
+    for (i = 0; i < activeCount; i++)
+    {
+        EXPECT_NE(active[i].methodAndSourceParent & EVO_POTENTIAL_PHASE_2, 0);
+        if (active[i].targetSpecies == SPECIES_ESPEON)
+            sawEspeon = TRUE;
+        else if (active[i].targetSpecies == SPECIES_APPLETUN)
+            sawAppletun = TRUE;
+        else if (active[i].targetSpecies == SPECIES_GLACEON)
+            sawGlaceon = TRUE;
+    }
+    EXPECT(sawEspeon);
+    EXPECT(sawAppletun);
+    EXPECT(!sawGlaceon);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_ESPEON);
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_ESPEON);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_APPLETUN);
+    active = GetMonPotentialEvolutions(&mon, &activeCount);
+    EXPECT_EQ(activeCount, 0);
+}
+
+TEST("Paired Phase 1 evolution consumes both roots and resolves the fusion counterpart")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const struct FusionPotentialEvolution *active;
+    u16 profileId;
+    u8 activeCount;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_PUPITAR, 25, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_LARVITAR;
+    profile->parentSpeciesB = SPECIES_RATTATA;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_PUPITAR, 25, EVO_LEVEL | EVO_POTENTIAL_PAIRED_WITH_SIBLING, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_TYRANITAR, 55, EVO_LEVEL | EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_PAIRED_WITH_SIBLING, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_RATICATE, 25, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PAIRED_WITH_SIBLING, 0};
+    profile->potentialEvolutionCount = 3;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_PUPITAR);
+
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_PUPITAR);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_RATICATE);
+    EXPECT_EQ(profile->potentialEvolutionCount, 3);
+    active = GetMonPotentialEvolutions(&mon, &activeCount);
+    EXPECT_EQ(activeCount, 1);
+    EXPECT_EQ(active[0].targetSpecies, SPECIES_TYRANITAR);
+    EXPECT_NE(active[0].methodAndSourceParent & EVO_POTENTIAL_PHASE_2, 0);
+}
+

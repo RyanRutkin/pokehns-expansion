@@ -473,6 +473,14 @@ conditional Phase 2 entries through the stable condition-set registry, carries s
 when a fusion parent is rebred, and prunes the temporary node graph to the eight-node cap. Tests
 cover the real Poliwag branches, a simple two-stage line, and the 11-to-8 pruning case.
 
+Implementation progress (2026-11-02): Phase 1 resolution now records the selected root, pairs and
+advances the sibling root when the entry is marked as a merged paired evolution, retains the
+opposite-side root groups, and removes consumed same-side sibling groups while preserving aligned
+age metadata. When the opposite side has exactly one Phase 1 target, that target is applied to the
+fusion immediately. Phase 2 similarly applies a unique opposite-side Phase 2 target and then marks
+the lineage complete. Regression tests cover same-side sibling filtering, paired Phase 1, and
+single-target counterpart resolution. Multi-root pseudo-fusion aggregation remains unimplemented.
+
 Before treating this phase as complete, review/fix the new code and extend coverage for ambiguous
 same-side roots and re-breeding after each evolution phase. Then complete the full deterministic
 evolution resolution in `UpdateBerserkGeneProfileAfterEvolution()`: pseudo-fusion aggregation,

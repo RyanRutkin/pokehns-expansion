@@ -6162,6 +6162,18 @@ const struct Evolution *GetSpeciesEvolutions(u16 species)
 
 static struct FusionPotentialEvolution sPotentialEvolutionProjection[MAX_FUSION_POTENTIAL_EVOLUTIONS];
 
+static u8 GetBerserkGeneEvolutionAge(const struct BerserkGeneProfile *profile, u8 index)
+{
+    u8 ages = profile->potentialEvolutionAge[index / 2];
+    return (index & 1) ? ages >> 4 : ages & 0xF;
+}
+
+static void SetBerserkGeneEvolutionAge(struct BerserkGeneProfile *profile, u8 index, u8 age)
+{
+    u8 *ages = &profile->potentialEvolutionAge[index / 2];
+    *ages = (index & 1) ? (*ages & 0x0F) | ((age & 0xF) << 4) : (*ages & 0xF0) | (age & 0xF);
+}
+
 const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount)
 {
     u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
@@ -6202,7 +6214,13 @@ const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon 
                 const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[i];
                 if (!(root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
                  && (root->methodAndSourceParent & EVO_POTENTIAL_SELECTED))
-                    selectedParentMask |= 1 << ((root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0);
+                {
+                    u8 rootParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                    if (root->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
+                        selectedParentMask |= 3;
+                    else
+                        selectedParentMask |= 1 << rootParentB;
+                }
             }
 
             for (i = 0; i < profile->potentialEvolutionCount; i++)
@@ -6240,6 +6258,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
     u8 language;
     u8 i;
     u8 phase;
+    u8 selectedParentMask = 0;
 
     if (profileId == 0)
         return;
@@ -6261,6 +6280,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
     {
         const struct FusionPotentialEvolution *potentialEvolution = &profile->potentialEvolutions[i];
         bool8 sourceParentB;
+        bool8 pairedPhase1 = FALSE;
         u8 type1Parent;
         u8 type1Slot;
         u8 type2Parent;
@@ -6289,12 +6309,14 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
                 const struct FusionPotentialEvolution *sibling = &profile->potentialEvolutions[siblingIndex];
                 bool8 siblingSourceParentB = sibling->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT;
 
-                if (!(sibling->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                if (siblingIndex != i
+                 && !(sibling->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
                  && (sibling->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
                  && siblingSourceParentB != sourceParentB
                  && (sibling->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == (potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK)
                  && sibling->param == potentialEvolution->param)
                 {
+                    pairedPhase1 = TRUE;
                     if (siblingSourceParentB)
                         profile->parentSpeciesB = sibling->targetSpecies;
                     else
@@ -6304,15 +6326,158 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
             }
         }
 
+        if (phase == BERSERK_GENE_PHASE_1 && !pairedPhase1)
+        {
+            u8 oppositeRootCount = 0;
+            u16 oppositeTarget = SPECIES_NONE;
+            u8 rootIndex;
+
+            for (rootIndex = 0; rootIndex < profile->potentialEvolutionCount; rootIndex++)
+            {
+                const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[rootIndex];
+                bool8 rootSourceParentB;
+                if (root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                    continue;
+                rootSourceParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                if (rootSourceParentB != sourceParentB)
+                {
+                    oppositeRootCount++;
+                    oppositeTarget = root->targetSpecies;
+                }
+            }
+            if (oppositeRootCount == 1)
+            {
+                if (sourceParentB)
+                    profile->parentSpeciesA = oppositeTarget;
+                else
+                    profile->parentSpeciesB = oppositeTarget;
+            }
+        }
+
+        if (phase == BERSERK_GENE_PHASE_2)
+        {
+            u8 oppositeTargetCount = 0;
+            u16 oppositeTarget = SPECIES_NONE;
+            u8 phase1ParentMask = 0;
+            u8 nodeIndex;
+
+            for (nodeIndex = 0; nodeIndex < profile->potentialEvolutionCount; nodeIndex++)
+            {
+                const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[nodeIndex];
+                if (!(root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                 && (root->methodAndSourceParent & EVO_POTENTIAL_SELECTED))
+                {
+                    u8 rootParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                    if (root->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
+                        phase1ParentMask |= 3;
+                    else
+                        phase1ParentMask |= 1 << rootParentB;
+                }
+            }
+
+            for (nodeIndex = 0; nodeIndex < profile->potentialEvolutionCount; nodeIndex++)
+            {
+                const struct FusionPotentialEvolution *node = &profile->potentialEvolutions[nodeIndex];
+                bool8 nodeSourceParentB;
+                u8 rootIndex = nodeIndex;
+                const struct FusionPotentialEvolution *root;
+                bool8 rootIsOppositeSide;
+
+                if (!(node->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                 || node->targetSpecies == targetSpecies)
+                    continue;
+                while (rootIndex > 0
+                    && (profile->potentialEvolutions[rootIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                    rootIndex--;
+                root = &profile->potentialEvolutions[rootIndex];
+                rootIsOppositeSide = !(phase1ParentMask
+                    & (1 << ((root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0)));
+                if (!(root->methodAndSourceParent & EVO_POTENTIAL_SELECTED) && !rootIsOppositeSide)
+                    continue;
+                nodeSourceParentB = (node->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                if (nodeSourceParentB != sourceParentB)
+                {
+                    oppositeTargetCount++;
+                    oppositeTarget = node->targetSpecies;
+                }
+            }
+            if (oppositeTargetCount == 1)
+            {
+                if (sourceParentB)
+                    profile->parentSpeciesA = oppositeTarget;
+                else
+                    profile->parentSpeciesB = oppositeTarget;
+            }
+        }
+
+        // A selected Phase 1 path consumes every sibling root on that same source side. Their
+        // descendants must not leak into the Phase 2 menu; opposite-side roots remain available
+        // as the deterministic counterpart/pseudo-fusion pool.
+        if (phase == BERSERK_GENE_PHASE_1)
+        {
+            u8 nodeIndex;
+
+            for (nodeIndex = 0; nodeIndex < profile->potentialEvolutionCount; nodeIndex++)
+            {
+                const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[nodeIndex];
+                if (!(root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                 && (root->methodAndSourceParent & EVO_POTENTIAL_SELECTED))
+                {
+                    u8 rootParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                    if (root->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
+                        selectedParentMask |= 3;
+                    else
+                        selectedParentMask |= 1 << rootParentB;
+                }
+            }
+
+        }
+
         if (phase == BERSERK_GENE_PHASE_1)
         {
             u8 activeCount;
+            u8 nodeIndex;
             profile->evolutionFlags = (profile->evolutionFlags & ~BERSERK_GENE_EVOLUTION_PHASE_MASK)
                 | (BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT);
             GetMonPotentialEvolutions(mon, &activeCount);
             if (activeCount == 0)
+            {
                 profile->evolutionFlags = (profile->evolutionFlags & ~BERSERK_GENE_EVOLUTION_PHASE_MASK)
                     | (BERSERK_GENE_PHASE_COMPLETE << BERSERK_GENE_EVOLUTION_PHASE_SHIFT);
+            }
+            else
+            {
+                // Discard every unselected Phase 1 group. Preserve selected root markers and
+                // their descendants so future projections/rebreeding retain root membership.
+                for (nodeIndex = 0; nodeIndex < profile->potentialEvolutionCount; )
+                {
+                    u8 endIndex = nodeIndex + 1;
+                    struct FusionPotentialEvolution *root = &profile->potentialEvolutions[nodeIndex];
+                    u8 rootParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                    bool8 keepGroup = (root->methodAndSourceParent & EVO_POTENTIAL_SELECTED)
+                        || !(selectedParentMask & (1 << rootParentB));
+                    u8 moveIndex;
+
+                    while (endIndex < profile->potentialEvolutionCount
+                        && (profile->potentialEvolutions[endIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                        endIndex++;
+                    if (keepGroup)
+                    {
+                        nodeIndex = endIndex;
+                        continue;
+                    }
+
+                    for (moveIndex = nodeIndex; moveIndex + endIndex - nodeIndex < profile->potentialEvolutionCount; moveIndex++)
+                    {
+                        profile->potentialEvolutions[moveIndex] = profile->potentialEvolutions[moveIndex + endIndex - nodeIndex];
+                        SetBerserkGeneEvolutionAge(profile, moveIndex,
+                            GetBerserkGeneEvolutionAge(profile, moveIndex + endIndex - nodeIndex));
+                    }
+                    profile->potentialEvolutionCount -= endIndex - nodeIndex;
+                }
+
+                // Phase 2 entries and their selected root markers remain grouped contiguously.
+            }
         }
         else
         {

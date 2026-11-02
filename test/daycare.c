@@ -816,6 +816,70 @@ TEST("(Daycare) Berserk Gene lineage pruning stops at eight nodes and preserves 
     EXPECT(descendants[2] >= 1);
 }
 
+TEST("(Daycare) Rebreeding a Phase 1 fusion carries each selected root with its saved descendants")
+{
+    struct Pokemon fusionParent, otherParent;
+    struct BerserkGeneProfile *parentProfile;
+    struct BerserkGeneProfile *childProfile;
+    u16 profileId;
+    u16 geneItem = ITEM_BERSERK_GENE;
+    u8 i;
+    bool8 sawRaticate = FALSE;
+    bool8 sawJolteonContinuation = FALSE;
+    bool8 sawVaporeonContinuation = FALSE;
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&fusionParent, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&otherParent, SPECIES_RATTATA, 20, 0, OTID_STRUCT_PLAYER_ID);
+
+    profileId = AllocBerserkGeneProfile();
+    parentProfile = GetBerserkGeneProfile(profileId);
+    parentProfile->parentSpeciesA = SPECIES_EEVEE;
+    parentProfile->parentSpeciesB = SPECIES_APPLIN;
+    parentProfile->type1 = TYPE_NORMAL;
+    parentProfile->type2 = TYPE_GRASS;
+    parentProfile->eggGroup1 = EGG_GROUP_FIELD;
+    parentProfile->eggGroup2 = EGG_GROUP_FIELD;
+    parentProfile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL, 0};
+    parentProfile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_ESPEON, 0, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    parentProfile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_VAPOREON, 20, EVO_LEVEL, 0};
+    parentProfile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_GLACEON, 0, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    parentProfile->potentialEvolutionCount = 4;
+    SetMonData(&fusionParent, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    SetMonData(&fusionParent, MON_DATA_HELD_ITEM, &geneItem);
+
+    StorePokemonInDaycare(&fusionParent, &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&otherParent, &gSaveBlock1Ptr->daycare.mons[1]);
+    RUN_OVERWORLD_SCRIPT(special GiveEggFromDaycare;);
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    childProfile = GetBerserkGeneProfile(profileId);
+    EXPECT(childProfile != NULL);
+    EXPECT(childProfile->potentialEvolutionCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS);
+
+    for (i = 0; i < childProfile->potentialEvolutionCount; i++)
+    {
+        struct FusionPotentialEvolution *node = &childProfile->potentialEvolutions[i];
+        if (!(node->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+        {
+            if (node->targetSpecies == SPECIES_RATICATE)
+                sawRaticate = TRUE;
+            if (node->targetSpecies == SPECIES_JOLTEON
+             && i + 1 < childProfile->potentialEvolutionCount
+             && childProfile->potentialEvolutions[i + 1].targetSpecies == SPECIES_ESPEON)
+                sawJolteonContinuation = TRUE;
+            if (node->targetSpecies == SPECIES_VAPOREON
+             && i + 1 < childProfile->potentialEvolutionCount
+             && childProfile->potentialEvolutions[i + 1].targetSpecies == SPECIES_GLACEON)
+                sawVaporeonContinuation = TRUE;
+        }
+    }
+
+    EXPECT(sawRaticate);
+    EXPECT(sawJolteonContinuation || sawVaporeonContinuation);
+}
+
 TEST("(Daycare) Conditional evolution entries round-trip through stable condition-set IDs")
 {
     const struct Evolution *evolutions = GetSpeciesEvolutions(SPECIES_DIPPLIN);
