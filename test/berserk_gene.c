@@ -494,6 +494,9 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     u16 averagedCounterpartStat;
     u16 expectedStat;
     u16 branchStatA, branchStatB, chosenStat;
+    u32 averagedCounterpartHeight;
+    u32 expectedHeight;
+    u32 branchHeightA, branchHeightB, chosenHeight;
 
     ResetPokemonStorageSystem();
     CreateMon(&mon, SPECIES_ESPEON, 25, 0, OTID_STRUCT_PLAYER_ID);
@@ -517,10 +520,16 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     chosenStat = GetSpeciesBaseStat(SPECIES_ESPEON, STAT_HP);
     averagedCounterpartStat = (branchStatA + branchStatB + 1) / 2;
     expectedStat = (averagedCounterpartStat * 62 + chosenStat * 38 + 50) / 100;
+    branchHeightA = GetSpeciesHeight(SPECIES_APPLETUN);
+    branchHeightB = GetSpeciesHeight(SPECIES_DIPPLIN);
+    chosenHeight = GetSpeciesHeight(SPECIES_ESPEON);
+    averagedCounterpartHeight = (branchHeightA + branchHeightB + 1) / 2;
+    expectedHeight = (averagedCounterpartHeight * 62 + chosenHeight * 38 + 50) / 100;
 
     UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_ESPEON);
 
     EXPECT_EQ(profile->baseStats[STAT_HP], expectedStat);
+    EXPECT_EQ(profile->height, expectedHeight);
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_FLAPPLE); // multi-branch counterpart remains a pseudo side
     EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT,
               BERSERK_GENE_PHASE_COMPLETE);

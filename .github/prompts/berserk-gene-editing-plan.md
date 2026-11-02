@@ -486,9 +486,11 @@ Implementation progress (2026-11-02, next slice): persisted the sole gene-holder
 `evolutionFlags` bit 3 (no profile-size growth). Phase 1/Phase 2 evolution now recomputes base stats
 using the selected target and the opposite-side candidate set; when that set has multiple targets,
 their per-stat values are averaged first, then blended with the selected target using the original
-62/38 or 50/50 weighting. This implements the numeric base-stat part of a transient pseudo-fusion,
-not the complete pseudo-profile: ability/type identity, other scalar traits, learnset merging, and
-name/display aggregation still need to be handled according to the pseudo-fusion rules below.
+62/38 or 50/50 weighting. The same branch-average-then-blend rule now applies to height, weight,
+sprite scale, and sprite offset. Tests cover multi-branch base stats/height and B-side sole-gene
+holder persistence. This implements the pseudo-fusion's blended numeric traits, not the complete
+pseudo-profile: ability/type identity, other scalar traits, learnset merging, and name/display
+aggregation still need to be handled according to the pseudo-fusion rules below.
 
 Before treating this phase as complete, review/fix the new code and extend coverage for ambiguous
 same-side roots and re-breeding after each evolution phase. Then complete the full deterministic

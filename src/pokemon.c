@@ -6179,8 +6179,8 @@ static u16 GetBerserkGeneSpeciesStat(u16 species, u8 stat)
     return GetSpeciesBaseStat(species, stat);
 }
 
-static u8 BlendBerserkGeneEvolutionStat(struct BerserkGeneProfile *profile, u16 chosenValue, u16 counterpartValue,
-                                        bool8 chosenParentB)
+static u32 BlendBerserkGeneEvolutionStat(struct BerserkGeneProfile *profile, u32 chosenValue, u32 counterpartValue,
+                                         bool8 chosenParentB)
 {
     bool8 twoGeneHolders = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT) != 0;
     bool8 geneParentB = (profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) != 0;
@@ -6242,12 +6242,50 @@ static void ReblendBerserkGeneEvolutionBaseStats(struct Pokemon *mon, struct Ber
     for (stat = 0; stat < NUM_STATS; stat++)
     {
         u32 counterpartTotal = 0;
-        u16 counterpartAverage;
+        u32 counterpartAverage;
         for (i = 0; i < counterpartCount; i++)
             counterpartTotal += GetBerserkGeneSpeciesStat(counterpartSpecies[i], stat);
         counterpartAverage = (counterpartTotal + counterpartCount / 2) / counterpartCount;
         profile->baseStats[stat] = BlendBerserkGeneEvolutionStat(profile,
             GetBerserkGeneSpeciesStat(targetSpecies, stat), counterpartAverage, sourceParentB);
+    }
+
+    for (stat = 0; stat < 4; stat++)
+    {
+        u32 chosenValue, counterpartTotal = 0, counterpartAverage;
+        if (stat == 0)
+        {
+            chosenValue = GetSpeciesHeight(targetSpecies);
+            for (i = 0; i < counterpartCount; i++)
+                counterpartTotal += GetSpeciesHeight(counterpartSpecies[i]);
+        }
+        else if (stat == 1)
+        {
+            chosenValue = GetSpeciesWeight(targetSpecies);
+            for (i = 0; i < counterpartCount; i++)
+                counterpartTotal += GetSpeciesWeight(counterpartSpecies[i]);
+        }
+        else if (stat == 2)
+        {
+            chosenValue = gSpeciesInfo[SanitizeSpeciesId(targetSpecies)].pokemonScale;
+            for (i = 0; i < counterpartCount; i++)
+                counterpartTotal += gSpeciesInfo[SanitizeSpeciesId(counterpartSpecies[i])].pokemonScale;
+        }
+        else
+        {
+            chosenValue = gSpeciesInfo[SanitizeSpeciesId(targetSpecies)].pokemonOffset;
+            for (i = 0; i < counterpartCount; i++)
+                counterpartTotal += gSpeciesInfo[SanitizeSpeciesId(counterpartSpecies[i])].pokemonOffset;
+        }
+        counterpartAverage = (counterpartTotal + counterpartCount / 2) / counterpartCount;
+        if (stat == 0)
+            profile->height = BlendBerserkGeneEvolutionStat(profile, chosenValue, counterpartAverage, sourceParentB);
+        else if (stat == 1)
+            profile->weight = BlendBerserkGeneEvolutionStat(profile, chosenValue, counterpartAverage, sourceParentB);
+        else if (stat == 2)
+            profile->pokemonScale = BlendBerserkGeneEvolutionStat(profile, chosenValue, counterpartAverage, sourceParentB);
+        else
+            profile->pokemonOffset = BlendBerserkGeneEvolutionStat(profile, chosenValue, counterpartAverage, sourceParentB);
     }
 }
 
