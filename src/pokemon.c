@@ -6179,6 +6179,21 @@ static u16 GetBerserkGeneSpeciesStat(u16 species, u8 stat)
     return GetSpeciesBaseStat(species, stat);
 }
 
+static u8 GetBerserkGeneSpeciesEvYield(u16 species, u8 stat)
+{
+    const struct SpeciesInfo *info = &gSpeciesInfo[SanitizeSpeciesId(species)];
+
+    switch (stat)
+    {
+    case STAT_HP:    return info->evYield_HP;
+    case STAT_ATK:   return info->evYield_Attack;
+    case STAT_DEF:   return info->evYield_Defense;
+    case STAT_SPEED: return info->evYield_Speed;
+    case STAT_SPATK: return info->evYield_SpAttack;
+    default:         return info->evYield_SpDefense;
+    }
+}
+
 static u32 BlendBerserkGeneEvolutionStat(struct BerserkGeneProfile *profile, u32 chosenValue, u32 counterpartValue,
                                          bool8 chosenParentB)
 {
@@ -6286,6 +6301,32 @@ static void ReblendBerserkGeneEvolutionBaseStats(struct Pokemon *mon, struct Ber
             profile->pokemonScale = BlendBerserkGeneEvolutionStat(profile, chosenValue, counterpartAverage, sourceParentB);
         else
             profile->pokemonOffset = BlendBerserkGeneEvolutionStat(profile, chosenValue, counterpartAverage, sourceParentB);
+    }
+
+    {
+        u32 counterpartTotal = 0;
+        u32 counterpartAverage;
+
+        for (i = 0; i < counterpartCount; i++)
+            counterpartTotal += gSpeciesInfo[SanitizeSpeciesId(counterpartSpecies[i])].friendship;
+        counterpartAverage = (counterpartTotal + counterpartCount / 2) / counterpartCount;
+        profile->friendship = BlendBerserkGeneEvolutionStat(profile,
+            gSpeciesInfo[SanitizeSpeciesId(targetSpecies)].friendship, counterpartAverage, sourceParentB);
+    }
+
+    {
+        u16 evYields = 0;
+        for (stat = 0; stat < NUM_STATS; stat++)
+        {
+            u32 counterpartTotal = 0;
+            u32 counterpartAverage;
+            for (i = 0; i < counterpartCount; i++)
+                counterpartTotal += GetBerserkGeneSpeciesEvYield(counterpartSpecies[i], stat);
+            counterpartAverage = (counterpartTotal + counterpartCount / 2) / counterpartCount;
+            evYields |= (BlendBerserkGeneEvolutionStat(profile,
+                GetBerserkGeneSpeciesEvYield(targetSpecies, stat), counterpartAverage, sourceParentB) & 0x3) << (stat * 2);
+        }
+        profile->evYields = evYields;
     }
 }
 

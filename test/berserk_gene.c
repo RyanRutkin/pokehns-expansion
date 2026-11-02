@@ -497,6 +497,10 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     u32 averagedCounterpartHeight;
     u32 expectedHeight;
     u32 branchHeightA, branchHeightB, chosenHeight;
+    u32 averagedCounterpartFriendship;
+    u32 expectedFriendship;
+    u32 branchFriendshipA, branchFriendshipB, chosenFriendship;
+    u8 stat;
 
     ResetPokemonStorageSystem();
     CreateMon(&mon, SPECIES_ESPEON, 25, 0, OTID_STRUCT_PLAYER_ID);
@@ -525,11 +529,35 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
     chosenHeight = GetSpeciesHeight(SPECIES_ESPEON);
     averagedCounterpartHeight = (branchHeightA + branchHeightB + 1) / 2;
     expectedHeight = (averagedCounterpartHeight * 62 + chosenHeight * 38 + 50) / 100;
+    branchFriendshipA = gSpeciesInfo[SPECIES_APPLETUN].friendship;
+    branchFriendshipB = gSpeciesInfo[SPECIES_DIPPLIN].friendship;
+    chosenFriendship = gSpeciesInfo[SPECIES_ESPEON].friendship;
+    averagedCounterpartFriendship = (branchFriendshipA + branchFriendshipB + 1) / 2;
+    expectedFriendship = (averagedCounterpartFriendship * 62 + chosenFriendship * 38 + 50) / 100;
 
     UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_ESPEON);
 
     EXPECT_EQ(profile->baseStats[STAT_HP], expectedStat);
     EXPECT_EQ(profile->height, expectedHeight);
+    EXPECT_EQ(profile->friendship, expectedFriendship);
+    for (stat = 0; stat < NUM_STATS; stat++)
+    {
+        u8 branchYieldA, branchYieldB, chosenYield;
+        u8 averagedCounterpartYield;
+        u8 expectedYield;
+        switch (stat)
+        {
+        case STAT_HP:    branchYieldA = gSpeciesInfo[SPECIES_APPLETUN].evYield_HP; branchYieldB = gSpeciesInfo[SPECIES_DIPPLIN].evYield_HP; chosenYield = gSpeciesInfo[SPECIES_ESPEON].evYield_HP; break;
+        case STAT_ATK:   branchYieldA = gSpeciesInfo[SPECIES_APPLETUN].evYield_Attack; branchYieldB = gSpeciesInfo[SPECIES_DIPPLIN].evYield_Attack; chosenYield = gSpeciesInfo[SPECIES_ESPEON].evYield_Attack; break;
+        case STAT_DEF:   branchYieldA = gSpeciesInfo[SPECIES_APPLETUN].evYield_Defense; branchYieldB = gSpeciesInfo[SPECIES_DIPPLIN].evYield_Defense; chosenYield = gSpeciesInfo[SPECIES_ESPEON].evYield_Defense; break;
+        case STAT_SPEED: branchYieldA = gSpeciesInfo[SPECIES_APPLETUN].evYield_Speed; branchYieldB = gSpeciesInfo[SPECIES_DIPPLIN].evYield_Speed; chosenYield = gSpeciesInfo[SPECIES_ESPEON].evYield_Speed; break;
+        case STAT_SPATK: branchYieldA = gSpeciesInfo[SPECIES_APPLETUN].evYield_SpAttack; branchYieldB = gSpeciesInfo[SPECIES_DIPPLIN].evYield_SpAttack; chosenYield = gSpeciesInfo[SPECIES_ESPEON].evYield_SpAttack; break;
+        default:         branchYieldA = gSpeciesInfo[SPECIES_APPLETUN].evYield_SpDefense; branchYieldB = gSpeciesInfo[SPECIES_DIPPLIN].evYield_SpDefense; chosenYield = gSpeciesInfo[SPECIES_ESPEON].evYield_SpDefense; break;
+        }
+        averagedCounterpartYield = (branchYieldA + branchYieldB + 1) / 2;
+        expectedYield = (averagedCounterpartYield * 62 + chosenYield * 38 + 50) / 100;
+        EXPECT_EQ((profile->evYields >> (stat * 2)) & 3, expectedYield);
+    }
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_FLAPPLE); // multi-branch counterpart remains a pseudo side
     EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT,
               BERSERK_GENE_PHASE_COMPLETE);
