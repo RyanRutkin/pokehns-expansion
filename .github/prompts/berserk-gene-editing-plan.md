@@ -518,7 +518,9 @@ union of both current parent species' teachable lists, sorted with fusion-type m
 `GetMonEggMoveLearnset()` as a weighted, evenly sampled, capped merge with type-relevant moves
 prioritized. Regression coverage checks the teachable union and both-parent egg-move sampling.
 Evolution-time checks that known move slots remain unchanged; full randomized-move/type-priority
-sampling details and playtest coverage remain.
+sampling details and playtest coverage remain. The profile-aware level-up/egg/teachable projections
+are now used by the fusion Pokédex STATS tab, and party-menu teachable-move eligibility accepts the
+fusion's teachable union. The species-wide Pokédex path remains unchanged.
 
 The selected-node bit plus the profile phase state identifies the Phase 1 choice. A Phase 2 node's
 root is identified by its contiguous group, not by a stored root index; retained opposite-side

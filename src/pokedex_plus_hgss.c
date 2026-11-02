@@ -5355,30 +5355,47 @@ static bool8 CalculateMoves(void)
     if (gSpeciesInfo[species].isMegaEvolution || gSpeciesInfo[species].isGigantamax)
         species = GetFormSpeciesId(species, 0);
 
-    // Egg moves
-    if (HGSS_SHOW_EGG_MOVES_FOR_EVOS)
+    if (sPokedexView->displayMon != NULL
+     && GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0)
     {
-        u16 preSpecies = species;
-        while (preSpecies != SPECIES_NONE)
-        {
-            numEggMoves = GetEggMovesBySpecies(preSpecies, statsMovesEgg);
-            preSpecies = GetSpeciesPreEvolution(preSpecies);
-        }
+        const u16 *eggMoves = GetMonEggMoveLearnset(sPokedexView->displayMon);
+        const struct LevelUpMove *levelMoves = GetMonLevelUpLearnset(sPokedexView->displayMon);
+        const u16 *teachableMoves = GetMonTeachableLearnset(sPokedexView->displayMon);
+
+        while (numEggMoves < EGG_MOVES_ARRAY_COUNT && eggMoves[numEggMoves] != MOVE_UNAVAILABLE)
+            numEggMoves++;
+        while (numLevelUpMoves < MAX_LEVEL_UP_MOVES && levelMoves[numLevelUpMoves].move != LEVEL_UP_MOVE_END)
+            numLevelUpMoves++;
+        while (teachableMoves[numTeachableMoves] != MOVE_UNAVAILABLE)
+            numTeachableMoves++;
     }
     else
     {
-        numEggMoves = GetEggMovesBySpecies(species, statsMovesEgg);
+        // Egg moves
+        if (HGSS_SHOW_EGG_MOVES_FOR_EVOS)
+        {
+            u16 preSpecies = species;
+            while (preSpecies != SPECIES_NONE)
+            {
+                numEggMoves = GetEggMovesBySpecies(preSpecies, statsMovesEgg);
+                preSpecies = GetSpeciesPreEvolution(preSpecies);
+            }
+        }
+        else
+        {
+            numEggMoves = GetEggMovesBySpecies(species, statsMovesEgg);
+        }
+
+        // Level up moves
+        const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species);
+        for (i = 0; i < MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
+            numLevelUpMoves++;
+
+        // TM and Tutor moves
+        const u16 *teachableLearnset = GetSpeciesTeachableLearnset(species);
+        for (i = 0; teachableLearnset[i] != MOVE_UNAVAILABLE; i++)
+            numTeachableMoves++;
     }
-
-    // Level up moves
-    const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species);
-    for (i = 0; i < MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
-        numLevelUpMoves++;
-
-    // TM and Tutor moves
-    const u16 *teachableLearnset = GetSpeciesTeachableLearnset(species);
-    for (i = 0; teachableLearnset[i] != MOVE_UNAVAILABLE; i++)
-        numTeachableMoves++;
 
     sPokedexView->numEggMoves = numEggMoves;
     sPokedexView->numLevelUpMoves = numLevelUpMoves;
@@ -5390,8 +5407,13 @@ static bool8 CalculateMoves(void)
 
 static enum Move GetSelectedMove(u32 species, u32 selected)
 {
+    bool8 isFusion = sPokedexView->displayMon != NULL
+        && GetMonData(sPokedexView->displayMon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0;
+
     if (selected < sPokedexView->numEggMoves)
     {
+        if (isFusion)
+            return GetMonEggMoveLearnset(sPokedexView->displayMon)[selected];
         if (!HGSS_SHOW_EGG_MOVES_FOR_EVOS)
             return GetSpeciesEggMoves(species)[selected];
         u16 preSpecies = species;
@@ -5401,10 +5423,18 @@ static enum Move GetSelectedMove(u32 species, u32 selected)
     }
     selected -= sPokedexView->numEggMoves;
     if (selected < sPokedexView->numLevelUpMoves)
+    {
+        if (isFusion)
+            return GetMonLevelUpLearnset(sPokedexView->displayMon)[selected].move;
         return GetSpeciesLevelUpLearnset(species)[selected].move;
+    }
     selected -= sPokedexView->numLevelUpMoves;
     if (selected < sPokedexView->numTeachableMoves)
+    {
+        if (isFusion)
+            return GetMonTeachableLearnset(sPokedexView->displayMon)[selected];
         return GetSpeciesTeachableLearnset(species)[selected];
+    }
     return MOVE_NONE; //It should never get here but it allows us to visually see errors
 }
 
