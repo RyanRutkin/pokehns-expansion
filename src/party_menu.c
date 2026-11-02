@@ -2315,9 +2315,17 @@ static enum CanMoveBeLearned CanTeachMove(struct Pokemon *mon, enum Move move)
         }
     }
 
-    if (!CanLearnTeachableMove(GetMonData(mon, MON_DATA_SPECIES_OR_EGG), move) && !canLearnFusionMove)
+    if (GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0)
+    {
+        if (!canLearnFusionMove)
+            return CANNOT_LEARN_MOVE;
+    }
+    else if (!CanLearnTeachableMove(GetMonData(mon, MON_DATA_SPECIES_OR_EGG), move))
+    {
         return CANNOT_LEARN_MOVE;
-    else if (MonKnowsMove(mon, move) == TRUE)
+    }
+
+    if (MonKnowsMove(mon, move) == TRUE)
         return ALREADY_KNOWS_MOVE;
     else
         return CAN_LEARN_MOVE;

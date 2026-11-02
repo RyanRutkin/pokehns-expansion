@@ -4040,7 +4040,7 @@ enum Move MonTryLearningNewMoveAtLevel(struct Pokemon *mon, bool32 firstMove, u3
 {
     enum Move retVal = MOVE_NONE;
     u16 species = GetMonData(mon, MON_DATA_SPECIES);
-    const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species);
+    const struct LevelUpMove *learnset = GetMonLevelUpLearnset(mon);
 
     // since you can learn more than one move per level
     // the game needs to know whether you decided to

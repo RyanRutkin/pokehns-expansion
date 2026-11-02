@@ -523,6 +523,14 @@ pre-evolution chain. Regression coverage checks bounded level-up merging, unchan
 the teachable union, and both-parent egg-move sampling. Species-wide reference views and ordinary
 Pokémon remain on their existing species-keyed code paths.
 
+Gameplay follow-up: `MonTryLearningNewMoveAtLevel()` and evolution move teaching now use the
+profile-aware level-up projection, while BoxPokemon move-relearner level-up availability builds
+the projection once and does not walk a fusion's nominal pre-evolution chain. Party-menu and PC
+teachable eligibility use the profile union exclusively for fusion mons (not a union with the
+nominal species' teachables), while ordinary mon behavior stays unchanged. A targeted level-up
+integration test verifies a fusion learns a move from its projected list and retains its prior
+known move.
+
 Move-relearner follow-up (2026-11-02): added BoxPokemon-safe level-up, egg, and teachable
 accessors and routed PC move-relearner listing/availability through them. Fusion level-up and egg
 lists do not traverse the nominal species' ancestry; TM/tutor eligibility includes the fusion's

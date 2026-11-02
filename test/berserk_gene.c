@@ -602,6 +602,9 @@ TEST("Fusion level-up learnset merges current parent pools without modifying kno
     bool8 foundAOnly = FALSE;
     bool8 foundBOnly = FALSE;
     enum Move knownMove = MOVE_TACKLE;
+    enum Move expectedLearnedMove = MOVE_NONE;
+    enum Move learnedMove;
+    u32 learnLevel = 0;
     u8 i;
 
     ResetPokemonStorageSystem();
@@ -620,6 +623,21 @@ TEST("Fusion level-up learnset merges current parent pools without modifying kno
     speciesB = GetSpeciesLevelUpLearnset(SPECIES_APPLIN);
     learnset = GetMonLevelUpLearnset(&mon);
     EXPECT_NE(learnset, GetSpeciesLevelUpLearnset(SPECIES_EEVEE));
+
+    for (i = 0; i < MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
+    {
+        if (learnset[i].move != knownMove)
+        {
+            expectedLearnedMove = learnset[i].move;
+            learnLevel = learnset[i].level;
+            break;
+        }
+    }
+    EXPECT_NE(expectedLearnedMove, MOVE_NONE);
+    learnedMove = MonTryLearningNewMoveAtLevel(&mon, TRUE, learnLevel);
+    while (learnedMove == MON_ALREADY_KNOWS_MOVE)
+        learnedMove = MonTryLearningNewMoveAtLevel(&mon, FALSE, learnLevel);
+    EXPECT_EQ(learnedMove, expectedLearnedMove);
 
     for (i = 0; i <= MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
     {

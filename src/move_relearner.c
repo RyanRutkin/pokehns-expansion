@@ -1172,10 +1172,8 @@ static bool8 BoxMonCanLearnTeachableMove(struct BoxPokemon *mon, u16 species, en
     const u16 *fusionLearnset;
     u16 i;
 
-    if (CanLearnTeachableMove(species, move))
-        return TRUE;
     if (GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID) == 0)
-        return FALSE;
+        return CanLearnTeachableMove(species, move);
 
     fusionLearnset = GetBoxMonTeachableLearnset(mon);
     for (i = 0; fusionLearnset[i] != MOVE_UNAVAILABLE; i++)
