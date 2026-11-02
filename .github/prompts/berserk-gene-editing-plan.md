@@ -508,6 +508,14 @@ those transitions and the 11-node case, then run the test
 binary when the HNS test-runner build blocker is resolved. Do not claim full Berserk Gene evolution
 completion until those transitions are implemented and validated.
 
+Learnset progress (2026-11-02): added `GetMonLevelUpLearnset()` as a bounded, profile-aware
+projection over the current parent species' level-up tables. It evenly samples each parent's list
+at the stored 62/38 or 50/50 contribution, deduplicates, keeps level ordering, and prioritizes
+fusion-type moves within the same level. Concrete-mon level-up and evolution move-learning paths
+use this projection; species-only helpers and initial BoxPokemon moves remain unchanged. Current
+moves are not modified by the evolution hook. Egg-move and teachable/tutor move unions, the full
+type-priority sampling rule, and evolution-time regression coverage remain to be completed.
+
 The selected-node bit plus the profile phase state identifies the Phase 1 choice. A Phase 2 node's
 root is identified by its contiguous group, not by a stored root index; retained opposite-side
 roots identify pseudo-fusion membership without re-querying or re-sampling native species

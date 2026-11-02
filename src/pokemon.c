@@ -6160,6 +6160,106 @@ const struct Evolution *GetSpeciesEvolutions(u16 species)
     return evolutions;
 }
 
+EWRAM_DATA static struct LevelUpMove sBerserkGeneLevelUpMoves[MAX_LEVEL_UP_MOVES + 1] = {0};
+
+static u16 CountLevelUpMoves(const struct LevelUpMove *learnset)
+{
+    u16 count = 0;
+    while (count < MAX_LEVEL_UP_MOVES && learnset[count].move != LEVEL_UP_MOVE_END)
+        count++;
+    return count;
+}
+
+static bool8 IsBerserkGeneMoveTypeRelevant(struct Pokemon *mon, enum Move move)
+{
+    enum Type moveType = GetMoveType(move);
+    return moveType == GetMonType(mon, 0) || moveType == GetMonType(mon, 1);
+}
+
+static void AddBerserkGeneLearnsetMove(struct Pokemon *mon, const struct LevelUpMove *move, u8 *count)
+{
+    u8 i;
+
+    for (i = 0; i < *count; i++)
+    {
+        if (sBerserkGeneLevelUpMoves[i].move == move->move)
+        {
+            if (move->level < sBerserkGeneLevelUpMoves[i].level)
+                sBerserkGeneLevelUpMoves[i].level = move->level;
+            return;
+        }
+    }
+    if (*count < MAX_LEVEL_UP_MOVES)
+        sBerserkGeneLevelUpMoves[(*count)++] = *move;
+    (void)mon;
+}
+
+const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+    const struct LevelUpMove *learnsetA, *learnsetB;
+    u16 countA, countB;
+    u16 takeA, takeB;
+    u8 count = 0;
+    u16 i;
+
+    if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
+        return GetSpeciesLevelUpLearnset(species);
+
+    learnsetA = GetSpeciesLevelUpLearnset(profile->parentSpeciesA);
+    learnsetB = GetSpeciesLevelUpLearnset(profile->parentSpeciesB);
+    countA = CountLevelUpMoves(learnsetA);
+    countB = CountLevelUpMoves(learnsetB);
+    takeA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT)
+        ? (MAX_LEVEL_UP_MOVES + 1) / 2
+        : ((profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) ? 8 : 12);
+    takeB = MAX_LEVEL_UP_MOVES - takeA;
+
+    if (takeA > countA)
+    {
+        takeB = min(MAX_LEVEL_UP_MOVES, takeB + takeA - countA);
+        takeA = countA;
+    }
+    if (takeB > countB)
+    {
+        takeA = min(MAX_LEVEL_UP_MOVES, takeA + takeB - countB);
+        takeB = countB;
+    }
+    takeA = min(takeA, countA);
+    takeB = min(takeB, countB);
+
+    for (i = 0; i < takeA; i++)
+        AddBerserkGeneLearnsetMove(mon, &learnsetA[(i * countA) / takeA], &count);
+    for (i = 0; i < takeB; i++)
+        AddBerserkGeneLearnsetMove(mon, &learnsetB[(i * countB) / takeB], &count);
+
+    // Keep learnset ordering level-first, then favor moves matching the current fusion typing
+    // within a shared level. This preserves the assumptions in level-up and move-relearner scans.
+    for (i = 1; i < count; i++)
+    {
+        struct LevelUpMove entry = sBerserkGeneLevelUpMoves[i];
+        u16 j = i;
+        bool8 entryRelevant = IsBerserkGeneMoveTypeRelevant(mon, entry.move);
+        while (j > 0)
+        {
+            struct LevelUpMove *previous = &sBerserkGeneLevelUpMoves[j - 1];
+            bool8 previousRelevant = IsBerserkGeneMoveTypeRelevant(mon, previous->move);
+            if (previous->level < entry.level
+             || (previous->level == entry.level && (previousRelevant || !entryRelevant)))
+                break;
+            sBerserkGeneLevelUpMoves[j] = *previous;
+            j--;
+        }
+        sBerserkGeneLevelUpMoves[j] = entry;
+    }
+
+    sBerserkGeneLevelUpMoves[count].move = LEVEL_UP_MOVE_END;
+    sBerserkGeneLevelUpMoves[count].level = 0;
+    return sBerserkGeneLevelUpMoves;
+}
+
 static struct FusionPotentialEvolution sPotentialEvolutionProjection[MAX_FUSION_POTENTIAL_EVOLUTIONS];
 
 static u8 GetBerserkGeneEvolutionAge(const struct BerserkGeneProfile *profile, u8 index)
@@ -10422,9 +10522,8 @@ bool32 DoesSpeciesHaveFormChangeMethod(u16 species, enum FormChanges method)
 
 u16 MonTryLearningNewMoveEvolution(struct Pokemon *mon, bool8 firstMove)
 {
-    u16 species = GetMonData(mon, MON_DATA_SPECIES);
     u8 level = GetMonData(mon, MON_DATA_LEVEL);
-    const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species);
+    const struct LevelUpMove *learnset = GetMonLevelUpLearnset(mon);
 
     // Since you can learn more than one move per level,
     // the game needs to know whether you decided to

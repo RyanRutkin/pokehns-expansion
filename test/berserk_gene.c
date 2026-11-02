@@ -589,3 +589,58 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
               BERSERK_GENE_PHASE_COMPLETE);
 }
 
+TEST("Fusion level-up learnset merges current parent pools without modifying known moves")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const struct LevelUpMove *learnset;
+    const struct LevelUpMove *speciesA;
+    const struct LevelUpMove *speciesB;
+    u16 profileId;
+    u8 moveCount = 0;
+    bool8 foundAOnly = FALSE;
+    bool8 foundBOnly = FALSE;
+    enum Move knownMove = MOVE_TACKLE;
+    u8 i;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    SetMonData(&mon, MON_DATA_MOVE1, &knownMove);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    profile->type1 = TYPE_NORMAL;
+    profile->type2 = TYPE_GRASS;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    speciesA = GetSpeciesLevelUpLearnset(SPECIES_EEVEE);
+    speciesB = GetSpeciesLevelUpLearnset(SPECIES_APPLIN);
+    learnset = GetMonLevelUpLearnset(&mon);
+    EXPECT_NE(learnset, GetSpeciesLevelUpLearnset(SPECIES_EEVEE));
+
+    for (i = 0; i <= MAX_LEVEL_UP_MOVES && learnset[i].move != LEVEL_UP_MOVE_END; i++)
+    {
+        bool8 inA = FALSE, inB = FALSE;
+        u8 j;
+        if (i > 0)
+            EXPECT(learnset[i - 1].level <= learnset[i].level);
+        for (j = 0; j < MAX_LEVEL_UP_MOVES && speciesA[j].move != LEVEL_UP_MOVE_END; j++)
+            if (speciesA[j].move == learnset[i].move)
+                inA = TRUE;
+        for (j = 0; j < MAX_LEVEL_UP_MOVES && speciesB[j].move != LEVEL_UP_MOVE_END; j++)
+            if (speciesB[j].move == learnset[i].move)
+                inB = TRUE;
+        EXPECT(inA || inB);
+        foundAOnly |= inA && !inB;
+        foundBOnly |= inB && !inA;
+        moveCount++;
+    }
+
+    EXPECT(moveCount <= MAX_LEVEL_UP_MOVES);
+    EXPECT(foundAOnly);
+    EXPECT(foundBOnly);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_MOVE1), knownMove);
+}
+

@@ -922,6 +922,7 @@ u32 GetSpeciesBaseSpDefense(u16 species);
 u32 GetSpeciesBaseSpeed(u16 species);
 u32 GetSpeciesBaseStat(u16 species, u32 statIndex);
 const struct LevelUpMove *GetSpeciesLevelUpLearnset(u16 species);
+const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon);
 const u16 *GetSpeciesTeachableLearnset(u16 species);
 const u16 *GetSpeciesEggMoves(u16 species);
 const struct Evolution *GetSpeciesEvolutions(u16 species);
