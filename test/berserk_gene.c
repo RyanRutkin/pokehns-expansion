@@ -644,3 +644,67 @@ TEST("Fusion level-up learnset merges current parent pools without modifying kno
     EXPECT_EQ(GetMonData(&mon, MON_DATA_MOVE1), knownMove);
 }
 
+TEST("Fusion egg and teachable learnsets merge the current parent species")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const u16 *teachable;
+    const u16 *eggMoves;
+    const u16 *speciesTeachableA;
+    const u16 *speciesTeachableB;
+    const u16 *speciesEggA;
+    const u16 *speciesEggB;
+    u16 profileId;
+    u16 i, j;
+    bool8 sawEggMoveA = FALSE;
+    bool8 sawEggMoveB = FALSE;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    profile->type1 = TYPE_NORMAL;
+    profile->type2 = TYPE_GRASS;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    speciesTeachableA = GetSpeciesTeachableLearnset(SPECIES_EEVEE);
+    speciesTeachableB = GetSpeciesTeachableLearnset(SPECIES_APPLIN);
+    teachable = GetMonTeachableLearnset(&mon);
+    for (i = 0; speciesTeachableA[i] != MOVE_UNAVAILABLE; i++)
+    {
+        bool8 found = FALSE;
+        for (j = 0; teachable[j] != MOVE_UNAVAILABLE; j++)
+            if (teachable[j] == speciesTeachableA[i])
+                found = TRUE;
+        EXPECT(found);
+    }
+    for (i = 0; speciesTeachableB[i] != MOVE_UNAVAILABLE; i++)
+    {
+        bool8 found = FALSE;
+        for (j = 0; teachable[j] != MOVE_UNAVAILABLE; j++)
+            if (teachable[j] == speciesTeachableB[i])
+                found = TRUE;
+        EXPECT(found);
+    }
+
+    speciesEggA = GetSpeciesEggMoves(SPECIES_EEVEE);
+    speciesEggB = GetSpeciesEggMoves(SPECIES_APPLIN);
+    eggMoves = GetMonEggMoveLearnset(&mon);
+    for (i = 0; i < EGG_MOVES_ARRAY_COUNT && eggMoves[i] != MOVE_UNAVAILABLE; i++)
+    {
+        bool8 inA = FALSE, inB = FALSE;
+        for (j = 0; speciesEggA[j] != MOVE_UNAVAILABLE; j++)
+            inA |= speciesEggA[j] == eggMoves[i];
+        for (j = 0; speciesEggB[j] != MOVE_UNAVAILABLE; j++)
+            inB |= speciesEggB[j] == eggMoves[i];
+        EXPECT(inA || inB);
+        sawEggMoveA |= inA;
+        sawEggMoveB |= inB;
+    }
+    EXPECT(sawEggMoveA);
+    EXPECT(sawEggMoveB);
+}
+

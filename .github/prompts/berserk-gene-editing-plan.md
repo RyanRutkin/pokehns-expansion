@@ -513,8 +513,12 @@ projection over the current parent species' level-up tables. It evenly samples e
 at the stored 62/38 or 50/50 contribution, deduplicates, keeps level ordering, and prioritizes
 fusion-type moves within the same level. Concrete-mon level-up and evolution move-learning paths
 use this projection; species-only helpers and initial BoxPokemon moves remain unchanged. Current
-moves are not modified by the evolution hook. Egg-move and teachable/tutor move unions, the full
-type-priority sampling rule, and evolution-time regression coverage remain to be completed.
+moves are not modified by the evolution hook. Added `GetMonTeachableLearnset()` as a deduplicated
+union of both current parent species' teachable lists, sorted with fusion-type moves first, and
+`GetMonEggMoveLearnset()` as a weighted, evenly sampled, capped merge with type-relevant moves
+prioritized. Regression coverage checks the teachable union and both-parent egg-move sampling.
+Evolution-time checks that known move slots remain unchanged; full randomized-move/type-priority
+sampling details and playtest coverage remain.
 
 The selected-node bit plus the profile phase state identifies the Phase 1 choice. A Phase 2 node's
 root is identified by its contiguous group, not by a stored root index; retained opposite-side

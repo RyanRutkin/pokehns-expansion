@@ -924,6 +924,8 @@ u32 GetSpeciesBaseStat(u16 species, u32 statIndex);
 const struct LevelUpMove *GetSpeciesLevelUpLearnset(u16 species);
 const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon);
 const u16 *GetSpeciesTeachableLearnset(u16 species);
+const u16 *GetMonTeachableLearnset(struct Pokemon *mon);
+const u16 *GetMonEggMoveLearnset(struct Pokemon *mon);
 const u16 *GetSpeciesEggMoves(u16 species);
 const struct Evolution *GetSpeciesEvolutions(u16 species);
 const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount);
