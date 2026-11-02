@@ -5,6 +5,7 @@
 #include "pokemon_storage_system.h"
 #include "shop.h"
 #include "string_util.h"
+#include "move_relearner.h"
 #include "test/test.h"
 
 static const struct ShopPriceOverride sTestSellPriceOverrides[] = {
@@ -706,5 +707,28 @@ TEST("Fusion egg and teachable learnsets merge the current parent species")
     }
     EXPECT(sawEggMoveA);
     EXPECT(sawEggMoveB);
+}
+
+TEST("Box fusion move relearner predicates include profile level-up, egg, TM, and tutor moves")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 30, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    profile->type1 = TYPE_NORMAL;
+    profile->type2 = TYPE_GRASS;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    EXPECT_NE(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_LEVEL_UP_MOVES), FALSE);
+    EXPECT_NE(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_EGG_MOVES), FALSE);
+    EXPECT_NE(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_TM_MOVES), FALSE);
+    EXPECT_NE(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_TUTOR_MOVES), FALSE);
 }
 

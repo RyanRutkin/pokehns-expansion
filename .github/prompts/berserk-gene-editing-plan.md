@@ -526,7 +526,9 @@ Pokémon remain on their existing species-keyed code paths.
 Move-relearner follow-up (2026-11-02): added BoxPokemon-safe level-up, egg, and teachable
 accessors and routed PC move-relearner listing/availability through them. Fusion level-up and egg
 lists do not traverse the nominal species' ancestry; TM/tutor eligibility includes the fusion's
-teachable union. Species-only routines for ordinary Pokémon are unchanged.
+teachable union. Species-only routines for ordinary Pokémon are unchanged. Added a profile-backed
+relearner predicate regression for all four move categories; execution still depends on resolving
+the known HNS test-runner build issue.
 
 The selected-node bit plus the profile phase state identifies the Phase 1 choice. A Phase 2 node's
 root is identified by its contiguous group, not by a stored root index; retained opposite-side
