@@ -536,7 +536,9 @@ accessors and routed PC move-relearner listing/availability through them. Fusion
 lists do not traverse the nominal species' ancestry; TM/tutor eligibility includes the fusion's
 teachable union. Species-only routines for ordinary Pokémon are unchanged. Added a profile-backed
 relearner predicate regression for all four move categories; execution still depends on resolving
-the known HNS test-runner build issue.
+the known HNS test-runner build issue. This was fixed in test infrastructure by including global
+save-block definitions before `fake_rtc.h`; targeted HNS tests for relearner predicates, level-up
+learning/known-move preservation, and egg/teachable merge now pass.
 
 The selected-node bit plus the profile phase state identifies the Phase 1 choice. A Phase 2 node's
 root is identified by its contiguous group, not by a stored root index; retained opposite-side

@@ -6,6 +6,7 @@
 #include "shop.h"
 #include "string_util.h"
 #include "move_relearner.h"
+#include "event_data.h"
 #include "test/test.h"
 
 static const struct ShopPriceOverride sTestSellPriceOverrides[] = {
@@ -727,7 +728,7 @@ TEST("Fusion egg and teachable learnsets merge the current parent species")
     EXPECT(sawEggMoveB);
 }
 
-TEST("Box fusion move relearner predicates include profile level-up, egg, TM, and tutor moves")
+TEST("Box fusion move relearner predicates use profile moves and respect category settings")
 {
     struct Pokemon mon;
     struct BerserkGeneProfile *profile;
@@ -745,8 +746,11 @@ TEST("Box fusion move relearner predicates include profile level-up, egg, TM, an
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
     EXPECT_NE(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_LEVEL_UP_MOVES), FALSE);
-    EXPECT_NE(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_EGG_MOVES), FALSE);
-    EXPECT_NE(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_TM_MOVES), FALSE);
-    EXPECT_NE(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_TUTOR_MOVES), FALSE);
+    EXPECT_EQ(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_EGG_MOVES),
+        FlagGet(P_FLAG_EGG_MOVES) || P_ENABLE_MOVE_RELEARNERS);
+    EXPECT_EQ(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_TM_MOVES),
+        P_TM_MOVES_RELEARNER || P_ENABLE_MOVE_RELEARNERS);
+    EXPECT_EQ(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_TUTOR_MOVES),
+        FlagGet(P_FLAG_TUTOR_MOVES) || P_ENABLE_MOVE_RELEARNERS);
 }
 
