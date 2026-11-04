@@ -7038,8 +7038,13 @@ const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
 
 u16 GetMonDisplaySpriteSpecies(struct Pokemon *mon)
 {
-    u16 species = GetMonData(mon, MON_DATA_SPECIES);
-    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    return GetBoxMonDisplaySpriteSpecies(&mon->box);
+}
+
+u16 GetBoxMonDisplaySpriteSpecies(struct BoxPokemon *boxMon)
+{
+    u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
+    u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
     struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
 
     if (profile == NULL)

@@ -607,8 +607,10 @@ TEST("Fusion display sprite species follows the stored sprite donor")
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
     EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_EEVEE);
+    EXPECT_EQ(GetBoxMonDisplaySpriteSpecies(&mon.box), SPECIES_EEVEE);
     profile->inheritanceFlags |= BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT;
     EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_APPLIN);
+    EXPECT_EQ(GetBoxMonDisplaySpriteSpecies(&mon.box), SPECIES_APPLIN);
 
     FreeBerserkGeneProfile(profileId);
     EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_EEVEE);

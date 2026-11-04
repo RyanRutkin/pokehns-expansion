@@ -4533,7 +4533,7 @@ static void InitBoxMonSprites(u8 boxId)
     {
         for (j = 0; j < IN_BOX_COLUMNS; j++)
         {
-            species = GetBoxMonDataAt(boxId, boxPosition, MON_DATA_SPECIES);
+            species = GetBoxMonDisplaySpriteSpecies(GetBoxedMonPtr(boxId, boxPosition));
             bool32 isEgg = GetBoxMonDataAt(boxId, boxPosition, MON_DATA_IS_EGG);
             if (species != SPECIES_NONE)
             {
@@ -4555,10 +4555,10 @@ static void InitBoxMonSprites(u8 boxId)
 
 static void CreateBoxMonIconAtPos(u8 boxPosition)
 {
-    u16 species = GetCurrentBoxMonData(boxPosition, MON_DATA_SPECIES);
+    u16 species = GetBoxMonDisplaySpriteSpecies(GetBoxedMonPtr(StorageGetCurrentBox(), boxPosition));
     bool32 isEgg = GetCurrentBoxMonData(boxPosition, MON_DATA_IS_EGG);
 
-    if (species != SPECIES_NONE)
+    if (GetCurrentBoxMonData(boxPosition, MON_DATA_SPECIES) != SPECIES_NONE)
     {
         s16 x = 8 * (3 * (boxPosition % IN_BOX_COLUMNS)) + 100;
         s16 y = 8 * (3 * (boxPosition / IN_BOX_COLUMNS)) + 44;
@@ -10226,19 +10226,20 @@ static void TilemapUtil_Draw(u8 id)
 void UpdateSpeciesSpritePSS(struct BoxPokemon *boxMon)
 {
     u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
+    u16 spriteSpecies = GetBoxMonDisplaySpriteSpecies(boxMon);
     bool8 isShiny = GetBoxMonData(boxMon, MON_DATA_IS_SHINY);
     u32 pid = GetBoxMonData(boxMon, MON_DATA_PERSONALITY);
     bool32 isEgg = GetBoxMonData(boxMon, MON_DATA_IS_EGG);
 
     // Update front sprite
     sStorage->displayMonSpecies = species;
-    sStorage->displayMonPalette = GetMonSpritePalFromSpeciesAndPersonalityIsEgg(species, isShiny, pid, isEgg);
+    sStorage->displayMonPalette = GetMonSpritePalFromSpeciesAndPersonalityIsEgg(spriteSpecies, isShiny, pid, isEgg);
     sStorage->displayMonIsEgg = isEgg;
     if (!sJustOpenedBag)
     {
         if (sRefreshDisplayMonGfx)
         {
-            LoadDisplayMonGfx(species, pid, isEgg);
+            LoadDisplayMonGfx(spriteSpecies, pid, isEgg);
             StartDisplayMonMosaicEffect();
             sRefreshDisplayMonGfx = FALSE;
         }
