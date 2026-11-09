@@ -4299,7 +4299,7 @@ static void Cmd_getexp(void)
 
                     if ((B_EXP_CAP_TYPE == EXP_CAP_HARD || gSaveBlock3Ptr->challengeSettings.tx_Challenges_LevelCap) && gBattleStruct->battlerExpReward != 0)
                     {
-                        enum GrowthRate growthRate = gSpeciesInfo[GetMonData(&gPlayerParty[*expMonId], MON_DATA_SPECIES)].growthRate;
+                        enum GrowthRate growthRate = GetMonGrowthRate(&gPlayerParty[*expMonId]);
                         u32 currentExp = GetMonData(&gPlayerParty[*expMonId], MON_DATA_EXP);
                         u32 levelCap = GetCurrentLevelCap();
 

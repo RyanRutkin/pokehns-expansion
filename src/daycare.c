@@ -705,7 +705,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
 
     // Step 14: growth rate, EV yield (per stat), base friendship — independent binary rolls.
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
-    profile->growthRate = gSpeciesInfo[species[parent]].growthRate;
+    profile->growthRate = GetBoxMonGrowthRate(&daycare->mons[parent].mon);
 
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
     profile->friendship = gSpeciesInfo[species[parent]].friendship;
@@ -912,6 +912,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
 
     profile->inheritanceFlags = flags;
     SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    SetMonData(egg, MON_DATA_EXP, &gExperienceTables[profile->growthRate][EGG_HATCH_LEVEL]);
 }
 
 static void ClearDaycareMonMail(struct DaycareMail *mail);
@@ -1228,7 +1229,7 @@ static void ApplyDaycareExperience(struct Pokemon *mon)
 
 static u32 GetExpAtLevelCap(struct Pokemon *mon)
 {
-    return gExperienceTables[gSpeciesInfo[GetMonData(mon, MON_DATA_SPECIES)].growthRate][GetCurrentLevelCap()];
+    return gExperienceTables[GetMonGrowthRate(mon)][GetCurrentLevelCap()];
 }
 
 static u16 TakeSelectedPokemonFromDaycare(struct DaycareMon *daycareMon)

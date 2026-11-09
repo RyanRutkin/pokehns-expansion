@@ -3828,11 +3828,11 @@ void BoxMonToMon(const struct BoxPokemon *src, struct Pokemon *dest)
 
 u8 GetLevelFromMonExp(struct Pokemon *mon)
 {
-    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+    enum GrowthRate growthRate = GetMonGrowthRate(mon);
     u32 exp = GetMonData(mon, MON_DATA_EXP);
     s32 level = 1;
 
-    while (level <= MAX_LEVEL && gExperienceTables[gSpeciesInfo[species].growthRate][level] <= exp)
+    while (level <= MAX_LEVEL && gExperienceTables[growthRate][level] <= exp)
         level++;
 
     return level - 1;
@@ -3840,14 +3840,28 @@ u8 GetLevelFromMonExp(struct Pokemon *mon)
 
 u8 GetLevelFromBoxMonExp(struct BoxPokemon *boxMon)
 {
-    u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
+    enum GrowthRate growthRate = GetBoxMonGrowthRate(boxMon);
     u32 exp = GetBoxMonData(boxMon, MON_DATA_EXP);
     s32 level = 1;
 
-    while (level <= MAX_LEVEL && gExperienceTables[gSpeciesInfo[species].growthRate][level] <= exp)
+    while (level <= MAX_LEVEL && gExperienceTables[growthRate][level] <= exp)
         level++;
 
     return level - 1;
+}
+
+enum GrowthRate GetMonGrowthRate(struct Pokemon *mon)
+{
+    return GetBoxMonGrowthRate(&mon->box);
+}
+
+enum GrowthRate GetBoxMonGrowthRate(struct BoxPokemon *boxMon)
+{
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+
+    if (profile != NULL)
+        return profile->growthRate;
+    return gSpeciesInfo[GetBoxMonData(boxMon, MON_DATA_SPECIES)].growthRate;
 }
 
 u16 GiveMoveToMon(struct Pokemon *mon, enum Move move)
@@ -6169,7 +6183,7 @@ IWRAM_DATA static u16 sBerserkGeneTeachableMoves[MAX_BERSERK_GENE_TEACHABLE_MOVE
 
 // Keep root selections for Phase 1 reconstruction and a separate selected descendant for Phase 2.
 // Older completed profiles lack that metadata and retain their original two-species projection.
-static u8 GetBerserkGeneMoveSources(const struct BerserkGeneProfile *profile, bool8 parentB, u16 *species)
+static u8 GetBerserkGeneResolvedSources(const struct BerserkGeneProfile *profile, bool8 parentB, u16 *species)
 {
     u8 phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
         >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
@@ -6315,8 +6329,8 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
     if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
         return GetSpeciesLevelUpLearnset(species);
 
-    sourceCountA = GetBerserkGeneMoveSources(profile, FALSE, speciesA);
-    sourceCountB = GetBerserkGeneMoveSources(profile, TRUE, speciesB);
+    sourceCountA = GetBerserkGeneResolvedSources(profile, FALSE, speciesA);
+    sourceCountB = GetBerserkGeneResolvedSources(profile, TRUE, speciesB);
     countA = CountBerserkGeneLevelUpMoves(speciesA, sourceCountA);
     countB = CountBerserkGeneLevelUpMoves(speciesB, sourceCountB);
     takeA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT)
@@ -6411,7 +6425,7 @@ const u16 *GetBoxMonTeachableLearnset(struct BoxPokemon *boxMon)
     // Teachable moves are a complete union, not the sampled/capped subset used by the other pools.
     for (parent = 0; parent < 2; parent++)
     {
-        sourceCount = GetBerserkGeneMoveSources(profile, parent, sources);
+        sourceCount = GetBerserkGeneResolvedSources(profile, parent, sources);
         for (source = 0; source < sourceCount; source++)
         {
             const u16 *learnset = GetSpeciesTeachableLearnset(sources[source]);
@@ -6480,8 +6494,8 @@ const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon)
     if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
         return GetSpeciesEggMoves(species);
 
-    sourceCountA = GetBerserkGeneMoveSources(profile, FALSE, speciesA);
-    sourceCountB = GetBerserkGeneMoveSources(profile, TRUE, speciesB);
+    sourceCountA = GetBerserkGeneResolvedSources(profile, FALSE, speciesA);
+    sourceCountB = GetBerserkGeneResolvedSources(profile, TRUE, speciesB);
     takeA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT)
         ? (EGG_MOVES_ARRAY_COUNT - 1 + 1) / 2
         : ((profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) ? 7 : 11);
@@ -6575,6 +6589,15 @@ static enum Ability GetEvolutionAbilitySlot(u16 species, u8 slot)
     return gSpeciesInfo[SanitizeSpeciesId(species)].abilities[slot];
 }
 
+static u16 ChooseBerserkGeneEvolutionTraitSpecies(struct BerserkGeneProfile *profile)
+{
+    u16 sources[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    bool8 parentB = ShouldInheritEvolutionTraitFromParentB(profile);
+    u8 count = GetBerserkGeneResolvedSources(profile, parentB, sources);
+
+    return SanitizeSpeciesId(sources[count == 1 ? 0 : Random() % count]);
+}
+
 static void ReinheritBerserkGeneEvolutionAppearance(struct BerserkGeneProfile *profile, u16 parentSpeciesA,
                                                     u16 parentSpeciesB, u16 previousSpecies, bool8 previousSpriteParentB)
 {
@@ -6613,12 +6636,8 @@ static void ReinheritBerserkGeneEvolutionAppearance(struct BerserkGeneProfile *p
     profile->inheritanceFlags = (profile->inheritanceFlags & ~BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK)
         | (activeCandidates[slot] << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
 
-    profile->color = ShouldInheritEvolutionTraitFromParentB(profile)
-        ? gSpeciesInfo[SanitizeSpeciesId(parentSpeciesB)].bodyColor
-        : gSpeciesInfo[SanitizeSpeciesId(parentSpeciesA)].bodyColor;
-    profile->cryId = ShouldInheritEvolutionTraitFromParentB(profile)
-        ? gSpeciesInfo[SanitizeSpeciesId(parentSpeciesB)].cryId
-        : gSpeciesInfo[SanitizeSpeciesId(parentSpeciesA)].cryId;
+    profile->color = gSpeciesInfo[ChooseBerserkGeneEvolutionTraitSpecies(profile)].bodyColor;
+    profile->cryId = gSpeciesInfo[ChooseBerserkGeneEvolutionTraitSpecies(profile)].cryId;
 
     if (previousSpriteParentB)
     {
@@ -7516,22 +7535,22 @@ bool8 PokemonUseItemEffects(struct Pokemon *mon, enum Item item, u8 partyIndex, 
 
                 if (param == 0) // Rare Candy
                 {
-                    dataUnsigned = gExperienceTables[gSpeciesInfo[GetMonData(mon, MON_DATA_SPECIES)].growthRate][GetMonData(mon, MON_DATA_LEVEL) + 1];
+                    dataUnsigned = gExperienceTables[GetMonGrowthRate(mon)][GetMonData(mon, MON_DATA_LEVEL) + 1];
                 }
                 else if (param - 1 < ARRAY_COUNT(sExpCandyExperienceTable)) // EXP Candies
                 {
-                    u16 species = GetMonData(mon, MON_DATA_SPECIES);
+                    enum GrowthRate growthRate = GetMonGrowthRate(mon);
                     dataUnsigned = sExpCandyExperienceTable[param - 1] + GetMonData(mon, MON_DATA_EXP);
 
                     if ((B_RARE_CANDY_CAP && B_EXP_CAP_TYPE == EXP_CAP_HARD) || gSaveBlock3Ptr->challengeSettings.tx_Challenges_LevelCap)
                     {
                         u32 currentLevelCap = GetCurrentLevelCap();
-                        if (dataUnsigned > gExperienceTables[gSpeciesInfo[species].growthRate][currentLevelCap])
-                            dataUnsigned = gExperienceTables[gSpeciesInfo[species].growthRate][currentLevelCap];
+                        if (dataUnsigned > gExperienceTables[growthRate][currentLevelCap])
+                            dataUnsigned = gExperienceTables[growthRate][currentLevelCap];
                     }
-                    else if (dataUnsigned > gExperienceTables[gSpeciesInfo[species].growthRate][MAX_LEVEL])
+                    else if (dataUnsigned > gExperienceTables[growthRate][MAX_LEVEL])
                     {
-                        dataUnsigned = gExperienceTables[gSpeciesInfo[species].growthRate][MAX_LEVEL];
+                        dataUnsigned = gExperienceTables[growthRate][MAX_LEVEL];
                     }
                 }
 
@@ -9420,15 +9439,15 @@ u16 GetMonEVCount(struct Pokemon *mon)
 
 bool8 TryIncrementMonLevel(struct Pokemon *mon)
 {
-    u16 species = GetMonData(mon, MON_DATA_SPECIES, 0);
+    enum GrowthRate growthRate = GetMonGrowthRate(mon);
     u8 nextLevel = GetMonData(mon, MON_DATA_LEVEL, 0) + 1;
     u32 expPoints = GetMonData(mon, MON_DATA_EXP, 0);
-    if (expPoints > gExperienceTables[gSpeciesInfo[species].growthRate][MAX_LEVEL])
+    if (expPoints > gExperienceTables[growthRate][MAX_LEVEL])
     {
-        expPoints = gExperienceTables[gSpeciesInfo[species].growthRate][MAX_LEVEL];
+        expPoints = gExperienceTables[growthRate][MAX_LEVEL];
         SetMonData(mon, MON_DATA_EXP, &expPoints);
     }
-    if (nextLevel > GetCurrentLevelCap() || expPoints < gExperienceTables[gSpeciesInfo[species].growthRate][nextLevel])
+    if (nextLevel > GetCurrentLevelCap() || expPoints < gExperienceTables[growthRate][nextLevel])
     {
         return FALSE;
     }

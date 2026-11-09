@@ -1,4 +1,5 @@
 #include "global.h"
+#include "caps.h"
 #include "daycare.h"
 #include "event_data.h"
 #include "malloc.h"
@@ -956,6 +957,101 @@ TEST("(Daycare) Rebreeding preserves only the fusion parent's remaining saved li
     {
         EXPECT_EQ(childProfile->potentialEvolutionCount, 1);
     }
+}
+
+TEST("Fusion growth daycare withdrawal uses the birth curve and level cap")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    enum GrowthRate growthRate = GROWTH_FAST;
+    u8 slot = 0;
+    u16 profileId;
+    u32 experience;
+    u32 cap = GetCurrentLevelCap();
+    u16 oldSlot = gSpecialVar_0x8004;
+    u8 stat;
+
+    PARAMETRIZE { growthRate = GROWTH_FAST; slot = 0; }
+    PARAMETRIZE { growthRate = GROWTH_SLOW; slot = 0; }
+    PARAMETRIZE { growthRate = GROWTH_FAST; slot = 1; }
+    PARAMETRIZE { growthRate = GROWTH_SLOW; slot = 1; }
+
+    ZeroPlayerPartyMons();
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->growthRate = growthRate;
+    for (stat = 0; stat < NUM_STATS; stat++)
+        profile->baseStats[stat] = GetSpeciesBaseStat(SPECIES_EEVEE, stat);
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    experience = gExperienceTables[growthRate][5];
+    SetMonData(&mon, MON_DATA_EXP, &experience);
+    CalculateMonStats(&mon);
+    StorePokemonInDaycare(&mon, &gSaveBlock1Ptr->daycare.mons[slot]);
+    gSaveBlock1Ptr->daycare.mons[slot].steps = gExperienceTables[growthRate][MAX_LEVEL];
+    gSpecialVar_0x8004 = slot;
+    TakePokemonFromDaycare();
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_EXP), gExperienceTables[growthRate][cap]);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_LEVEL), cap);
+    EXPECT_EQ(GetMonGrowthRate(&gPlayerParty[0]), growthRate);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    ZeroPlayerPartyMons();
+    gSpecialVar_0x8004 = oldSlot;
+}
+
+TEST("Fusion growth breeding inherits stored parent curves and initializes egg EXP")
+{
+    struct Pokemon fusionParent, otherParent;
+    struct BerserkGeneProfile *parentProfile;
+    u16 profileId;
+    u16 geneItem = ITEM_BERSERK_GENE;
+    u8 parentSlot = 0;
+    u8 trial;
+    bool8 sawFusionCurve = FALSE;
+    bool8 sawOtherCurve = FALSE;
+
+    PARAMETRIZE { parentSlot = 0; }
+    PARAMETRIZE { parentSlot = 1; }
+
+    ZeroPlayerPartyMons();
+    CreateMon(&fusionParent, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&otherParent, SPECIES_RATTATA, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    parentProfile = GetBerserkGeneProfile(profileId);
+    EXPECT(parentProfile != NULL);
+    parentProfile->parentSpeciesA = SPECIES_EEVEE;
+    parentProfile->parentSpeciesB = SPECIES_APPLIN;
+    parentProfile->eggGroup1 = parentProfile->eggGroup2 = EGG_GROUP_FIELD;
+    parentProfile->growthRate = GROWTH_ERRATIC;
+    SetMonData(&fusionParent, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    SetMonData(&fusionParent, MON_DATA_HELD_ITEM, &geneItem);
+    StorePokemonInDaycare(&fusionParent, &gSaveBlock1Ptr->daycare.mons[parentSlot]);
+    StorePokemonInDaycare(&otherParent, &gSaveBlock1Ptr->daycare.mons[parentSlot ^ 1]);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+
+    for (trial = 0; trial < 32; trial++)
+    {
+        struct BerserkGeneProfile *childProfile;
+        GiveEggFromDaycare();
+        childProfile = GetBerserkGeneProfile(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
+        EXPECT(childProfile != NULL);
+        sawFusionCurve |= childProfile->growthRate == GROWTH_ERRATIC;
+        sawOtherCurve |= childProfile->growthRate == gSpeciesInfo[SPECIES_RATTATA].growthRate;
+        EXPECT(childProfile->growthRate == GROWTH_ERRATIC
+            || childProfile->growthRate == gSpeciesInfo[SPECIES_RATTATA].growthRate);
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_EXP), gExperienceTables[childProfile->growthRate][EGG_HATCH_LEVEL]);
+        EXPECT_EQ(GetLevelFromMonExp(&gPlayerParty[0]), EGG_HATCH_LEVEL);
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+        ZeroPlayerPartyMons();
+    }
+    EXPECT(sawFusionCurve);
+    EXPECT(sawOtherCurve);
+    EXPECT_EQ(parentProfile->growthRate, GROWTH_ERRATIC);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[parentSlot].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
 }
 
 TEST("Fusion lineage rebreeding samples only retained multi-root descendants")

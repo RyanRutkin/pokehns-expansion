@@ -179,7 +179,7 @@ struct __attribute__((packed)) FusionPotentialEvolution
 #define BERSERK_GENE_EVOLUTION_PHASE_SHIFT 1
 #define BERSERK_GENE_EVOLUTION_PHASE_MASK  (3 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT)
 #define BERSERK_GENE_GENE_HOLDER_PARENT_B  (1 << 3) // For one-holder breeding, identifies the 62%-weighted parent side.
-#define BERSERK_GENE_RESOLVED_MOVE_SOURCES (1 << 4) // Completed profiles retain enough selection metadata to rebuild move pools.
+#define BERSERK_GENE_RESOLVED_MOVE_SOURCES (1 << 4) // Completed profiles retain selection metadata for resolved trait/move sources.
 
 enum BerserkGeneEvolutionPhase
 {
@@ -840,6 +840,8 @@ void CreateEnemyEventMon(void);
 void CalculateMonStats(struct Pokemon *mon);
 void BoxMonToMon(const struct BoxPokemon *src, struct Pokemon *dest);
 u8 GetLevelFromMonExp(struct Pokemon *mon);
+enum GrowthRate GetMonGrowthRate(struct Pokemon *mon);
+enum GrowthRate GetBoxMonGrowthRate(struct BoxPokemon *boxMon);
 u8 GetLevelFromBoxMonExp(struct BoxPokemon *boxMon);
 u16 GiveMoveToMon(struct Pokemon *mon, enum Move move);
 u16 GiveMoveToBoxMon(struct BoxPokemon *boxMon, enum Move move);

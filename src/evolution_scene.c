@@ -20,6 +20,7 @@
 #include "palette.h"
 #include "pokedex.h"
 #include "pokemon.h"
+#include "pokemon_storage_system.h"
 #include "pokemon_summary_screen.h"
 #include "scanline_effect.h"
 #include "sound.h"
@@ -786,7 +787,8 @@ static void Task_EvolutionScene(u8 taskId)
             gTasks[taskId].tState++;
 
 #if RANDOMIZER_AVAILABLE
-            if (RandomizerFeatureEnabled(RANDOMIZE_EVO_METHODS) || RandomizerFeatureEnabled(RANDOMIZE_EVOLUTIONS))
+            if ((RandomizerFeatureEnabled(RANDOMIZE_EVO_METHODS) || RandomizerFeatureEnabled(RANDOMIZE_EVOLUTIONS))
+             && GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) == NULL)
             {
                 u32 level = GetMonData(mon, MON_DATA_LEVEL);
                 u32 excess_exp = GetMonData(mon, MON_DATA_EXP) - gExperienceTables[gSpeciesInfo[GetMonData(mon, MON_DATA_SPECIES)].growthRate][level];

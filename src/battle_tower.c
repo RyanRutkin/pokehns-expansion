@@ -2192,7 +2192,7 @@ void TrySetLinkBattleTowerEnemyPartyLevel(void)
                 u32 species = GetMonData(&gEnemyParty[i], MON_DATA_SPECIES);
                 if (species)
                 {
-                    SetMonData(&gEnemyParty[i], MON_DATA_EXP, &gExperienceTables[gSpeciesInfo[species].growthRate][enemyLevel]);
+                    SetMonData(&gEnemyParty[i], MON_DATA_EXP, &gExperienceTables[GetMonGrowthRate(&gEnemyParty[i])][enemyLevel]);
                     CalculateMonStats(&gEnemyParty[i]);
                 }
             }

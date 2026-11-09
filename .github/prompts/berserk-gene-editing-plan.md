@@ -105,10 +105,60 @@ Validation:
   versus pins 15,752/3,884/84. Those structures were not modified; this suite is not green.
 - `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes.
 
-Next: finish remaining pseudo-fusion categorical traits/growth/display aggregation. Exact root
+### Pseudo-fusion color/cry and birth-selected growth (2026-11-09)
+
+Implemented Option 1 for evolution-time color and cry: independently roll each trait's parent
+side with the saved 62/38 or 50/50 weighting, then choose a sibling uniformly within that side.
+Both traits reuse the saved-lineage reconstruction used by movepools; neither advances the
+pseudo-side's displayed identity. Types and abilities still use the displayed species. Existing
+single-source/paired behavior and legacy completed-profile source fallback remain intact.
+
+Growth rate is selected only when breeding writes the fusion profile and is never rerolled
+on evolution (user clarification, 2026-11-09). A fusion parent contributes its stored growth
+curve when rebreeding, not its nominal species' curve. Newly created fusion eggs now receive
+the chosen curve's EXP at `EGG_HATCH_LEVEL`.
+
+Added shared party/box growth accessors and wired level calculation, level increments, candy
+thresholds/caps, daycare withdrawal/caps, battle EXP and hard caps, battle/summary EXP bars,
+summary next-level EXP, and existing-mon facility level setters. Normal Pokemon retain species
+growth. Randomizer evolution EXP conversion now excludes valid fusion profiles: evolving a fusion
+must preserve both its birth-selected curve and its raw EXP. Species-only creation/facility wild
+generation retains native growth. No saved structures or persistent buffers grew.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 17 passed; three unrelated Fusion Flare/Bolt
+  tests remain TO_DO. New coverage includes:
+  - Color/cry: 12 parameter cases (both phases, selected sides, and all three weightings), each
+    with 1,024 seeded rolls. Counts must stay within 50 rolls of the expected weighted/uniform
+    distribution, and all nine color/cry source combinations must occur. Hidden siblings
+    contribute; abilities remain restricted to displayed species; growth and EXP remain unchanged.
+  - Growth/levels/candies: all six curves, both evolution phases, party/box parity, unchanged
+    evolution EXP, Rare Candy, EXP Candy, maximum-EXP clamping, and normal-species fallback.
+  - Breeding: both daycare slots, stored fusion-parent growth inheritance, and egg EXP.
+  - Daycare withdrawal: Fast/Slow curves in either slot, clamped to the curve's level-cap EXP.
+  - Battle: Fast/Slow fusion curves plus normal-mon controls, each as active battler or inactive
+    Exp. Share recipient, starting one EXP below the hard cap. EXP bars and final level/EXP pass.
+- `make -k check BUILD=hns -j24 TESTS="Fusion growth battle"`: passed with four fusion cases;
+  the final `Fusion` run additionally verifies both normal-mon controls (six cases total).
+- `make -k check BUILD=hns -j24 TESTS="(Daycare) Rebreeding"`: passed, six existing cases.
+- `make -k check BUILD=hns -j24 TESTS="test/berserk_gene.c"`: 30 passed; the previously documented
+  egg-group compatibility fixture still fails. This run preceded the final expanded roll count;
+  the final `Fusion` run verifies the expanded categorical regression.
+- `make -k check BUILD=hns -j24 TESTS="test/battle/exp.c"`: new fusion battle regression passed;
+  four other tests failed (three unmatched-message fixtures and an invalid Ultra Ball fixture
+  lacking an explicit party index). This suite is not green; no baseline comparison was run.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
+  ROM 31,696,756/33,554,432 bytes.
+
+Next: pseudo-side naming and remaining display aggregation/rendering. Older saved fusion profiles
+already contain a growth curve, but their existing EXP may have been earned on the nominal species'
+curve before these consumers honored the stored value. No legacy EXP migration is performed here;
+audit/decide migration before treating old-save behavior as release-ready. Summary/battle UI code
+was compiled, but the summary screen has not been manually inspected in an emulator.
+Exact root
 attribution when different roots share a target species but have different conditions/descendants
 still needs dedicated coverage: the update API currently receives only the target species.
-Rebreeding of all non-lineage override traits also remains to be audited. The entire Berserk Gene
+Rebreeding of the remaining non-lineage override traits also remains to be audited. The entire Berserk Gene
 feature is not complete.
 
 ## Historical resume checkpoint (paused 2026-08-27)
@@ -250,7 +300,8 @@ Fields (shape, to be bit-packed precisely at implementation time):
 - height, weight overrides (u16 each)
 - sprite scale, sprite offset overrides
 - gender override (explicit, decoupled from species genderRatio)
-- growthRate override (u8) — **new**: binary pick, same weighting mechanism as ability/color/cry.
+- growthRate override (u8) — **new**: binary pick at breeding, same weighting mechanism as
+  ability/color/cry. Selected once when the fusion profile is written; never rerolled on evolution.
 - evYield overrides, one per stat (2 bits each per the existing `evYield_HP`-style packed
   fields, 12 bits total) — **new**: binary pick per stat, same mechanism as ability.
 - friendship override (u8) — **new**: the *starting* friendship value (distinct from the
@@ -1092,8 +1143,12 @@ slots; those stay exactly as they were before the evolution, exactly like a norm
 has its already-learned moves swapped out on evolving.
 
 **Preserved unchanged across every evolution** (never recalculated): IVs, shininess, gender, egg
-groups, nature, hatch rate (`eggCycles`). These are locked in at birth and are not part of the
+groups, nature, hatch rate (`eggCycles`), growth rate. These are locked in at birth and are not part of the
 rerun.
+
+**Growth rate (clarified 2026-11-09):** select the EXP curve only when breeding writes the fusion
+profile. Neither evolution phase nor pseudo-side aggregation changes it. EXP/level consumers must
+use that stored curve consistently; evolution must not remap EXP onto a different curve.
 
 ### Type inheritance across evolution is "sticky by provenance," not re-rolled
 Unlike ability/color/cry/sprite (fresh re-roll each evolution, see below), each of the child's two
@@ -1112,6 +1167,11 @@ scratch between the two new-current species, using `BerserkGeneShouldInheritFrom
 *original* `geneHolderWeight` stored on the profile (62% for one gene holder, 50% for two) — not
 a fresh determination of "who holds a gene," since the original breeding parents are no longer
 necessarily available/relevant at evolution time.
+
+**Pseudo-side color/cry (decided 2026-11-09):** independently for each trait, select a parent side
+with the stored 62/38 or 50/50 weighting, then select uniformly among that side's resolved sibling
+species. Do not average categorical IDs. Abilities still use the displayed pseudo-side species;
+growth rate is excluded from all evolution rerolls.
 
 **Flying/Levitate exclusion carries forward to every reroll (new, 2026-09-04):** a Berserk Gene
 mon must never have Levitate as its *active* ability while typed Flying. At breeding time

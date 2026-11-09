@@ -8,6 +8,7 @@
 #include "move_relearner.h"
 #include "move.h"
 #include "event_data.h"
+#include "caps.h"
 #include "test/test.h"
 
 static const struct ShopPriceOverride sTestSellPriceOverrides[] = {
@@ -721,9 +722,11 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
         || profile->abilityHidden == gSpeciesInfo[SPECIES_FLAPPLE].abilities[2]
         || profile->abilityHidden == ABILITY_SAP_SIPPER);
     EXPECT(profile->color == gSpeciesInfo[SPECIES_ESPEON].bodyColor
-        || profile->color == gSpeciesInfo[SPECIES_FLAPPLE].bodyColor);
+        || profile->color == gSpeciesInfo[SPECIES_APPLETUN].bodyColor
+        || profile->color == gSpeciesInfo[SPECIES_DIPPLIN].bodyColor);
     EXPECT(profile->cryId == gSpeciesInfo[SPECIES_ESPEON].cryId
-        || profile->cryId == gSpeciesInfo[SPECIES_FLAPPLE].cryId);
+        || profile->cryId == gSpeciesInfo[SPECIES_APPLETUN].cryId
+        || profile->cryId == gSpeciesInfo[SPECIES_DIPPLIN].cryId);
     {
         u8 activeSlot = (profile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK)
             >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
@@ -1105,6 +1108,186 @@ TEST("Fusion pseudo-side terminal Phase 1 pools preserve legacy completed-profil
     EXPECT_EQ(memcmp(savedLevelMoves, levelMoves, (count + 1) * sizeof(*levelMoves)), 0);
     EXPECT_EQ(memcmp(savedEggMoves, GetMonEggMoveLearnset(&mon), sizeof(savedEggMoves)), 0);
     ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
+TEST("Fusion categorical traits include each pseudo-side sibling with saved weighting")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile initialProfile;
+    u16 profileId;
+    u16 sources[3];
+    u16 colorCounts[3] = {0};
+    u16 cryCounts[3] = {0};
+    u16 jointCounts[3][3] = {0};
+    u8 phase = 0, selectedParentB = 0, weighting = 0;
+    u8 i, j;
+    u16 trial;
+    u32 experience;
+    u8 chosenChance;
+    rng_value_t oldRng = gRngValue;
+
+    for (i = 0; i < 2; i++)
+    {
+        u8 side, weight;
+        for (side = 0; side < 2; side++)
+            for (weight = 0; weight < 3; weight++)
+                PARAMETRIZE { phase = i; selectedParentB = side; weighting = weight; }
+    }
+
+    CreateMon(&mon, SPECIES_BULBASAUR, 5, 0, OTID_STRUCT_PLAYER_ID);
+    experience = GetMonData(&mon, MON_DATA_EXP);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_BULBASAUR;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->growthRate = GROWTH_SLOW;
+    profile->inheritanceFlags = weighting == 0 ? BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT : 0;
+    if (weighting == 2)
+        profile->evolutionFlags |= BERSERK_GENE_GENE_HOLDER_PARENT_B;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_IVYSAUR, 16, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_VENUSAUR, 32, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_CHARMELEON, 16, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_CHARIZARD, 36, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[4] = (struct FusionPotentialEvolution){SPECIES_WARTORTLE, 16, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[5] = (struct FusionPotentialEvolution){SPECIES_BLASTOISE, 36, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutionCount = 6;
+    if (selectedParentB)
+    {
+        profile->parentSpeciesA = SPECIES_EEVEE;
+        profile->parentSpeciesB = SPECIES_BULBASAUR;
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
+            profile->potentialEvolutions[i].methodAndSourceParent ^= EVO_POTENTIAL_SOURCE_PARENT_BIT;
+    }
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    if (phase)
+        UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_IVYSAUR);
+    initialProfile = *profile;
+    sources[0] = phase ? SPECIES_VENUSAUR : SPECIES_IVYSAUR;
+    sources[1] = phase ? SPECIES_CHARIZARD : SPECIES_CHARMELEON;
+    sources[2] = phase ? SPECIES_BLASTOISE : SPECIES_WARTORTLE;
+    for (i = 0; i < 3; i++)
+        for (j = i + 1; j < 3; j++)
+        {
+            EXPECT(gSpeciesInfo[sources[i]].bodyColor != gSpeciesInfo[sources[j]].bodyColor);
+            EXPECT(gSpeciesInfo[sources[i]].cryId != gSpeciesInfo[sources[j]].cryId);
+        }
+
+    SeedRng(0xBE25E2C);
+    for (trial = 0; trial < 1024; trial++)
+    {
+        u8 colorSource = 3, crySource = 3;
+        *profile = initialProfile;
+        UpdateBerserkGeneProfileAfterEvolution(&mon, sources[0]);
+        for (i = 0; i < 3; i++)
+        {
+            if (profile->color == gSpeciesInfo[sources[i]].bodyColor)
+                colorSource = i;
+            if (profile->cryId == gSpeciesInfo[sources[i]].cryId)
+                crySource = i;
+        }
+        EXPECT(colorSource < 3);
+        EXPECT(crySource < 3);
+        colorCounts[colorSource]++;
+        cryCounts[crySource]++;
+        jointCounts[colorSource][crySource]++;
+        EXPECT_EQ(profile->growthRate, initialProfile.growthRate);
+        EXPECT_EQ(GetMonData(&mon, MON_DATA_EXP), experience);
+        for (i = 0; i < 3; i++)
+        {
+            u16 ability = i == 0 ? profile->ability1 : i == 1 ? profile->ability2 : profile->abilityHidden;
+            EXPECT(ability == gSpeciesInfo[sources[0]].abilities[i]
+                || ability == gSpeciesInfo[SPECIES_EEVEE].abilities[i]
+                || ability == ABILITY_SAP_SIPPER);
+        }
+    }
+    chosenChance = weighting == 0 ? 50 : ((weighting == 2) == selectedParentB ? 62 : 38);
+    for (i = 0; i < 3; i++)
+    {
+        u16 expected = i == 0 ? 1024 * chosenChance / 100 : 1024 * (100 - chosenChance) / 200;
+        EXPECT(colorCounts[i] > expected - 50 && colorCounts[i] < expected + 50);
+        EXPECT(cryCounts[i] > expected - 50 && cryCounts[i] < expected + 50);
+        for (j = 0; j < 3; j++)
+            EXPECT(jointCounts[i][j] > 0);
+    }
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    gRngValue = oldRng;
+}
+
+TEST("Fusion growth uses the birth curve for levels and candies without evolution EXP changes")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    enum GrowthRate growthRate = GROWTH_MEDIUM_FAST;
+    u16 profileId;
+    u32 experience, oldExperience;
+    u32 cap;
+    u8 i;
+
+    for (i = GROWTH_MEDIUM_FAST; i <= GROWTH_SLOW; i++)
+        PARAMETRIZE { growthRate = i; }
+
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    EXPECT_EQ(GetMonGrowthRate(&mon), gSpeciesInfo[SPECIES_EEVEE].growthRate);
+    EXPECT_EQ(GetBoxMonGrowthRate(&mon.box), gSpeciesInfo[SPECIES_EEVEE].growthRate);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_RATTATA;
+    profile->growthRate = growthRate;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_IVYSAUR, 16, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_VENUSAUR, 32, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutionCount = 2;
+    for (i = 0; i < NUM_STATS; i++)
+        profile->baseStats[i] = 50;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    experience = (gExperienceTables[growthRate][5] + gExperienceTables[growthRate][6]) / 2;
+    SetMonData(&mon, MON_DATA_EXP, &experience);
+    CalculateMonStats(&mon);
+    EXPECT_EQ(GetMonGrowthRate(&mon), growthRate);
+    EXPECT_EQ(GetBoxMonGrowthRate(&mon.box), growthRate);
+    EXPECT_EQ(GetLevelFromMonExp(&mon), 5);
+    EXPECT_EQ(GetLevelFromBoxMonExp(&mon.box), 5);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_LEVEL), 5);
+
+    for (i = 0; i < 2; i++)
+    {
+        u16 species = i == 0 ? SPECIES_IVYSAUR : SPECIES_VENUSAUR;
+        oldExperience = GetMonData(&mon, MON_DATA_EXP);
+        SetMonData(&mon, MON_DATA_SPECIES, &species);
+        UpdateBerserkGeneProfileAfterEvolution(&mon, species);
+        CalculateMonStats(&mon);
+        EXPECT_EQ(profile->growthRate, growthRate);
+        EXPECT_EQ(GetMonData(&mon, MON_DATA_EXP), oldExperience);
+        EXPECT_EQ(GetMonData(&mon, MON_DATA_LEVEL), 5);
+        EXPECT_EQ(GetLevelFromBoxMonExp(&mon.box), 5);
+    }
+
+    experience = gExperienceTables[growthRate][6] - 1;
+    SetMonData(&mon, MON_DATA_EXP, &experience);
+    EXPECT_EQ(TryIncrementMonLevel(&mon), FALSE);
+    experience++;
+    SetMonData(&mon, MON_DATA_EXP, &experience);
+    EXPECT_EQ(TryIncrementMonLevel(&mon), TRUE);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_LEVEL), 6);
+    EXPECT_EQ(ExecuteTableBasedItemEffect(&mon, ITEM_RARE_CANDY, 0, 0), FALSE);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_EXP), gExperienceTables[growthRate][7]);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_LEVEL), 7);
+    EXPECT_EQ(ExecuteTableBasedItemEffect(&mon, ITEM_EXP_CANDY_XL, 0, 0), FALSE);
+    cap = ((B_RARE_CANDY_CAP && B_EXP_CAP_TYPE == EXP_CAP_HARD)
+        || gSaveBlock3Ptr->challengeSettings.tx_Challenges_LevelCap) ? GetCurrentLevelCap() : MAX_LEVEL;
+    experience = min(gExperienceTables[growthRate][7] + 30000, gExperienceTables[growthRate][cap]);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_EXP), experience);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_LEVEL), GetLevelFromBoxMonExp(&mon.box));
+
+    experience = gExperienceTables[growthRate][MAX_LEVEL] + 1;
+    SetMonData(&mon, MON_DATA_EXP, &experience);
+    TryIncrementMonLevel(&mon);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_EXP), gExperienceTables[growthRate][MAX_LEVEL]);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    EXPECT_EQ(GetMonGrowthRate(&mon), gSpeciesInfo[SPECIES_VENUSAUR].growthRate);
 }
 
 TEST("Box fusion move relearner predicates use profile moves and respect category settings")

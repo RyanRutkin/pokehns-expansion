@@ -1,5 +1,64 @@
 #include "global.h"
+#include "caps.h"
+#include "pokemon_storage_system.h"
 #include "test/battle.h"
+
+WILD_BATTLE_TEST("Fusion growth battle EXP honors the birth curve and hard cap", u8 oldChallengeCap)
+{
+    enum GrowthRate growthRate = GROWTH_FAST;
+    bool8 fusion = TRUE;
+    u8 partyIndex = 0;
+    u16 profileId;
+
+    PARAMETRIZE { growthRate = GROWTH_FAST; partyIndex = 0; }
+    PARAMETRIZE { growthRate = GROWTH_SLOW; partyIndex = 0; }
+    PARAMETRIZE { growthRate = GROWTH_FAST; partyIndex = 1; }
+    PARAMETRIZE { growthRate = GROWTH_SLOW; partyIndex = 1; }
+    PARAMETRIZE { growthRate = GROWTH_MEDIUM_FAST; partyIndex = 0; fusion = FALSE; }
+    PARAMETRIZE { growthRate = GROWTH_MEDIUM_FAST; partyIndex = 1; fusion = FALSE; }
+
+    GIVEN {
+        struct BerserkGeneProfile *profile;
+        u32 experience;
+        u32 cap;
+        u8 stat;
+
+        results[i].oldChallengeCap = gSaveBlock3Ptr->challengeSettings.tx_Challenges_LevelCap;
+        gSaveBlock3Ptr->challengeSettings.tx_Challenges_LevelCap = 1;
+        cap = GetCurrentLevelCap();
+        ASSUME(cap > 1 && cap < MAX_LEVEL);
+        PLAYER(SPECIES_WOBBUFFET) { Level(partyIndex == 0 ? cap - 1 : MAX_LEVEL); }
+        PLAYER(SPECIES_WOBBUFFET) { Level(partyIndex == 1 ? cap - 1 : MAX_LEVEL); Item(ITEM_EXP_SHARE); }
+        OPPONENT(SPECIES_CATERPIE) { Level(1); HP(1); }
+        if (fusion)
+        {
+            profileId = AllocBerserkGeneProfile();
+            profile = GetBerserkGeneProfile(profileId);
+            EXPECT(profile != NULL);
+            profile->parentSpeciesA = profile->parentSpeciesB = SPECIES_WOBBUFFET;
+            profile->growthRate = growthRate;
+            profile->ability1 = ABILITY_SHADOW_TAG;
+            profile->type1 = profile->type2 = TYPE_PSYCHIC;
+            for (stat = 0; stat < NUM_STATS; stat++)
+                profile->baseStats[stat] = GetSpeciesBaseStat(SPECIES_WOBBUFFET, stat);
+            SetMonData(&PLAYER_PARTY[partyIndex], MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+        }
+        experience = gExperienceTables[growthRate][cap] - 1;
+        SetMonData(&PLAYER_PARTY[partyIndex], MON_DATA_EXP, &experience);
+        CalculateMonStats(&PLAYER_PARTY[partyIndex]);
+    } WHEN {
+        TURN { MOVE(player, MOVE_SCRATCH); }
+    } SCENE {
+        if (partyIndex == 0)
+            EXPERIENCE_BAR(player);
+    } THEN {
+        u32 cap = GetCurrentLevelCap();
+        EXPECT_EQ(GetMonData(&gPlayerParty[partyIndex], MON_DATA_EXP), gExperienceTables[growthRate][cap]);
+        EXPECT_EQ(GetMonData(&gPlayerParty[partyIndex], MON_DATA_LEVEL), cap);
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[partyIndex].box);
+        gSaveBlock3Ptr->challengeSettings.tx_Challenges_LevelCap = results[i].oldChallengeCap;
+    }
+}
 
 WILD_BATTLE_TEST("Pokemon gain experience after catching a Pokemon (Gen6+)")
 {
