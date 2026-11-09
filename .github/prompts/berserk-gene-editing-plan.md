@@ -1,10 +1,43 @@
 # Berserk Gene Editing — Implementation Plan (finalized)
 
-Status: PHASE 1 STORAGE SKELETON STARTED, PAUSED BEFORE BREEDING BEHAVIOR.
+Status: IMPLEMENTATION IN PROGRESS; latest resume checkpoint is 2026-11-09 below.
 This file consolidates `berserk-gene-editing-prompt-1.md` and `beserk-gene-editing-prompt-1-answers.md`
 plus the resulting plan and decisions. Resume implementation from here when prompted.
 
-## Resume checkpoint (paused 2026-08-27)
+## Resume checkpoint (2026-11-09)
+
+Validated the preserved November 4 parent-side evolution fix. Also normalized the paired-sibling
+source-parent flag before boolean comparisons, and extended the paired Phase 1 regression to
+resolve from either parent's target while preserving name priority and both selected roots.
+
+The rebreeding timeout was a real empty-evolution-list bug, not just a script setup problem:
+`GetSpeciesEvolutions()` falls back to `SPECIES_NONE` for a terminal species, but that fallback's
+evolution pointer was also null. The native descendant collector then scanned address zero without
+finding an end marker. `SPECIES_NONE` now provides an explicitly terminated empty evolution array.
+Dedicated regressions check both the fallback species and terminal Raticate.
+
+The rebreeding regression now calls `GiveEggFromDaycare()` directly, after checking compatibility.
+Its six parameter cases cover an unevolved fusion, a fusion after Phase 1, and a completed
+Phase 2 fusion, in either daycare slot. Assertions cover saved descendant grouping, remaining
+lineage only, source-side retagging, age increments/saturation, a fresh child phase/profile, and
+an unchanged parent profile. All six cases pass; this supersedes the November 4 timeout warning.
+
+Validation:
+- `make -k hns -j24`: passed; production ROM linked successfully.
+- `make -k check BUILD=hns -j24 TESTS="(Daycare) Rebreeding"`: passed (six parameter cases).
+- `make -k check BUILD=hns -j24 TESTS="test/berserk_gene.c"`: 24 tests passed, including the
+  evolution regressions; the existing egg-group compatibility fixture still fails, as it did
+  before these changes.
+- `make -k check BUILD=hns -j24 TESTS="test/daycare.c"`: seven tests passed, including rebreeding,
+  empty evolution lists, and eight-node pruning; 26 other tests failed, predominantly script-driven
+  parent/egg setup. The paired-line script test was also confirmed failing before the empty-list
+  fix. These broader failures are not resolved by this slice; do not claim a green daycare suite.
+
+Next: review ambiguous/multiple-root evolution and rebreeding cases, then finish the remaining
+pseudo-fusion trait/display aggregation described in the evolution checkpoint below. The entire
+Berserk Gene feature is not complete.
+
+## Historical resume checkpoint (paused 2026-08-27)
 
 Implementation is intentionally paused after Phase 1 storage groundwork because the user is out of
 quota/credits until next month. Do **not** restart planning from scratch. Resume from this state:
@@ -514,6 +547,15 @@ paired Phase 1 behavior across their descendants, and Phase 2 counterpart resolu
 those transitions and the 11-node case, then run the test
 binary when the HNS test-runner build blocker is resolved. Do not claim full Berserk Gene evolution
 completion until those transitions are implemented and validated.
+
+Evolution review follow-up (2026-11-04): fixed a parent-side comparison bug in
+`UpdateBerserkGeneProfileAfterEvolution()` by normalizing the source-parent bit to a boolean before
+comparing it with other side flags. A focused regression verifies a parent-B evolution keeps parent
+A unchanged; the display-name priority test now compares distinct results without assuming a
+localized spelling. A script-driven Phase 2 rebreeding test was
+attempted but timed out in daycare egg generation before validating lineage behavior; do not count
+that integration case as covered, and revisit it with a lower-level test or a corrected daycare
+setup.
 
 Learnset progress (2026-11-02): added `GetMonLevelUpLearnset()` as a bounded, profile-aware
 projection over the current parent species' level-up tables. It evenly samples each parent's list
@@ -1460,5 +1502,4 @@ migration phase must include:
   *active* link sessions. If any such asynchronous path exists, it could bypass the trade/link
   compatibility gating entirely and needs its own investigation — flagged for the trade/link
   implementation phase, not resolved here.
-
 

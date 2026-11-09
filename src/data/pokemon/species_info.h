@@ -149,6 +149,7 @@ const struct SpeciesInfo gSpeciesInfo[] =
         .levelUpLearnset = sNoneLevelUpLearnset,
         .teachableLearnset = sNoneTeachableLearnset,
         .eggMoveLearnset = sNoneEggMoveLearnset,
+        .evolutions = (const struct Evolution[]) {{ EVOLUTIONS_END }},
         .randomizerMode = MON_RANDOMIZER_INVALID,
     },
 

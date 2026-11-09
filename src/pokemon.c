@@ -6772,7 +6772,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
          || potentialEvolution->targetSpecies != targetSpecies)
             continue;
 
-        sourceParentB = potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT;
+        sourceParentB = (potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
         if (sourceParentB)
             profile->parentSpeciesB = targetSpecies;
         else
@@ -6788,7 +6788,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
             for (siblingIndex = 0; siblingIndex < profile->potentialEvolutionCount; siblingIndex++)
             {
                 const struct FusionPotentialEvolution *sibling = &profile->potentialEvolutions[siblingIndex];
-                bool8 siblingSourceParentB = sibling->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT;
+                bool8 siblingSourceParentB = (sibling->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
 
                 if (siblingIndex != i
                  && !(sibling->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)

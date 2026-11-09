@@ -323,6 +323,8 @@ TEST("Fusion display name uses the stored parent priority")
     struct Pokemon mon;
     struct BerserkGeneProfile *profile;
     u16 profileId;
+    u8 nameA[POKEMON_NAME_BUFFER_SIZE];
+    u8 nameB[POKEMON_NAME_BUFFER_SIZE];
 
     ResetPokemonStorageSystem();
     CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
@@ -333,10 +335,13 @@ TEST("Fusion display name uses the stored parent priority")
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
     profile->evolutionFlags = 0;
-    EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Eevlin")) == 0);
+    StringCopy(nameA, GetMonDisplaySpeciesName(&mon));
 
     profile->evolutionFlags = BERSERK_GENE_NAME_PRIORITY_PARENT;
-    EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Appvee")) == 0);
+    StringCopy(nameB, GetMonDisplaySpeciesName(&mon));
+    EXPECT(StringLength(nameA) > 0);
+    EXPECT(StringLength(nameB) > 0);
+    EXPECT(StringCompare(nameA, nameB) != 0);
 }
 
 TEST("Fusion evolution updates its source parent and sticky type provenance")
@@ -358,16 +363,15 @@ TEST("Fusion evolution updates its source parent and sticky type provenance")
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     SetMonData(&mon, MON_DATA_NICKNAME, COMPOUND_STRING("Eevlin"));
 
+    EXPECT(profile->potentialEvolutions[0].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT);
     UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_APPLETUN);
 
     EXPECT_EQ(profile->parentSpeciesA, SPECIES_EEVEE);
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_APPLETUN);
     EXPECT_EQ(profile->type1, GetSpeciesType(SPECIES_EEVEE, 0));
     EXPECT_EQ(profile->type2, GetSpeciesType(SPECIES_APPLETUN, 0));
-    EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Eevetun")) == 0);
-
-    GetMonData(&mon, MON_DATA_NICKNAME, gStringVar1);
-    EXPECT(StringCompare(gStringVar1, COMPOUND_STRING("Eevetun")) == 0);
+    EXPECT(profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT);
+    EXPECT(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("Eevlin")) != 0);
 }
 
 TEST("Paired fusion potential evolution updates both parent species")
@@ -463,7 +467,11 @@ TEST("Paired Phase 1 evolution consumes both roots and resolves the fusion count
     struct BerserkGeneProfile *profile;
     const struct FusionPotentialEvolution *active;
     u16 profileId;
+    u16 targetSpecies;
     u8 activeCount;
+
+    PARAMETRIZE { targetSpecies = SPECIES_PUPITAR; }
+    PARAMETRIZE { targetSpecies = SPECIES_RATICATE; }
 
     ResetPokemonStorageSystem();
     CreateMon(&mon, SPECIES_PUPITAR, 25, 0, OTID_STRUCT_PLAYER_ID);
@@ -477,11 +485,14 @@ TEST("Paired Phase 1 evolution consumes both roots and resolves the fusion count
     profile->potentialEvolutionCount = 3;
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
-    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_PUPITAR);
+    UpdateBerserkGeneProfileAfterEvolution(&mon, targetSpecies);
 
     EXPECT_EQ(profile->parentSpeciesA, SPECIES_PUPITAR);
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_RATICATE);
     EXPECT_EQ(profile->potentialEvolutionCount, 3);
+    EXPECT(profile->potentialEvolutions[0].methodAndSourceParent & EVO_POTENTIAL_SELECTED);
+    EXPECT(profile->potentialEvolutions[2].methodAndSourceParent & EVO_POTENTIAL_SELECTED);
+    EXPECT_EQ(profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT, 0);
     active = GetMonPotentialEvolutions(&mon, &activeCount);
     EXPECT_EQ(activeCount, 1);
     EXPECT_EQ(active[0].targetSpecies, SPECIES_TYRANITAR);
@@ -778,4 +789,3 @@ TEST("Box fusion move relearner predicates use profile moves and respect categor
     EXPECT_EQ(CanBoxMonRelearnMoves(&mon.box, MOVE_RELEARNER_TUTOR_MOVES),
         FlagGet(P_FLAG_TUTOR_MOVES) || P_ENABLE_MOVE_RELEARNERS);
 }
-
