@@ -978,8 +978,9 @@ TEST("Phase 2 pseudo-fusion averages all opposite-side branches before the gene-
         EXPECT_EQ((profile->evYields >> (stat * 2)) & 3, expectedYield);
     }
     EXPECT_EQ(profile->parentSpeciesB, SPECIES_FLAPPLE); // multi-branch counterpart remains a pseudo side
-    EXPECT_EQ(profile->inheritanceFlags & BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT, 0);
-    EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_ESPEON);
+    EXPECT(GetMonDisplaySpriteSpecies(&mon) == SPECIES_ESPEON
+        || GetMonDisplaySpriteSpecies(&mon) == SPECIES_APPLETUN
+        || GetMonDisplaySpriteSpecies(&mon) == SPECIES_DIPPLIN);
     EXPECT_EQ(profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT, 0);
     EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK) >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT,
               BERSERK_GENE_PHASE_COMPLETE);
@@ -1007,6 +1008,166 @@ TEST("Fusion display sprite species follows the stored sprite donor")
 
     FreeBerserkGeneProfile(profileId);
     EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), SPECIES_EEVEE);
+}
+
+TEST("Fusion sprite donors persist all seven pseudo-side siblings without changing identity")
+{
+    const u16 siblings[] = {
+        SPECIES_VAPOREON, SPECIES_JOLTEON, SPECIES_FLAREON, SPECIES_ESPEON,
+        SPECIES_UMBREON, SPECIES_LEAFEON, SPECIES_GLACEON,
+    };
+    struct Pokemon mon, restoredMon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile initialProfile;
+    struct BerserkGeneProfile savedProfile;
+    u16 profileId;
+    u8 selectedParentB = 0;
+    bool8 sawSibling[ARRAY_COUNT(siblings)] = {FALSE};
+    u8 i;
+    u16 trial;
+    rng_value_t oldRng = gRngValue;
+
+    PARAMETRIZE { selectedParentB = 0; }
+    PARAMETRIZE { selectedParentB = 1; }
+
+    CreateMon(&mon, SPECIES_DRATINI, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_DRATINI;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_DRAGONAIR, 20, EVO_LEVEL, 0};
+    for (i = 0; i < ARRAY_COUNT(siblings); i++)
+        profile->potentialEvolutions[i + 1] = (struct FusionPotentialEvolution){siblings[i], 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutionCount = MAX_FUSION_POTENTIAL_EVOLUTIONS;
+    if (selectedParentB)
+    {
+        profile->parentSpeciesA = SPECIES_EEVEE;
+        profile->parentSpeciesB = SPECIES_DRATINI;
+        profile->inheritanceFlags |= BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT;
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
+            profile->potentialEvolutions[i].methodAndSourceParent ^= EVO_POTENTIAL_SOURCE_PARENT_BIT;
+    }
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    initialProfile = *profile;
+    SeedRng(0x5F217E);
+    for (trial = 0; trial < 256; trial++)
+    {
+        u16 donor;
+        *profile = initialProfile;
+        UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_DRAGONAIR);
+        donor = GetMonDisplaySpriteSpecies(&mon);
+        EXPECT_EQ(selectedParentB ? profile->parentSpeciesA : profile->parentSpeciesB, SPECIES_EEVEE);
+        EXPECT_EQ(GetMonData(&mon, MON_DATA_SPECIES), SPECIES_DRATINI);
+        EXPECT_NE(donor, SPECIES_DRATINI);
+        for (i = 0; i < ARRAY_COUNT(siblings); i++)
+        {
+            if (donor == siblings[i])
+            {
+                sawSibling[i] = TRUE;
+                EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_SPRITE_SOURCE_MASK)
+                    >> BERSERK_GENE_SPRITE_SOURCE_SHIFT, i + 1);
+            }
+        }
+        savedProfile = *profile;
+        BoxMonToMon(&mon.box, &restoredMon);
+        EXPECT_EQ(GetBoxMonDisplaySpriteSpecies(&mon.box), donor);
+        EXPECT_EQ(GetMonDisplaySpriteSpecies(&restoredMon), donor);
+        EXPECT_EQ(memcmp(profile, &savedProfile, sizeof(savedProfile)), 0);
+    }
+    for (i = 0; i < ARRAY_COUNT(siblings); i++)
+        EXPECT(sawSibling[i]);
+    EXPECT_EQ(sizeof(struct BerserkGeneProfile), 96);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    gRngValue = oldRng;
+}
+
+TEST("Fusion sprite rerolls exclude the previous actual donor across both parent sides")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile initialProfile;
+    u16 profileId;
+    u16 donor;
+    u16 trial;
+    bool8 hiddenDonor = FALSE;
+    bool8 sawChosen = FALSE, sawSibling = FALSE;
+    rng_value_t oldRng = gRngValue;
+
+    PARAMETRIZE { hiddenDonor = FALSE; }
+    PARAMETRIZE { hiddenDonor = TRUE; }
+
+    CreateMon(&mon, SPECIES_DRATINI, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_DRAGONAIR;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT | BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT;
+    profile->evolutionFlags = (BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT)
+        | BERSERK_GENE_RESOLVED_MOVE_SOURCES;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_DRAGONAIR, 20, EVO_LEVEL | EVO_POTENTIAL_SELECTED, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_DRAGONITE, 50, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 50, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[4] = (struct FusionPotentialEvolution){SPECIES_FLAREON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[5] = (struct FusionPotentialEvolution){SPECIES_FLAREON, 50, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutionCount = 6;
+    if (hiddenDonor)
+        profile->evolutionFlags |= 1 << BERSERK_GENE_SPRITE_SOURCE_SHIFT;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    donor = hiddenDonor ? SPECIES_JOLTEON : SPECIES_EEVEE;
+    EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), donor);
+    initialProfile = *profile;
+    SeedRng(0x5F217E);
+    for (trial = 0; trial < 128; trial++)
+    {
+        u16 species = hiddenDonor ? SPECIES_DRAGONITE : SPECIES_EEVEE;
+        *profile = initialProfile;
+        profile->potentialEvolutions[1].targetSpecies = species;
+        UpdateBerserkGeneProfileAfterEvolution(&mon, species);
+        EXPECT_NE(GetMonDisplaySpriteSpecies(&mon), donor);
+        sawChosen |= GetMonDisplaySpriteSpecies(&mon) == species;
+        sawSibling |= GetMonDisplaySpriteSpecies(&mon) == SPECIES_FLAREON;
+        if (hiddenDonor)
+            EXPECT(GetMonDisplaySpriteSpecies(&mon) == SPECIES_DRAGONITE
+                || GetMonDisplaySpriteSpecies(&mon) == SPECIES_FLAREON);
+    }
+    EXPECT_EQ(sawChosen, hiddenDonor);
+    EXPECT(sawSibling);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    gRngValue = oldRng;
+}
+
+TEST("Fusion sprite exclusion removes shared donors or retains the only possible species")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+    bool8 alternative = FALSE;
+    rng_value_t oldRng = gRngValue;
+
+    PARAMETRIZE { alternative = FALSE; }
+    PARAMETRIZE { alternative = TRUE; }
+
+    CreateMon(&mon, SPECIES_DRATINI, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_DRATINI;
+    profile->parentSpeciesB = SPECIES_JOLTEON;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_FLAREON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutionCount = alternative ? 3 : 2;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_JOLTEON);
+    EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), alternative ? SPECIES_FLAREON : SPECIES_JOLTEON);
+    EXPECT_EQ(GetBoxMonDisplaySpriteSpecies(&mon.box), alternative ? SPECIES_FLAREON : SPECIES_JOLTEON);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    gRngValue = oldRng;
 }
 
 TEST("Fusion level-up learnset merges current parent pools without modifying known moves")
@@ -1342,6 +1503,7 @@ TEST("Fusion categorical traits include each pseudo-side sibling with saved weig
     u16 sources[3];
     u16 colorCounts[3] = {0};
     u16 cryCounts[3] = {0};
+    u16 spriteCounts[3] = {0};
     u16 jointCounts[3][3] = {0};
     u8 phase = 0, selectedParentB = 0, weighting = 0;
     u8 i, j;
@@ -1400,7 +1562,7 @@ TEST("Fusion categorical traits include each pseudo-side sibling with saved weig
     SeedRng(0xBE25E2C);
     for (trial = 0; trial < 1024; trial++)
     {
-        u8 colorSource = 3, crySource = 3;
+        u8 colorSource = 3, crySource = 3, spriteSource = 3;
         *profile = initialProfile;
         UpdateBerserkGeneProfileAfterEvolution(&mon, sources[0]);
         for (i = 0; i < 3; i++)
@@ -1409,11 +1571,15 @@ TEST("Fusion categorical traits include each pseudo-side sibling with saved weig
                 colorSource = i;
             if (profile->cryId == gSpeciesInfo[sources[i]].cryId)
                 crySource = i;
+            if (GetMonDisplaySpriteSpecies(&mon) == sources[i])
+                spriteSource = i;
         }
         EXPECT(colorSource < 3);
         EXPECT(crySource < 3);
+        EXPECT(spriteSource < 3);
         colorCounts[colorSource]++;
         cryCounts[crySource]++;
+        spriteCounts[spriteSource]++;
         jointCounts[colorSource][crySource]++;
         EXPECT_EQ(profile->growthRate, initialProfile.growthRate);
         EXPECT_EQ(GetMonData(&mon, MON_DATA_EXP), experience);
@@ -1431,6 +1597,7 @@ TEST("Fusion categorical traits include each pseudo-side sibling with saved weig
         u16 expected = i == 0 ? 1024 * chosenChance / 100 : 1024 * (100 - chosenChance) / 200;
         EXPECT(colorCounts[i] > expected - 50 && colorCounts[i] < expected + 50);
         EXPECT(cryCounts[i] > expected - 50 && cryCounts[i] < expected + 50);
+        EXPECT(spriteCounts[i] > expected - 50 && spriteCounts[i] < expected + 50);
         for (j = 0; j < 3; j++)
             EXPECT(jointCounts[i][j] > 0);
     }

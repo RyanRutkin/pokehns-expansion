@@ -484,6 +484,7 @@ struct PokemonStorageSystemData
     const u16 *displayMonPalette;
     u32 displayMonPersonality;
     u16 displayMonSpecies;
+    u16 displayMonSpriteSpecies;
     u16 displayMonItemId;
     u16 displayUnusedVar;
     bool8 setMosaic;
@@ -3964,7 +3965,7 @@ static void CreateWaveformSprites(void)
 
 static void RefreshDisplayMonData(void)
 {
-    LoadDisplayMonGfx(sStorage->displayMonSpecies, sStorage->displayMonPersonality, sStorage->displayMonIsEgg);
+    LoadDisplayMonGfx(sStorage->displayMonSpriteSpecies, sStorage->displayMonPersonality, sStorage->displayMonIsEgg);
     PrintDisplayMonInfo();
     UpdateWaveformAnimation();
     ScheduleBgCopyTilemapToVram(0);
@@ -4499,7 +4500,7 @@ static u8 GetMonIconPriorityByCursorPos(void)
 static void CreateMovingMonIcon(void)
 {
     u32 personality = GetMonData(&sStorage->movingMon, MON_DATA_PERSONALITY);
-    u16 species = GetMonData(&sStorage->movingMon, MON_DATA_SPECIES);
+    u16 species = GetMonDisplaySpriteSpecies(&sStorage->movingMon);
     u8 priority = GetMonIconPriorityByCursorPos();
     bool32 isEgg = GetMonData(&sStorage->movingMon, MON_DATA_IS_EGG);
 
@@ -4763,7 +4764,7 @@ static void GetIncomingBoxMonData(u8 boxId)
     {
         for (j = 0; j < IN_BOX_COLUMNS; j++)
         {
-            sStorage->boxSpecies[boxPosition] = GetBoxMonDataAt(boxId, boxPosition, MON_DATA_SPECIES);
+            sStorage->boxSpecies[boxPosition] = GetBoxMonDisplaySpriteSpecies(GetBoxedMonPtr(boxId, boxPosition));
             sStorage->boxIsEgg[boxPosition] = GetBoxMonDataAt(boxId, boxPosition, MON_DATA_IS_EGG);
             if (sStorage->boxSpecies[boxPosition] != SPECIES_NONE)
                 sStorage->boxPersonalities[boxPosition] = GetBoxMonDataAt(boxId, boxPosition, MON_DATA_PERSONALITY);
@@ -4793,7 +4794,7 @@ static void  CreatePartyMonSprite(u8 partyPosition, bool8 visible)
 {
     struct Pokemon *partyPokemon = &gPlayerParty[partyPosition];
 
-    u32 species = GetMonData(partyPokemon, MON_DATA_SPECIES);
+    u32 species = GetMonDisplaySpriteSpecies(partyPokemon);
     bool32 isEgg = GetMonData(partyPokemon, MON_DATA_IS_EGG);
     u32 personality = GetMonData(partyPokemon, MON_DATA_PERSONALITY);
 
@@ -4826,7 +4827,7 @@ static void  CreatePartyMonSprite(u8 partyPosition, bool8 visible)
 static void CreatePartyMonsSprites(bool8 visible)
 {
     u16 i, count;
-    u16 species = GetMonData(&gPlayerParty[0], MON_DATA_SPECIES);
+    u16 species = GetMonDisplaySpriteSpecies(&gPlayerParty[0]);
     bool32 isEgg = GetMonData(&gPlayerParty[0], MON_DATA_IS_EGG);
     u32 personality = GetMonData(&gPlayerParty[0], MON_DATA_PERSONALITY);
 
@@ -4834,7 +4835,7 @@ static void CreatePartyMonsSprites(bool8 visible)
     count = 1;
     for (i = 1; i < PARTY_SIZE; i++)
     {
-        species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES);
+        species = GetMonDisplaySpriteSpecies(&gPlayerParty[i]);
         isEgg = GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG);
         if (species != SPECIES_NONE)
         {
@@ -7049,6 +7050,7 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
         struct Pokemon *mon = (struct Pokemon *)pokemon;
 
         sStorage->displayMonSpecies = GetMonData(mon, MON_DATA_SPECIES);
+        sStorage->displayMonSpriteSpecies = GetMonDisplaySpriteSpecies(mon);
         if (sStorage->displayMonSpecies != SPECIES_NONE)
         {
             sanityIsBadEgg = GetMonData(mon, MON_DATA_SANITY_IS_BAD_EGG);
@@ -7062,7 +7064,8 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
             sStorage->displayMonLevel = GetMonData(mon, MON_DATA_LEVEL);
             sStorage->displayMonMarkings = GetMonData(mon, MON_DATA_MARKINGS);
             sStorage->displayMonPersonality = GetMonData(mon, MON_DATA_PERSONALITY);
-            sStorage->displayMonPalette = GetMonFrontSpritePal(mon);
+            sStorage->displayMonPalette = GetMonSpritePalFromSpeciesAndPersonalityIsEgg(sStorage->displayMonSpriteSpecies,
+                GetMonData(mon, MON_DATA_IS_SHINY), sStorage->displayMonPersonality, sStorage->displayMonIsEgg);
             gender = GetMonGender(mon);
             sStorage->displayMonItemId = GetMonData(mon, MON_DATA_HELD_ITEM);
         }
@@ -7072,6 +7075,7 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
         struct BoxPokemon *boxMon = (struct BoxPokemon *)pokemon;
 
         sStorage->displayMonSpecies = GetBoxMonData(pokemon, MON_DATA_SPECIES);
+        sStorage->displayMonSpriteSpecies = GetBoxMonDisplaySpriteSpecies(boxMon);
         if (sStorage->displayMonSpecies != SPECIES_NONE)
         {
             bool32 isShiny = GetBoxMonData(boxMon, MON_DATA_IS_SHINY);
@@ -7087,7 +7091,7 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
             sStorage->displayMonMarkings = GetBoxMonData(boxMon, MON_DATA_MARKINGS);
             sStorage->displayMonPersonality = GetBoxMonData(boxMon, MON_DATA_PERSONALITY);
             sStorage->displayMonIsEgg = GetBoxMonData(boxMon, MON_DATA_IS_EGG);
-            sStorage->displayMonPalette = GetMonSpritePalFromSpeciesAndPersonalityIsEgg(sStorage->displayMonSpecies, isShiny, sStorage->displayMonPersonality, sStorage->displayMonIsEgg);
+            sStorage->displayMonPalette = GetMonSpritePalFromSpeciesAndPersonalityIsEgg(sStorage->displayMonSpriteSpecies, isShiny, sStorage->displayMonPersonality, sStorage->displayMonIsEgg);
             gender = GetGenderFromSpeciesAndPersonality(sStorage->displayMonSpecies, sStorage->displayMonPersonality);
             sStorage->displayMonItemId = GetBoxMonData(boxMon, MON_DATA_HELD_ITEM);
         }
@@ -7095,6 +7099,7 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
     else
     {
         sStorage->displayMonSpecies = SPECIES_NONE;
+        sStorage->displayMonSpriteSpecies = SPECIES_NONE;
         sStorage->displayMonItemId = ITEM_NONE;
     }
 
@@ -10233,6 +10238,7 @@ void UpdateSpeciesSpritePSS(struct BoxPokemon *boxMon)
 
     // Update front sprite
     sStorage->displayMonSpecies = species;
+    sStorage->displayMonSpriteSpecies = spriteSpecies;
     sStorage->displayMonPalette = GetMonSpritePalFromSpeciesAndPersonalityIsEgg(spriteSpecies, isShiny, pid, isEgg);
     sStorage->displayMonIsEgg = isEgg;
     if (!sJustOpenedBag)

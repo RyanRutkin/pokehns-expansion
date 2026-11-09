@@ -219,8 +219,46 @@ Validation:
   ROM 31,697,172/33,554,432 bytes. No persistent data/buffer size increased.
 - No manual emulator inspection of evolution/Pokedex text was performed.
 
-Next: sprite/display rendering. Sprite donor persistence still represents only the displayed
-parent side; previews intentionally do not roll or promise a future sprite/color/cry donor.
+### Hidden-sibling sprite donors and PC rendering checkpoint
+
+The user chose to include hidden pseudo-side siblings as sprite donors: first select a side
+with the saved parent weighting, then select a distinct eligible species uniformly within that
+side. Remove the actual previous sprite species from both sides before rolling; force the other
+side if only it has alternatives. If no different species exists anywhere, retain the sole
+possible species rather than attempting an impossible visible change.
+
+- Persist hidden donors in bits 5-7 of the existing `evolutionFlags` byte. Zero keeps the legacy
+  displayed-parent donor; values 1-7 are one-based indices into the selected side's reconstructed,
+  deduplicated sources. The side still uses `BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT`.
+- At least one of the eight lineage nodes belongs to the chosen side, leaving at most seven
+  sibling sources on the opposite side. No profile, BoxPokemon, or saved-storage expansion.
+- Capture the actual old donor before changing lineage. Do not overwrite parent species,
+  type/ability identity, or nominal `MON_DATA_SPECIES` to record a hidden donor.
+- Existing party-menu icons, summary portraits, and box icons consume the shared donor getter.
+  PC selected-mon graphics and palettes now use a separate transient donor field while keeping
+  nominal species for text/identity; party icons, held/moving icons, and incoming scrolling-box
+  icons also use the getter.
+- Tests cover all seven sibling ordinals on either side, party/box restoration, legacy zero
+  encoding, prior hidden donors, shared donors excluded from both sides, the no-alternative
+  case, and saved 50/50 or 62/38 side weighting with uniform sibling selection.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 24 passed; three unrelated Fusion Flare/Bolt TODOs.
+- `make -k check BUILD=hns -j24 TESTS="test/berserk_gene.c"`: 36 passed, two failed:
+  daycare egg-group compatibility and profile-slot allocation. The latter expects slot 1 after
+  a storage reset that does not reset all profile allocations.
+- `make -k check BUILD=hns -j24 TESTS="Berserk Gene profile slots"`: passed in isolation.
+  The full-file failures were not baseline-compared for this slice; do not claim a clean full suite.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
+  ROM 31,697,396/33,554,432 bytes, including the final PC icon wiring.
+- No manual emulator inspection or actual save/reload was performed; restoration coverage uses
+  the saved profile and `BoxMonToMon`.
+
+Next: remaining sprite/display surfaces, especially battle visuals and evolution animation.
+Battle, hatch, and owned-Pokedex portrait paths still need donor plumbing/audit. Evolution scenes
+must prepare the final donor exactly once without double-rolling or changing cancellation
+semantics; current read-only name previews intentionally do not roll or promise a future
+sprite/color/cry donor. This is a donor-persistence/PC checkpoint, not completed feature-wide rendering.
 The target-species-only ambiguity described below remains shared by preview and live evolution;
 this slice does not distinguish same-target nodes with different conditions or descendants.
 Previously saved default nicknames are not automatically migrated when their newly reconstructed
@@ -1274,17 +1312,19 @@ the (currently unreachable in practice, since Wonder Guard is Shedinja-exclusive
 pairs already skip profile generation) case where both sides would be Wonder Guard.
 
 ### Sprite/identity: fresh reroll, same stored weight, but must always change
-Also a fresh weighted reroll (same `geneHolderWeight` as above) between the two new-current
-species, **except** the candidate that matches `spriteSourceParent` (i.e. whichever species the
-fusion currently displays as) is excluded from the roll — guaranteeing the sprite always changes
-as a visible sign an evolution happened. If the excluded side is the one that just evolved away
-(no longer a candidate at all, since its species literally changed), there's nothing to exclude
-and the roll proceeds normally between the two new options. Example: Applin-sprite Eevee×Applin
+Also a fresh weighted reroll (same `geneHolderWeight` as above) between the two resolved parent
+sides, including hidden pseudo-side siblings. Remove the actual previous sprite species from
+**both** sides, then select a side with the saved weighting and a sibling uniformly within that
+side. Force the sole side with alternatives if necessary. The sprite changes whenever a distinct
+candidate exists; if both sides resolve only to the old donor, keep that sole possible species.
+If the old donor evolved away and is absent from both new pools, nothing is excluded and both
+sides remain eligible. Example: Applin-sprite Eevee×Applin
 fusion evolves via Thunder Stone → candidates are {Jolteon, Applin} minus {Applin} → forced
 Jolteon. Eevee-sprite version evolving the same way → candidates {Jolteon, Applin}, Eevee itself
 isn't a candidate anymore (it turned into Jolteon), so both remain eligible, rolled normally with
 the stored weight (62% chance of Jolteon if only Applin held the gene at breeding, per the user's
-example). Update `spriteSourceParent` to whichever side is selected.
+example). Update `spriteSourceParent` and the packed sibling ordinal; leave the displayed
+parent identity used by types/abilities unchanged.
 
 ### Worked multi-step example (Eevee × Applin, for validation during implementation)
 1. Birth: Eevee×Applin fusion. Candidate next-stage evolutions are Eevee's immediate branches
@@ -1511,11 +1551,10 @@ Concrete categorized checklist from the 39-match sweep:
   - `src/field_specials.c:5879` — checks whether a *species* has two abilities (likely for an
     overworld hint/dialogue), not a specific mon — leave unchanged unless further review shows
     otherwise.
-  - **(new, resolved)** Dex/mythical/legendary/frontier-ban flags, and all sprite/animation/
-    elevation/shadow-size/footprint/gender-difference-sprite tables — a fusion mon's
-    `MON_DATA_SPECIES` is always literally one of its two real current species (whichever is the
-    current `spriteSourceParent`/identity), so these are **already correct with zero plumbing** —
-    they're read straight from whichever species is currently displayed. No override needed.
+  - **Correction:** nominal `MON_DATA_SPECIES` is not necessarily the saved sprite donor.
+    Dex/mythical/legendary/frontier-ban flags must not change merely because a different sprite
+    was selected. Per-mon sprite/animation/elevation/shadow-size/footprint/gender-difference
+    consumers need an explicit visual-donor audit; species-reference tables remain unchanged.
   - **(new, resolved)** Tera type — always passively derived from the mon's own (sticky,
     possibly-overridden) primary type; a fusion mon's Tera type resolution must explicitly
     **ignore** `forceTeraType` even if one of the underlying species has one set (see Data model
