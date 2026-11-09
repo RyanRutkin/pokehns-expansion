@@ -7128,6 +7128,27 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
     }
 }
 
+static void BuildBerserkGeneSideName(const struct BerserkGeneProfile *profile, bool8 parentB, u8 *name)
+{
+    u16 sources[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 count = GetBerserkGeneResolvedSources(profile, parentB, sources);
+    u8 offset = 0;
+    u8 i;
+
+    for (i = 0; i < count; i++)
+    {
+        const u8 *sourceName = GetSpeciesName(sources[i]);
+        u8 length = StringLength(sourceName);
+        // Round natural chunk lengths up; proportional starts retain the middle of odd halves.
+        u8 start = length * i / count;
+        u8 chunkLength = (length + count - 1) / count;
+
+        StringCopyN(name + offset, sourceName + start, chunkLength);
+        offset += chunkLength;
+    }
+    name[offset] = EOS;
+}
+
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
 {
     static u8 sDisplayName[POKEMON_NAME_BUFFER_SIZE];
@@ -7140,27 +7161,28 @@ const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
          && profile->parentSpeciesA != SPECIES_NONE
          && profile->parentSpeciesB != SPECIES_NONE)
         {
-            u16 leadingSpecies = profile->parentSpeciesA;
-            u16 trailingSpecies = profile->parentSpeciesB;
-            const u8 *leadingName;
-            const u8 *trailingName;
+            // Rounded sibling chunks total at most NAME_LENGTH + sourceCount - 1.
+            u8 leadingName[POKEMON_NAME_LENGTH + MAX_FUSION_POTENTIAL_EVOLUTIONS];
+            u8 trailingName[POKEMON_NAME_LENGTH + MAX_FUSION_POTENTIAL_EVOLUTIONS];
+            bool8 leadingParentB = (profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT) != 0;
             u8 leadingLength;
             u8 trailingLength;
             u8 leadingCount;
             u8 trailingCount;
 
-            if (profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT)
-            {
-                leadingSpecies = profile->parentSpeciesB;
-                trailingSpecies = profile->parentSpeciesA;
-            }
-
-            leadingName = GetSpeciesName(leadingSpecies);
-            trailingName = GetSpeciesName(trailingSpecies);
+            BuildBerserkGeneSideName(profile, leadingParentB, leadingName);
+            BuildBerserkGeneSideName(profile, !leadingParentB, trailingName);
             leadingLength = StringLength(leadingName);
             trailingLength = StringLength(trailingName);
             leadingCount = (leadingLength + 1) / 2;
             trailingCount = (trailingLength + 1) / 2;
+
+            if (leadingCount + trailingCount > POKEMON_NAME_LENGTH)
+            {
+                u8 total = leadingCount + trailingCount;
+                leadingCount = (leadingCount * POKEMON_NAME_LENGTH + total / 2) / total;
+                trailingCount = POKEMON_NAME_LENGTH - leadingCount;
+            }
 
             StringCopyN(sDisplayName, leadingName, leadingCount);
             StringCopyN(sDisplayName + leadingCount, trailingName + trailingLength - trailingCount, trailingCount);

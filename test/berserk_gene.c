@@ -378,6 +378,170 @@ TEST("Fusion display name uses the stored parent priority")
     EXPECT(StringCompare(nameA, nameB) != 0);
 }
 
+TEST("Fusion names combine natural sibling chunks through both evolution phases")
+{
+    struct Pokemon mon;
+    struct Pokemon restoredMon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile savedProfile;
+    u16 profileId;
+    u8 selectedParentB = 0, siblings = 2, customNickname = 0, terminal = 0;
+    u8 nickname[POKEMON_NAME_BUFFER_SIZE];
+    u8 name[POKEMON_NAME_BUFFER_SIZE];
+    u8 language = GAME_LANGUAGE;
+    u8 i;
+    rng_value_t savedRng;
+
+    for (i = 0; i < 2; i++)
+    {
+        u8 count, custom, lastPhase;
+        for (count = 2; count <= 3; count++)
+            for (custom = 0; custom < 2; custom++)
+                for (lastPhase = 0; lastPhase < 2; lastPhase++)
+                    PARAMETRIZE { selectedParentB = i; siblings = count; customNickname = custom; terminal = lastPhase; }
+    }
+
+    CreateMon(&mon, SPECIES_DRATINI, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_DRATINI;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_DRAGONAIR, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_DRAGONITE, 50, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_EEVEE, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_UMBREON, 50, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[4] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[5] = (struct FusionPotentialEvolution){SPECIES_FLAREON, 50, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[6] = (struct FusionPotentialEvolution){SPECIES_VAPOREON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[7] = (struct FusionPotentialEvolution){SPECIES_GLACEON, 50, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutionCount = 2 + siblings * 2;
+    if (selectedParentB)
+    {
+        profile->parentSpeciesA = SPECIES_EEVEE;
+        profile->parentSpeciesB = SPECIES_DRATINI;
+        profile->evolutionFlags |= BERSERK_GENE_NAME_PRIORITY_PARENT;
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
+            profile->potentialEvolutions[i].methodAndSourceParent ^= EVO_POTENTIAL_SOURCE_PARENT_BIT;
+    }
+    if (terminal)
+    {
+        for (i = 0; i <= siblings; i++)
+            profile->potentialEvolutions[i] = profile->potentialEvolutions[i * 2];
+        profile->potentialEvolutionCount = siblings + 1;
+    }
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    SetMonData(&mon, MON_DATA_LANGUAGE, &language);
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("DRATVEE")), 0);
+    SetMonData(&mon, MON_DATA_NICKNAME, customNickname
+        ? COMPOUND_STRING("BUDDY") : GetMonDisplaySpeciesName(&mon));
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_DRAGONAIR);
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
+        siblings == 2 ? COMPOUND_STRING("DRAGOTEON") : COMPOUND_STRING("DRAGOEEON")), 0);
+    GetMonData(&mon, MON_DATA_NICKNAME, nickname);
+    EXPECT_EQ(StringCompare(nickname, customNickname ? COMPOUND_STRING("BUDDY") : GetMonDisplaySpeciesName(&mon)), 0);
+
+    if (!terminal)
+    {
+        UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_DRAGONITE);
+        EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
+            siblings == 2 ? COMPOUND_STRING("DRAGOREON") : COMPOUND_STRING("DRAGOREEON")), 0);
+    }
+    GetMonData(&mon, MON_DATA_NICKNAME, nickname);
+    EXPECT_EQ(StringCompare(nickname, customNickname ? COMPOUND_STRING("BUDDY") : GetMonDisplaySpeciesName(&mon)), 0);
+
+    savedProfile = *profile;
+    savedRng = gRngValue;
+    StringCopy(name, GetMonDisplaySpeciesName(&mon));
+    EXPECT_EQ(StringCompare(name, GetMonDisplaySpeciesName(&mon)), 0);
+    BoxMonToMon(&mon.box, &restoredMon);
+    EXPECT_EQ(StringCompare(name, GetMonDisplaySpeciesName(&restoredMon)), 0);
+    EXPECT_EQ(memcmp(profile, &savedProfile, sizeof(savedProfile)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &savedRng, sizeof(savedRng)), 0);
+
+    profile->evolutionFlags &= ~BERSERK_GENE_RESOLVED_MOVE_SOURCES;
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("DRAGOVEE")), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon), GetSpeciesName(SPECIES_DRATINI)), 0);
+}
+
+TEST("Fusion names resolve paired phases and deduplicate matching sibling species")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+    u8 priority = 0;
+    u8 i;
+
+    PARAMETRIZE { priority = 0; }
+    PARAMETRIZE { priority = 1; }
+
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    profile->evolutionFlags = priority ? BERSERK_GENE_NAME_PRIORITY_PARENT : 0;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_PAIRED_WITH_SIBLING, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_APPLETUN, 20, EVO_LEVEL | EVO_POTENTIAL_PAIRED_WITH_SIBLING | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutionCount = 2;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_JOLTEON);
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
+        priority ? COMPOUND_STRING("APPLTEON") : COMPOUND_STRING("JOLTETUN")), 0);
+
+    profile->evolutionFlags = (BERSERK_GENE_PHASE_COMPLETE << BERSERK_GENE_EVOLUTION_PHASE_SHIFT)
+        | BERSERK_GENE_RESOLVED_MOVE_SOURCES;
+    profile->parentSpeciesA = SPECIES_DRAGONAIR;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_DRAGONAIR, 20, EVO_LEVEL | EVO_POTENTIAL_SELECTED, 0};
+    for (i = 1; i < MAX_FUSION_POTENTIAL_EVOLUTIONS; i++)
+        profile->potentialEvolutions[i] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutionCount = MAX_FUSION_POTENTIAL_EVOLUTIONS;
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("DRAGOTEON")), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
+TEST("Fusion names shorten both parent contributions proportionally at the name limit")
+{
+    const u16 siblings[] = {
+        SPECIES_SQUAWKABILLY, SPECIES_FLETCHINDER, SPECIES_CORVIKNIGHT, SPECIES_BARRASKEWDA,
+        SPECIES_BLACEPHALON, SPECIES_CENTISKORCH, SPECIES_TOGEDEMARU,
+    };
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+    u8 sourceCount = 5;
+    u8 i;
+
+    PARAMETRIZE { sourceCount = 5; }
+    PARAMETRIZE { sourceCount = 7; }
+
+    CreateMon(&mon, SPECIES_CRABOMINABLE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_CRABOMINABLE;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_CRABOMINABLE, 20, EVO_LEVEL, 0};
+    for (i = 0; i < sourceCount; i++)
+        profile->potentialEvolutions[i + 1] = (struct FusionPotentialEvolution){siblings[i], 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutionCount = 1 + sourceCount;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_CRABOMINABLE);
+    EXPECT_EQ(StringLength(GetMonDisplaySpeciesName(&mon)), POKEMON_NAME_LENGTH);
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
+        sourceCount == 5 ? COMPOUND_STRING("CRABONKEWLON") : COMPOUND_STRING("CRABOMHAORRU")), 0);
+    profile->evolutionFlags |= BERSERK_GENE_NAME_PRIORITY_PARENT;
+    EXPECT_EQ(StringLength(GetMonDisplaySpeciesName(&mon)), POKEMON_NAME_LENGTH);
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
+        sourceCount == 5 ? COMPOUND_STRING("SQUETCINABLE") : COMPOUND_STRING("SQLEVIINABLE")), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
 TEST("Fusion evolution updates its source parent and sticky type provenance")
 {
     struct Pokemon mon;

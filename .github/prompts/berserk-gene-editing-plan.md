@@ -150,7 +150,49 @@ Validation:
 - `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
   ROM 31,696,756/33,554,432 bytes.
 
-Next: pseudo-side naming and remaining display aggregation/rendering. Older saved fusion profiles
+### Pseudo-side constructed names (2026-11-09)
+
+Implemented pseudo-side names in `GetMonDisplaySpeciesName()` using the same deduplicated,
+saved-order resolved sibling sources as movepools/color/cry. The user clarified that each sibling
+contributes its natural chunk length, even when the result differs from the rounded average.
+This supersedes the earlier requirement to force the pseudo-name to the rounded-average length.
+For sibling `i` of `N`, the chunk starts at `floor(i * nameLength / N)` and contributes
+`ceil(nameLength / N)` characters. Rounded chunks may overlap within a source name, just as
+the original two-source rule retains an odd name's middle character in either half.
+Example: Eevee + Jolteon yields `EEVTEON`, not the average-budget `EEVEON`.
+
+The two side names are then combined using the existing rounded-up prefix/suffix halves and
+stored leading-parent priority. If those halves exceed `POKEMON_NAME_LENGTH` (12), the leading
+count is scaled proportionally and rounded to the nearest character (ties toward the leader);
+the trailing count receives the remaining budget. Prefix/suffix anchoring is preserved.
+Only bounded stack workspaces were added; no save structures or static buffers grew.
+
+Existing summary/Pokedex species-name and hatch-default-name callers inherit the new names.
+Evolution's existing default-nickname update now follows reconstructed sibling names, while
+custom nicknames remain unchanged. Reading names changes neither the saved profile nor RNG.
+Birth names and legacy completed profiles without resolved metadata keep their two-source
+behavior; paired phases keep stored priority.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="Fusion names"`: three tests / 20 parameter cases passed:
+  - 16 cases cover either selected side, two/three uneven-length siblings, default/custom
+    nicknames, both evolution phases or terminal Phase 1, party/box-restored parity, stable
+    profile/RNG, and legacy/normal fallback. Exact expected strings are asserted.
+  - Two cases cover paired-phase priority and deduplication of equal sibling target species.
+  - Two cases cover five/seven long sibling names in both priority orders, proportional
+    shortening (including both contributions shrinking), and the exact 12-character limit.
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 20 passed; three unrelated Fusion Flare/Bolt
+  tests remain TO_DO.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
+  ROM 31,696,948/33,554,432 bytes.
+- `git diff --check`: passed. No manual emulator UI inspection was performed.
+
+Next: remaining evolution preview/text and sprite/display rendering. Current evolution previews
+still use native target-species names, rather than projected fusion names; sprite donor persistence
+still represents only the displayed parent side. Those surfaces were not changed in this slice.
+Previously saved default nicknames are not automatically migrated when their newly reconstructed
+species name differs: preserve existing nicknames until a deliberate migration policy is chosen.
+Older saved fusion profiles
 already contain a growth curve, but their existing EXP may have been earned on the nominal species'
 curve before these consumers honored the stored value. No legacy EXP migration is performed here;
 audit/decide migration before treating old-save behavior as release-ready. Summary/battle UI code
@@ -833,11 +875,11 @@ user instruction until any remaining follow-ups are also answered.
    - **Two-source name fusion** (the normal case: two species being merged at a phase): take the
      first half of source A's name (`ceil(len/2)` characters) and append the last half of source
      B's name (`ceil(len/2)` characters, i.e. the last `ceil(len/2)` characters of B's name).
-   - **Multi-sibling name fusion** (pseudo-fusion side with N un-taken siblings, N > 1): let
-     `avgLen = ` the (rounded) average length of all sibling names; chunk the target output name
-     into `N` pieces sized to sum to `avgLen`; chunk each sibling's own name into `N` pieces the
-     same way; take the *i*-th chunk from the *i*-th sibling's own name for the *i*-th output
-     chunk, concatenating all chunks together.
+   - **Multi-sibling name fusion** (pseudo-fusion side with N un-taken siblings, N > 1):
+     use each sibling's natural chunk length, even when the result differs from the rounded
+     average (clarified 2026-11-09). For zero-based sibling `i`, take `ceil(nameLength / N)`
+     characters starting at `floor(i * nameLength / N)` from that sibling's name, concatenating
+     the chunks in saved sibling order. Do not pad/resample to an average-length output budget.
    - **Ordering/priority:** the chosen evolution path's name segment always leads (is the
      prefix) when there *is* a chosen path (i.e. the branching-evolution case, not the always-
      paired-together merge case). When there is no "chosen path" to prioritize (the
