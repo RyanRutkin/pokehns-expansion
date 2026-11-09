@@ -63,10 +63,53 @@ Validation for this follow-up:
   it is sensitive to other tests leaving profiles allocated. Do not claim a green combined file.
 - `make -k hns -j24`: passed; production ROM linked successfully.
 
-Next: finish the remaining pseudo-fusion trait/display aggregation described in the evolution
-checkpoint below. Exact root attribution when different roots share a target species but have
-different conditions/descendants still needs dedicated coverage: the update API currently receives
-only the target species. The entire Berserk Gene feature is not complete.
+### Pseudo-fusion move aggregation (2026-11-09)
+
+Profile-aware level-up, egg, and teachable projections now reconstruct both resolved sides from
+the saved lineage. The selected side contributes its concrete target; a pseudo side contributes
+all retained same-phase branch species, not merely its unchanged display species. Consumed
+same-side siblings never contribute. Phase 2 resolution now marks its chosen descendant as selected
+while retaining Phase 1 root markers, so the final move pools remain reconstructible after the
+active evolution menu is empty.
+
+The existing 62/38 or 50/50 per-side move budgets remain unchanged. Within a multi-species side,
+level-up and egg slots are allocated evenly across branch lists, redistributing unused slots from
+short lists within that side, and sampled evenly within each list. This extends the existing
+deterministic sampling approach rather than adding RNG consumption on menu access. Level ordering,
+type-relevance priority, deduplication, and the 20-level-up/18-egg-move caps are preserved.
+TM/tutor eligibility remains the complete union, now over all contributing species; its IWRAM
+buffer is bounded by `MOVES_COUNT_ALL` instead of the former two-species estimate of 744.
+Existing party/box relearner, level-up, and owned-mon Pokédex call sites use these shared helpers.
+
+`evolutionFlags` bit 4 (`BERSERK_GENE_RESOLVED_MOVE_SOURCES`) marks profiles whose resolution
+metadata supports completed-phase reconstruction. Older already-completed profiles lack the
+Phase 2 selection information; they deliberately retain their previous two-display-species move
+projection rather than being incorrectly regressed to Phase 1. No structure or save layout grew.
+Terminal Phase 1 pseudo pools also remain available when there are no Phase 2 descendants.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="Fusion pseudo-side"`: passed, two tests / 25 cases.
+  The main 24-case regression covers both phases, selected sides, Modern Moves settings, and
+  50/50 plus both 62/38 weightings. Checks include exact teachable union, bounded/deduplicated
+  level-up and egg pools, level/type ordering, party/box parity, unchanged known moves/profile/RNG,
+  and normal-mon species accessors. The second test covers terminal Phase 1 and legacy completed
+  profiles. Synthetic descendant species give both move modes nonempty egg lists; tests do not
+  invent or modify native evolution/learnset data.
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 12 passed; three unrelated Fusion Flare/Bolt
+  tests remain TO_DO.
+- `make -k check BUILD=hns -j24 TESTS="(Daycare) Rebreeding"`: passed, six existing cases.
+- `make -k check BUILD=hns -j24 TESTS="test/berserk_gene.c"`: 28 passed; the existing egg-group
+  compatibility fixture still fails. The order-sensitive allocation fixture passed in this run.
+- `make -k check BUILD=hns -j24 TESTS="test/save.c"`: PokemonStorage passed at 35,680 bytes.
+  Three other save-size pins do not match this build: actual SaveBlock1/2/3 are 15,760/3,892/52
+  versus pins 15,752/3,884/84. Those structures were not modified; this suite is not green.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes.
+
+Next: finish remaining pseudo-fusion categorical traits/growth/display aggregation. Exact root
+attribution when different roots share a target species but have different conditions/descendants
+still needs dedicated coverage: the update API currently receives only the target species.
+Rebreeding of all non-lineage override traits also remains to be audited. The entire Berserk Gene
+feature is not complete.
 
 ## Historical resume checkpoint (paused 2026-08-27)
 

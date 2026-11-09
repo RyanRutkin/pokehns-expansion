@@ -179,6 +179,7 @@ struct __attribute__((packed)) FusionPotentialEvolution
 #define BERSERK_GENE_EVOLUTION_PHASE_SHIFT 1
 #define BERSERK_GENE_EVOLUTION_PHASE_MASK  (3 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT)
 #define BERSERK_GENE_GENE_HOLDER_PARENT_B  (1 << 3) // For one-holder breeding, identifies the 62%-weighted parent side.
+#define BERSERK_GENE_RESOLVED_MOVE_SOURCES (1 << 4) // Completed profiles retain enough selection metadata to rebuild move pools.
 
 enum BerserkGeneEvolutionPhase
 {

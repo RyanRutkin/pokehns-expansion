@@ -6162,11 +6162,84 @@ const struct Evolution *GetSpeciesEvolutions(u16 species)
 
 EWRAM_DATA static struct LevelUpMove sBerserkGeneLevelUpMoves[MAX_LEVEL_UP_MOVES + 1] = {0};
 EWRAM_DATA static u16 sBerserkGeneEggMoves[EGG_MOVES_ARRAY_COUNT] = {0};
-// Current generated learnable data tops out at 372 moves for one species; two full parent lists
-// therefore fit within this fixed, bounded union buffer without profile/save growth. This large
-// transient workspace uses IWRAM because EWRAM is nearly full in the HNS ROM.
-#define MAX_BERSERK_GENE_TEACHABLE_MOVES 744
+// A pseudo-fusion can contribute several species, so bound the union by the entire move catalog.
+// This transient workspace uses IWRAM because EWRAM is nearly full in the HNS ROM.
+#define MAX_BERSERK_GENE_TEACHABLE_MOVES MOVES_COUNT_ALL
 IWRAM_DATA static u16 sBerserkGeneTeachableMoves[MAX_BERSERK_GENE_TEACHABLE_MOVES + 1] = {0};
+
+// Keep root selections for Phase 1 reconstruction and a separate selected descendant for Phase 2.
+// Older completed profiles lack that metadata and retain their original two-species projection.
+static u8 GetBerserkGeneMoveSources(const struct BerserkGeneProfile *profile, bool8 parentB, u16 *species)
+{
+    u8 phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
+        >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+    bool8 phase2 = FALSE;
+    u8 selectedParentMask = 0;
+    u8 count = 0;
+    u8 i;
+
+    if (phase != BERSERK_GENE_PHASE_1
+     && (phase != BERSERK_GENE_PHASE_COMPLETE
+         || (profile->evolutionFlags & BERSERK_GENE_RESOLVED_MOVE_SOURCES)))
+    {
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
+        {
+            u8 flags = profile->potentialEvolutions[i].methodAndSourceParent;
+            if ((flags & (EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SELECTED))
+                == (EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SELECTED))
+                phase2 = TRUE;
+        }
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
+        {
+            u8 flags = profile->potentialEvolutions[i].methodAndSourceParent;
+            if (((flags & EVO_POTENTIAL_PHASE_2) != 0) == phase2
+             && (flags & EVO_POTENTIAL_SELECTED))
+                selectedParentMask |= 1 << ((flags & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0);
+        }
+        for (i = 0; selectedParentMask != 0 && i < profile->potentialEvolutionCount; i++)
+        {
+            const struct FusionPotentialEvolution *node = &profile->potentialEvolutions[i];
+            u8 flags = node->methodAndSourceParent;
+            u8 j;
+
+            if (((flags & EVO_POTENTIAL_PHASE_2) != 0) != phase2
+             || ((flags & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0) != parentB
+             || ((selectedParentMask & (1 << parentB)) && !(flags & EVO_POTENTIAL_SELECTED)))
+                continue;
+            for (j = 0; j < count; j++)
+                if (species[j] == node->targetSpecies)
+                    break;
+            if (j == count)
+                species[count++] = node->targetSpecies;
+        }
+    }
+
+    if (count == 0)
+        species[count++] = parentB ? profile->parentSpeciesB : profile->parentSpeciesA;
+    return count;
+}
+
+static void GetBerserkGeneMoveQuotas(const u16 *counts, u8 sourceCount, u16 take, u16 *quotas)
+{
+    u8 i;
+    bool8 added;
+
+    for (i = 0; i < sourceCount; i++)
+        quotas[i] = 0;
+    do
+    {
+        added = FALSE;
+        for (i = 0; i < sourceCount && take != 0; i++)
+        {
+            if (quotas[i] < counts[i])
+            {
+                quotas[i]++;
+                take--;
+                added = TRUE;
+            }
+        }
+    } while (take != 0 && added);
+}
 
 static u16 CountLevelUpMoves(const struct LevelUpMove *learnset)
 {
@@ -6199,11 +6272,41 @@ static void AddBerserkGeneLearnsetMove(const struct LevelUpMove *move, u8 *count
         sBerserkGeneLevelUpMoves[(*count)++] = *move;
 }
 
+static u16 CountBerserkGeneLevelUpMoves(const u16 *species, u8 sourceCount)
+{
+    u16 count = 0;
+    u8 i;
+
+    for (i = 0; i < sourceCount; i++)
+        count += CountLevelUpMoves(GetSpeciesLevelUpLearnset(species[i]));
+    return count;
+}
+
+static void SampleBerserkGeneLevelUpMoves(const u16 *species, u8 sourceCount, u16 take, u8 *count)
+{
+    u16 counts[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 quotas[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 i;
+
+    for (i = 0; i < sourceCount; i++)
+        counts[i] = CountLevelUpMoves(GetSpeciesLevelUpLearnset(species[i]));
+    GetBerserkGeneMoveQuotas(counts, sourceCount, take, quotas);
+    for (i = 0; i < sourceCount; i++)
+    {
+        const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species[i]);
+        u16 j;
+        for (j = 0; j < quotas[i]; j++)
+            AddBerserkGeneLearnsetMove(&learnset[(j * counts[i]) / quotas[i]], count);
+    }
+}
+
 static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u16 profileId,
                                                                   enum Type type1, enum Type type2)
 {
     struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
-    const struct LevelUpMove *learnsetA, *learnsetB;
+    u16 speciesA[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 speciesB[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 sourceCountA, sourceCountB;
     u16 countA, countB;
     u16 takeA, takeB;
     u8 count = 0;
@@ -6212,10 +6315,10 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
     if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
         return GetSpeciesLevelUpLearnset(species);
 
-    learnsetA = GetSpeciesLevelUpLearnset(profile->parentSpeciesA);
-    learnsetB = GetSpeciesLevelUpLearnset(profile->parentSpeciesB);
-    countA = CountLevelUpMoves(learnsetA);
-    countB = CountLevelUpMoves(learnsetB);
+    sourceCountA = GetBerserkGeneMoveSources(profile, FALSE, speciesA);
+    sourceCountB = GetBerserkGeneMoveSources(profile, TRUE, speciesB);
+    countA = CountBerserkGeneLevelUpMoves(speciesA, sourceCountA);
+    countB = CountBerserkGeneLevelUpMoves(speciesB, sourceCountB);
     takeA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT)
         ? (MAX_LEVEL_UP_MOVES + 1) / 2
         : ((profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) ? 8 : 12);
@@ -6234,10 +6337,8 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
     takeA = min(takeA, countA);
     takeB = min(takeB, countB);
 
-    for (i = 0; i < takeA; i++)
-        AddBerserkGeneLearnsetMove(&learnsetA[(i * countA) / takeA], &count);
-    for (i = 0; i < takeB; i++)
-        AddBerserkGeneLearnsetMove(&learnsetB[(i * countB) / takeB], &count);
+    SampleBerserkGeneLevelUpMoves(speciesA, sourceCountA, takeA, &count);
+    SampleBerserkGeneLevelUpMoves(speciesB, sourceCountB, takeB, &count);
 
     // Keep learnset ordering level-first, then favor moves matching the current fusion typing
     // within a shared level. This preserves the assumptions in level-up and move-relearner scans.
@@ -6300,22 +6401,25 @@ const u16 *GetBoxMonTeachableLearnset(struct BoxPokemon *boxMon)
     u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
     u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
     struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
-    const u16 *learnsetA, *learnsetB;
-    u16 countA, countB, count = 0, i;
+    u16 sources[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 count = 0, i;
+    u8 parent, sourceCount, source;
 
     if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
         return GetSpeciesTeachableLearnset(species);
 
-    learnsetA = GetSpeciesTeachableLearnset(profile->parentSpeciesA);
-    learnsetB = GetSpeciesTeachableLearnset(profile->parentSpeciesB);
-    countA = CountMoveList(learnsetA);
-    countB = CountMoveList(learnsetB);
-
     // Teachable moves are a complete union, not the sampled/capped subset used by the other pools.
-    for (i = 0; i < countA; i++)
-        AppendUniqueMove(sBerserkGeneTeachableMoves, learnsetA[i], &count, MAX_BERSERK_GENE_TEACHABLE_MOVES);
-    for (i = 0; i < countB; i++)
-        AppendUniqueMove(sBerserkGeneTeachableMoves, learnsetB[i], &count, MAX_BERSERK_GENE_TEACHABLE_MOVES);
+    for (parent = 0; parent < 2; parent++)
+    {
+        sourceCount = GetBerserkGeneMoveSources(profile, parent, sources);
+        for (source = 0; source < sourceCount; source++)
+        {
+            const u16 *learnset = GetSpeciesTeachableLearnset(sources[source]);
+            u16 moveCount = CountMoveList(learnset);
+            for (i = 0; i < moveCount; i++)
+                AppendUniqueMove(sBerserkGeneTeachableMoves, learnset[i], &count, MAX_BERSERK_GENE_TEACHABLE_MOVES);
+        }
+    }
 
     // Put moves matching the current fusion typing first for Pokédex/relevance displays.
     for (i = 1; i < count; i++)
@@ -6343,33 +6447,47 @@ const u16 *GetMonTeachableLearnset(struct Pokemon *mon)
     return GetBoxMonTeachableLearnset(&mon->box);
 }
 
+static void SampleBerserkGeneEggMoves(const u16 *species, u8 sourceCount, u16 take, u16 *count)
+{
+    u16 counts[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 quotas[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 i;
+
+    for (i = 0; i < sourceCount; i++)
+        counts[i] = CountMoveList(GetSpeciesEggMoves(species[i]));
+    GetBerserkGeneMoveQuotas(counts, sourceCount, take, quotas);
+    for (i = 0; i < sourceCount; i++)
+    {
+        const u16 *learnset = GetSpeciesEggMoves(species[i]);
+        u16 j;
+        for (j = 0; j < quotas[i]; j++)
+            AppendUniqueMove(sBerserkGeneEggMoves, learnset[(j * counts[i]) / quotas[i]],
+                count, EGG_MOVES_ARRAY_COUNT - 1);
+    }
+}
+
 const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon)
 {
     u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
     u16 species = GetBoxMonData(boxMon, MON_DATA_SPECIES);
     struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
-    const u16 *learnsetA, *learnsetB;
-    u16 countA, countB, count = 0, i;
+    u16 speciesA[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 speciesB[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 sourceCountA, sourceCountB;
+    u16 count = 0, i;
     u16 takeA, takeB;
 
     if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
         return GetSpeciesEggMoves(species);
 
-    learnsetA = GetSpeciesEggMoves(profile->parentSpeciesA);
-    learnsetB = GetSpeciesEggMoves(profile->parentSpeciesB);
-    countA = CountMoveList(learnsetA);
-    countB = CountMoveList(learnsetB);
+    sourceCountA = GetBerserkGeneMoveSources(profile, FALSE, speciesA);
+    sourceCountB = GetBerserkGeneMoveSources(profile, TRUE, speciesB);
     takeA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT)
         ? (EGG_MOVES_ARRAY_COUNT - 1 + 1) / 2
         : ((profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) ? 7 : 11);
     takeB = EGG_MOVES_ARRAY_COUNT - 1 - takeA;
-    takeA = min(takeA, countA);
-    takeB = min(takeB, countB);
-
-    for (i = 0; i < takeA; i++)
-        AppendUniqueMove(sBerserkGeneEggMoves, learnsetA[(i * countA) / takeA], &count, EGG_MOVES_ARRAY_COUNT - 1);
-    for (i = 0; i < takeB; i++)
-        AppendUniqueMove(sBerserkGeneEggMoves, learnsetB[(i * countB) / takeB], &count, EGG_MOVES_ARRAY_COUNT - 1);
+    SampleBerserkGeneEggMoves(speciesA, sourceCountA, takeA, &count);
+    SampleBerserkGeneEggMoves(speciesB, sourceCountB, takeB, &count);
 
     for (i = 1; i < count; i++)
     {
@@ -6778,8 +6896,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
         else
             profile->parentSpeciesA = targetSpecies;
 
-        if (phase == BERSERK_GENE_PHASE_1)
-            profile->potentialEvolutions[i].methodAndSourceParent |= EVO_POTENTIAL_SELECTED;
+        profile->potentialEvolutions[i].methodAndSourceParent |= EVO_POTENTIAL_SELECTED;
 
         if (phase == BERSERK_GENE_PHASE_1
          && (potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING))
@@ -6976,6 +7093,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
             profile->evolutionFlags = (profile->evolutionFlags & ~BERSERK_GENE_EVOLUTION_PHASE_MASK)
                 | (BERSERK_GENE_PHASE_COMPLETE << BERSERK_GENE_EVOLUTION_PHASE_SHIFT);
         }
+        profile->evolutionFlags |= BERSERK_GENE_RESOLVED_MOVE_SOURCES;
 
         type1Parent = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE1_SOURCE_PARENT) != 0;
         type1Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE1_SOURCE_SLOT) != 0;

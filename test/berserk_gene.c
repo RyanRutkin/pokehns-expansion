@@ -6,6 +6,7 @@
 #include "shop.h"
 #include "string_util.h"
 #include "move_relearner.h"
+#include "move.h"
 #include "event_data.h"
 #include "test/test.h"
 
@@ -13,6 +14,38 @@ static const struct ShopPriceOverride sTestSellPriceOverrides[] = {
     { ITEM_SWEET_APPLE, 2200 },
     { ITEM_NONE, 0 },
 };
+
+static void ExpectTeachableUnion(const u16 *moves, const u16 *sources, u8 sourceCount)
+{
+    u8 source;
+    u16 i, j, count;
+
+    for (source = 0; source < sourceCount; source++)
+    {
+        const u16 *native = GetSpeciesTeachableLearnset(sources[source]);
+        for (i = 0; native[i] != MOVE_UNAVAILABLE; i++)
+        {
+            for (j = 0; j < MOVES_COUNT_ALL && moves[j] != MOVE_UNAVAILABLE; j++)
+                if (moves[j] == native[i])
+                    break;
+            EXPECT(j < MOVES_COUNT_ALL && moves[j] != MOVE_UNAVAILABLE);
+        }
+    }
+    for (count = 0; count <= MOVES_COUNT_ALL && moves[count] != MOVE_UNAVAILABLE; count++)
+    {
+        bool8 inPool = FALSE;
+        EXPECT(count < MOVES_COUNT_ALL);
+        for (source = 0; source < sourceCount; source++)
+        {
+            const u16 *native = GetSpeciesTeachableLearnset(sources[source]);
+            for (i = 0; native[i] != MOVE_UNAVAILABLE; i++)
+                inPool |= moves[count] == native[i];
+        }
+        EXPECT(inPool);
+        for (i = 0; i < count; i++)
+            EXPECT_NE(moves[i], moves[count]);
+    }
+}
 
 TEST("Shop sell price overrides replace the default sale price")
 {
@@ -885,6 +918,193 @@ TEST("Fusion egg and teachable learnsets merge the current parent species")
     }
     EXPECT(sawEggMoveA);
     EXPECT(sawEggMoveB);
+}
+
+TEST("Fusion pseudo-side movepools include every retained branch after each evolution")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile savedProfile;
+    const struct LevelUpMove *levelMoves;
+    const u16 *moves;
+    u16 profileId;
+    u16 sources[3];
+    enum Move knownMove = MOVE_THUNDER_SHOCK;
+    u8 phase = 0, selectedParentB = 0, modernMoves = 0, weighting = 0;
+    u8 oldModernMoves;
+    u8 i, source;
+    u16 j, count;
+    bool8 sawSource[3] = {FALSE};
+    u16 phase1Source = SPECIES_DRAGONAIR;
+    u16 phase2Source = SPECIES_DRAGONITE;
+    struct LevelUpMove savedLevelMoves[MAX_LEVEL_UP_MOVES + 1];
+    u16 savedEggMoves[EGG_MOVES_ARRAY_COUNT];
+    rng_value_t savedRng;
+
+    for (i = 0; i < 2; i++)
+    {
+        u8 side, modern, weight;
+        for (side = 0; side < 2; side++)
+            for (modern = 0; modern < 2; modern++)
+                for (weight = 0; weight < 3; weight++)
+                    PARAMETRIZE { phase = i; selectedParentB = side; modernMoves = modern; weighting = weight; }
+    }
+
+    ResetPokemonStorageSystem();
+    oldModernMoves = gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves;
+    gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves = modernMoves;
+    CreateMon(&mon, SPECIES_DRATINI, 50, 0, OTID_STRUCT_PLAYER_ID);
+    EXPECT_EQ(GetMonLevelUpLearnset(&mon), GetSpeciesLevelUpLearnset(SPECIES_DRATINI));
+    EXPECT_EQ(GetBoxMonLevelUpLearnset(&mon.box), GetSpeciesLevelUpLearnset(SPECIES_DRATINI));
+    EXPECT_EQ(GetMonEggMoveLearnset(&mon), GetSpeciesEggMoves(SPECIES_DRATINI));
+    EXPECT_EQ(GetMonTeachableLearnset(&mon), GetSpeciesTeachableLearnset(SPECIES_DRATINI));
+    SetMonData(&mon, MON_DATA_MOVE1, &knownMove);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_DRATINI;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->inheritanceFlags = weighting == 0 ? BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT : 0;
+    if (weighting == 2)
+        profile->evolutionFlags |= BERSERK_GENE_GENE_HOLDER_PARENT_B;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){phase1Source, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){phase2Source, 50, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_GLOOM, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_VILEPLUME, 50, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[4] = (struct FusionPotentialEvolution){SPECIES_PICHU, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    // Synthetic descendants keep egg pools nonempty in both move modes; lineage is not queried.
+    profile->potentialEvolutions[5] = (struct FusionPotentialEvolution){SPECIES_MAREEP, 50, EVO_LEVEL | EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[6] = (struct FusionPotentialEvolution){SPECIES_CLEFFA, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[7] = (struct FusionPotentialEvolution){SPECIES_TOGEPI, 50, EVO_LEVEL | EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutionCount = 8;
+    if (selectedParentB)
+    {
+        profile->parentSpeciesA = SPECIES_EEVEE;
+        profile->parentSpeciesB = SPECIES_DRATINI;
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
+            profile->potentialEvolutions[i].methodAndSourceParent ^= EVO_POTENTIAL_SOURCE_PARENT_BIT;
+    }
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    UpdateBerserkGeneProfileAfterEvolution(&mon, phase1Source);
+    if (phase)
+        UpdateBerserkGeneProfileAfterEvolution(&mon, phase2Source);
+    savedProfile = *profile;
+    savedRng = gRngValue;
+    sources[0] = phase ? phase2Source : phase1Source;
+    sources[1] = phase ? SPECIES_MAREEP : SPECIES_PICHU;
+    sources[2] = phase ? SPECIES_TOGEPI : SPECIES_CLEFFA;
+
+    levelMoves = GetMonLevelUpLearnset(&mon);
+    for (count = 0; count <= MAX_LEVEL_UP_MOVES && levelMoves[count].move != LEVEL_UP_MOVE_END; count++)
+    {
+        bool8 inPool = FALSE;
+        EXPECT(count < MAX_LEVEL_UP_MOVES);
+        if (count > 0)
+        {
+            EXPECT(levelMoves[count - 1].level <= levelMoves[count].level);
+            if (levelMoves[count - 1].level == levelMoves[count].level
+             && (GetMoveType(levelMoves[count].move) == GetMonType(&mon, 0)
+                 || GetMoveType(levelMoves[count].move) == GetMonType(&mon, 1)))
+                EXPECT(GetMoveType(levelMoves[count - 1].move) == GetMonType(&mon, 0)
+                    || GetMoveType(levelMoves[count - 1].move) == GetMonType(&mon, 1));
+        }
+        for (source = 0; source < ARRAY_COUNT(sources); source++)
+        {
+            const struct LevelUpMove *native = GetSpeciesLevelUpLearnset(sources[source]);
+            for (j = 0; native[j].move != LEVEL_UP_MOVE_END; j++)
+                if (levelMoves[count].move == native[j].move)
+                {
+                    inPool = TRUE;
+                    sawSource[source] = TRUE;
+                }
+        }
+        EXPECT(inPool);
+        for (j = 0; j < count; j++)
+            EXPECT_NE(levelMoves[j].move, levelMoves[count].move);
+    }
+    EXPECT(count > 0);
+    for (source = 0; source < ARRAY_COUNT(sources); source++)
+        EXPECT(sawSource[source]);
+    memcpy(savedLevelMoves, levelMoves, sizeof(savedLevelMoves));
+    levelMoves = GetBoxMonLevelUpLearnset(&mon.box);
+    EXPECT_EQ(memcmp(savedLevelMoves, levelMoves, (count + 1) * sizeof(*levelMoves)), 0);
+
+    moves = GetMonTeachableLearnset(&mon);
+    ExpectTeachableUnion(moves, sources, ARRAY_COUNT(sources));
+    ExpectTeachableUnion(GetBoxMonTeachableLearnset(&mon.box), sources, ARRAY_COUNT(sources));
+
+    memset(sawSource, FALSE, sizeof(sawSource));
+    moves = GetMonEggMoveLearnset(&mon);
+    for (count = 0; count < EGG_MOVES_ARRAY_COUNT && moves[count] != MOVE_UNAVAILABLE; count++)
+    {
+        bool8 inPool = FALSE;
+        EXPECT(count < EGG_MOVES_ARRAY_COUNT - 1);
+        for (source = 0; source < ARRAY_COUNT(sources); source++)
+        {
+            const u16 *native = GetSpeciesEggMoves(sources[source]);
+            for (j = 0; native[j] != MOVE_UNAVAILABLE; j++)
+                if (moves[count] == native[j])
+                {
+                    inPool = TRUE;
+                    sawSource[source] = TRUE;
+                }
+        }
+        EXPECT(inPool);
+        for (j = 0; j < count; j++)
+            EXPECT_NE(moves[j], moves[count]);
+    }
+    EXPECT(sawSource[1]);
+    EXPECT(sawSource[2]);
+    memcpy(savedEggMoves, moves, sizeof(savedEggMoves));
+    moves = GetBoxMonEggMoveLearnset(&mon.box);
+    EXPECT_EQ(memcmp(savedEggMoves, moves, (count + 1) * sizeof(*moves)), 0);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_MOVE1), knownMove);
+    EXPECT_EQ(memcmp(profile, &savedProfile, sizeof(savedProfile)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &savedRng, sizeof(savedRng)), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves = oldModernMoves;
+}
+
+TEST("Fusion pseudo-side terminal Phase 1 pools preserve legacy completed-profile behavior")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const u16 resolvedSources[] = {SPECIES_GYARADOS, SPECIES_VAPOREON, SPECIES_JOLTEON};
+    const u16 legacySources[] = {SPECIES_GYARADOS, SPECIES_EEVEE};
+    const struct LevelUpMove *levelMoves;
+    struct LevelUpMove savedLevelMoves[MAX_LEVEL_UP_MOVES + 1];
+    u16 savedEggMoves[EGG_MOVES_ARRAY_COUNT];
+    u16 profileId;
+    u8 count;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_MAGIKARP, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_MAGIKARP;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_GYARADOS, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_VAPOREON, ITEM_WATER_STONE, EVO_ITEM | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, ITEM_THUNDER_STONE, EVO_ITEM | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutionCount = 3;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_GYARADOS);
+    EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
+        >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT, BERSERK_GENE_PHASE_COMPLETE);
+    ExpectTeachableUnion(GetMonTeachableLearnset(&mon), resolvedSources, ARRAY_COUNT(resolvedSources));
+
+    profile->evolutionFlags &= ~BERSERK_GENE_RESOLVED_MOVE_SOURCES;
+    ExpectTeachableUnion(GetMonTeachableLearnset(&mon), legacySources, ARRAY_COUNT(legacySources));
+    levelMoves = GetMonLevelUpLearnset(&mon);
+    for (count = 0; count < MAX_LEVEL_UP_MOVES && levelMoves[count].move != LEVEL_UP_MOVE_END; count++)
+        ;
+    memcpy(savedLevelMoves, levelMoves, (count + 1) * sizeof(*levelMoves));
+    memcpy(savedEggMoves, GetMonEggMoveLearnset(&mon), sizeof(savedEggMoves));
+    profile->potentialEvolutionCount = 0;
+    levelMoves = GetMonLevelUpLearnset(&mon);
+    EXPECT_EQ(memcmp(savedLevelMoves, levelMoves, (count + 1) * sizeof(*levelMoves)), 0);
+    EXPECT_EQ(memcmp(savedEggMoves, GetMonEggMoveLearnset(&mon), sizeof(savedEggMoves)), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
 }
 
 TEST("Box fusion move relearner predicates use profile moves and respect category settings")
