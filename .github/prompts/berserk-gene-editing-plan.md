@@ -187,9 +187,42 @@ Validation:
   ROM 31,696,948/33,554,432 bytes.
 - `git diff --check`: passed. No manual emulator UI inspection was performed.
 
-Next: remaining evolution preview/text and sprite/display rendering. Current evolution previews
-still use native target-species names, rather than projected fusion names; sprite donor persistence
-still represents only the displayed parent side. Those surfaces were not changed in this slice.
+### Read-only evolution name previews (2026-11-09)
+
+Added `GetMonEvolutionDisplaySpeciesName(mon, targetSpecies)`. It projects the same lineage
+transition used by live evolution onto a stack-local profile copy, then uses the shared fused-name
+builder. Projection skips numeric/appearance rerolls and nickname writes, consumes no RNG, and
+does not allocate a profile or modify the active-evolution projection cache. The existing active
+choice collector now also supports counting choices without writing that cache.
+
+Normal and trade evolution scenes now prepare their target-name text from the projected fusion
+name. The owned-mon Pokedex evolution list also uses projected names and measures those names for
+method-text positioning/font selection. Native-species Pokedex entries and non-fusion evolution
+names remain unchanged. Existing unseen-name hiding, target icons, caught markers, and native
+target-species bookkeeping are preserved.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 21 passed; three unrelated Fusion Flare/Bolt
+  tests remain TO_DO.
+  - Existing name tests now compare previews with exact expected names and committed results
+    across both parent sides, two/three siblings, both phases or terminal Phase 1, paired phases,
+    default/custom nicknames, and five/seven long-sibling name-limit cases.
+  - The 12-case multi-root regression also compares previews with committed names for every
+    retained Phase 1/Phase 2 path, including switching to an opposite-side descendant.
+  - Before committing each tested transition, all current options are previewed in reverse order,
+    then the chosen option twice. Byte comparisons verify unchanged mon/profile/RNG and the
+    caller's cached active-choice list.
+  - A dedicated regression verifies ordinary species-name fallback and completed legacy-profile
+    behavior without mutation.
+- `make -k check BUILD=hns -j24 TESTS="(Daycare) Rebreeding"`: passed, six existing cases.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
+  ROM 31,697,172/33,554,432 bytes. No persistent data/buffer size increased.
+- No manual emulator inspection of evolution/Pokedex text was performed.
+
+Next: sprite/display rendering. Sprite donor persistence still represents only the displayed
+parent side; previews intentionally do not roll or promise a future sprite/color/cry donor.
+The target-species-only ambiguity described below remains shared by preview and live evolution;
+this slice does not distinguish same-target nodes with different conditions or descendants.
 Previously saved default nicknames are not automatically migrated when their newly reconstructed
 species name differs: preserve existing nicknames until a deliberate migration policy is chosen.
 Older saved fusion profiles

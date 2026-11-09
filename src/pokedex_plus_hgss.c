@@ -6509,13 +6509,13 @@ static void Task_HandleEvolutionScreenInput(u8 taskId)
     }
 }
 
-static void HandleTargetSpeciesPrintText(u32 targetSpecies, u32 base_x, u32 base_y, u32 base_y_offset, u32 base_i, u32 numLines)
+static void HandleTargetSpeciesPrintText(u32 targetSpecies, const u8 *name, u32 base_x, u32 base_y, u32 base_y_offset, u32 base_i, u32 numLines)
 {
     bool32 seen = GetSetPokedexFlag(SpeciesToNationalPokedexNum(targetSpecies), FLAG_GET_SEEN);
-    u32 fontId = GetSpeciesNameFontId(GetSpeciesNameWidthInChars(GetSpeciesName(targetSpecies)));
+    u32 fontId = GetSpeciesNameFontId(GetSpeciesNameWidthInChars(name));
 
     if (seen || !HGSS_HIDE_UNSEEN_EVOLUTION_NAMES)
-        StringCopy(gStringVar3, GetSpeciesName(targetSpecies)); //evolution mon name
+        StringCopy(gStringVar3, name); //evolution mon name
     else
         StringCopy(gStringVar3, gText_ThreeQuestionMarks); //show questionmarks instead of name
     StringExpandPlaceholders(gStringVar3, sText_EVO_Name); //evolution mon name
@@ -6795,6 +6795,7 @@ static void PrintMonPotentialEvolutions(u8 taskId)
         u32 methodX;
         u32 maxMethodWidth;
         u32 fontId;
+        const u8 *name;
 
         if (targetSpecies == SPECIES_NONE || !IsSpeciesEnabled(targetSpecies))
             continue;
@@ -6804,7 +6805,8 @@ static void PrintMonPotentialEvolutions(u8 taskId)
         sPokedexView->sEvoScreenData.numAllEvolutions++;
         HandleTargetSpeciesPrintIcon(taskId, targetSpecies, printed, potentialEvolutionCount);
         CreateCaughtBallEvolutionScreen(targetSpecies, baseX - 9, baseY + baseYOffset * printed, 0);
-        HandleTargetSpeciesPrintText(targetSpecies, baseX, baseY, baseYOffset, printed, 0);
+        name = GetMonEvolutionDisplaySpeciesName(sPokedexView->displayMon, targetSpecies);
+        HandleTargetSpeciesPrintText(targetSpecies, name, baseX, baseY, baseYOffset, printed, 0);
 
         StringCopy(gStringVar4, COMPOUND_STRING("Unknown"));
         switch ((enum EvolutionMethods)method)
@@ -6838,7 +6840,7 @@ static void PrintMonPotentialEvolutions(u8 taskId)
             break;
         }
 
-        nameWidth = GetSpeciesNameWidthInChars(GetSpeciesName(targetSpecies));
+        nameWidth = GetSpeciesNameWidthInChars(name);
         methodX = baseX + 8 + nameWidth * GetFontAttribute(GetSpeciesNameFontId(nameWidth), FONTATTR_MAX_LETTER_WIDTH);
         maxMethodWidth = 230 - methodX;
         fontId = GetFontIdToFit(gStringVar4, FONT_SMALL, 0, maxMethodWidth);
@@ -6943,7 +6945,7 @@ static void PrintEvolutionTargetSpeciesAndMethod(u8 taskId, u16 species, u8 dept
         sPokedexView->sEvoScreenData.numAllEvolutions += 1;
 
         CreateCaughtBallEvolutionScreen(targetSpecies, base_x + depth_x*depth-9, base_y + base_y_offset*(*depth_i) + numLines, 0);
-        HandleTargetSpeciesPrintText(targetSpecies, base_x + depth_x*depth, base_y, base_y_offset, *depth_i, numLines); //evolution mon name
+        HandleTargetSpeciesPrintText(targetSpecies, GetSpeciesName(targetSpecies), base_x + depth_x*depth, base_y, base_y_offset, *depth_i, numLines); //evolution mon name
 
         bool32 caught = GetSetPokedexFlag(SpeciesToNationalPokedexNum(targetSpecies), FLAG_GET_CAUGHT);
         if (HGSS_HIDE_UNOWNED_EVOLUTION_METHODS == TRUE && !caught)

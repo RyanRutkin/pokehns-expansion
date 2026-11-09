@@ -257,7 +257,7 @@ void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u
 
     GetMonData(mon, MON_DATA_NICKNAME, name);
     StringCopy_Nickname(gStringVar1, name);
-    StringCopy(gStringVar2, GetSpeciesName(postEvoSpecies));
+    StringCopy(gStringVar2, GetMonEvolutionDisplaySpeciesName(mon, postEvoSpecies));
 
     // preEvo sprite
     currSpecies = GetMonData(mon, MON_DATA_SPECIES);
@@ -481,7 +481,7 @@ void TradeEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, u8 preEvoSprit
 
     GetMonData(mon, MON_DATA_NICKNAME, name);
     StringCopy_Nickname(gStringVar1, name);
-    StringCopy(gStringVar2, GetSpeciesName(postEvoSpecies));
+    StringCopy(gStringVar2, GetMonEvolutionDisplaySpeciesName(mon, postEvoSpecies));
 
     gAffineAnimsDisabled = TRUE;
 

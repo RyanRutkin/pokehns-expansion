@@ -16,6 +16,33 @@ static const struct ShopPriceOverride sTestSellPriceOverrides[] = {
     { ITEM_NONE, 0 },
 };
 
+static void ExpectEvolutionPreviewMatchesUpdate(struct Pokemon *mon, u16 targetSpecies)
+{
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+    struct BerserkGeneProfile savedProfile = *profile;
+    struct Pokemon savedMon = *mon;
+    struct FusionPotentialEvolution savedOptions[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    const struct FusionPotentialEvolution *options;
+    u8 optionCount;
+    u8 i;
+    u8 name[POKEMON_NAME_BUFFER_SIZE];
+    rng_value_t savedRng = gRngValue;
+
+    options = GetMonPotentialEvolutions(mon, &optionCount);
+    memcpy(savedOptions, options, optionCount * sizeof(*options));
+    for (i = optionCount; i > 0; i--)
+        EXPECT(StringLength(GetMonEvolutionDisplaySpeciesName(mon, savedOptions[i - 1].targetSpecies)) <= POKEMON_NAME_LENGTH);
+    StringCopy(name, GetMonEvolutionDisplaySpeciesName(mon, targetSpecies));
+    EXPECT_EQ(StringCompare(name, GetMonEvolutionDisplaySpeciesName(mon, targetSpecies)), 0);
+    EXPECT(StringLength(name) <= POKEMON_NAME_LENGTH);
+    EXPECT_EQ(memcmp(&savedMon, mon, sizeof(savedMon)), 0);
+    EXPECT_EQ(memcmp(&savedProfile, profile, sizeof(savedProfile)), 0);
+    EXPECT_EQ(memcmp(&savedRng, &gRngValue, sizeof(savedRng)), 0);
+    EXPECT_EQ(memcmp(savedOptions, options, optionCount * sizeof(*options)), 0);
+    UpdateBerserkGeneProfileAfterEvolution(mon, targetSpecies);
+    EXPECT_EQ(StringCompare(name, GetMonDisplaySpeciesName(mon)), 0);
+}
+
 static void ExpectTeachableUnion(const u16 *moves, const u16 *sources, u8 sourceCount)
 {
     u8 source;
@@ -378,6 +405,38 @@ TEST("Fusion display name uses the stored parent priority")
     EXPECT(StringCompare(nameA, nameB) != 0);
 }
 
+TEST("Fusion evolution name previews retain normal and completed-profile behavior")
+{
+    struct Pokemon mon;
+    struct Pokemon savedMon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile savedProfile;
+    u16 profileId;
+    rng_value_t savedRng;
+
+    CreateMon(&mon, SPECIES_EEVEE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    savedMon = mon;
+    savedRng = gRngValue;
+    EXPECT_EQ(StringCompare(GetMonEvolutionDisplaySpeciesName(&mon, SPECIES_JOLTEON), GetSpeciesName(SPECIES_JOLTEON)), 0);
+    EXPECT_EQ(memcmp(&mon, &savedMon, sizeof(savedMon)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &savedRng, sizeof(savedRng)), 0);
+
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_APPLIN;
+    profile->evolutionFlags = BERSERK_GENE_PHASE_COMPLETE << BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    savedMon = mon;
+    savedProfile = *profile;
+    EXPECT_EQ(StringCompare(GetMonEvolutionDisplaySpeciesName(&mon, SPECIES_JOLTEON), COMPOUND_STRING("EEVLIN")), 0);
+    EXPECT_EQ(memcmp(&mon, &savedMon, sizeof(savedMon)), 0);
+    EXPECT_EQ(memcmp(profile, &savedProfile, sizeof(savedProfile)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &savedRng, sizeof(savedRng)), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
 TEST("Fusion names combine natural sibling chunks through both evolution phases")
 {
     struct Pokemon mon;
@@ -436,7 +495,7 @@ TEST("Fusion names combine natural sibling chunks through both evolution phases"
     SetMonData(&mon, MON_DATA_NICKNAME, customNickname
         ? COMPOUND_STRING("BUDDY") : GetMonDisplaySpeciesName(&mon));
 
-    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_DRAGONAIR);
+    ExpectEvolutionPreviewMatchesUpdate(&mon, SPECIES_DRAGONAIR);
     EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
         siblings == 2 ? COMPOUND_STRING("DRAGOTEON") : COMPOUND_STRING("DRAGOEEON")), 0);
     GetMonData(&mon, MON_DATA_NICKNAME, nickname);
@@ -444,7 +503,7 @@ TEST("Fusion names combine natural sibling chunks through both evolution phases"
 
     if (!terminal)
     {
-        UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_DRAGONITE);
+        ExpectEvolutionPreviewMatchesUpdate(&mon, SPECIES_DRAGONITE);
         EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
             siblings == 2 ? COMPOUND_STRING("DRAGOREON") : COMPOUND_STRING("DRAGOREEON")), 0);
     }
@@ -488,7 +547,7 @@ TEST("Fusion names resolve paired phases and deduplicate matching sibling specie
     profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_APPLETUN, 20, EVO_LEVEL | EVO_POTENTIAL_PAIRED_WITH_SIBLING | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
     profile->potentialEvolutionCount = 2;
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
-    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_JOLTEON);
+    ExpectEvolutionPreviewMatchesUpdate(&mon, SPECIES_JOLTEON);
     EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
         priority ? COMPOUND_STRING("APPLTEON") : COMPOUND_STRING("JOLTETUN")), 0);
 
@@ -531,7 +590,7 @@ TEST("Fusion names shorten both parent contributions proportionally at the name 
     profile->potentialEvolutionCount = 1 + sourceCount;
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
-    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_CRABOMINABLE);
+    ExpectEvolutionPreviewMatchesUpdate(&mon, SPECIES_CRABOMINABLE);
     EXPECT_EQ(StringLength(GetMonDisplaySpeciesName(&mon)), POKEMON_NAME_LENGTH);
     EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon),
         sourceCount == 5 ? COMPOUND_STRING("CRABONKEWLON") : COMPOUND_STRING("CRABOMHAORRU")), 0);
@@ -700,7 +759,7 @@ TEST("Fusion lineage resolves every multi-root path and preserves aligned ages")
     }
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
 
-    UpdateBerserkGeneProfileAfterEvolution(&mon, roots[chosenRoot]);
+    ExpectEvolutionPreviewMatchesUpdate(&mon, roots[chosenRoot]);
     EXPECT_EQ(profile->potentialEvolutionCount, 6);
     retainedCount = 0;
     for (i = 0; i < ARRAY_COUNT(roots); i++)
@@ -728,7 +787,7 @@ TEST("Fusion lineage resolves every multi-root path and preserves aligned ages")
     EXPECT_EQ(GetEvolutionTargetSpecies(&mon, EVO_MODE_ITEM_USE, ITEM_WATER_STONE + chosenPhase2,
         NULL, &canStopEvo, CHECK_EVO), descendants[chosenPhase2]);
 
-    UpdateBerserkGeneProfileAfterEvolution(&mon, descendants[chosenPhase2]);
+    ExpectEvolutionPreviewMatchesUpdate(&mon, descendants[chosenPhase2]);
     if (chosenPhase2 / 2 == chosenRoot / 2)
     {
         u16 expectedStat;

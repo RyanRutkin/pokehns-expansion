@@ -6788,85 +6788,90 @@ static void ReblendBerserkGeneEvolutionBaseStats(struct Pokemon *mon, struct Ber
     }
 }
 
-const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount)
+static u8 ProjectBerserkGenePotentialEvolutions(const struct BerserkGeneProfile *profile,
+                                              struct FusionPotentialEvolution *projection)
 {
-    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    u8 phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
+             >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+    u8 count = 0;
+    u8 selectedParentMask = 0;
+    u8 i;
 
-    if (outCount != NULL)
-        *outCount = 0;
+    if (phase == BERSERK_GENE_PHASE_COMPLETE)
+        return 0;
 
-    if (profileId == 0)
-        return NULL;
-
-    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
-    if (profile == NULL)
-        return NULL;
-
+    if (phase == BERSERK_GENE_PHASE_1)
     {
-        u8 phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
-                 >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
-        u8 count = 0;
-        u8 selectedParentMask = 0;
-        u8 i;
-
-        if (phase == BERSERK_GENE_PHASE_COMPLETE)
-            return sPotentialEvolutionProjection;
-
-        if (phase == BERSERK_GENE_PHASE_1)
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
         {
-            for (i = 0; i < profile->potentialEvolutionCount; i++)
+            const struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
+            if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
             {
-                const struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
-                if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
-                    sPotentialEvolutionProjection[count++] = *evolution;
+                if (projection != NULL)
+                    projection[count] = *evolution;
+                count++;
             }
         }
-        else
+    }
+    else
+    {
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
         {
-            for (i = 0; i < profile->potentialEvolutionCount; i++)
+            const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[i];
+            if (!(root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+             && (root->methodAndSourceParent & EVO_POTENTIAL_SELECTED))
             {
-                const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[i];
-                if (!(root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
-                 && (root->methodAndSourceParent & EVO_POTENTIAL_SELECTED))
-                {
-                    u8 rootParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
-                    if (root->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
-                        selectedParentMask |= 3;
-                    else
-                        selectedParentMask |= 1 << rootParentB;
-                }
-            }
-
-            for (i = 0; i < profile->potentialEvolutionCount; i++)
-            {
-                const struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
-                u8 rootIndex = i;
-                const struct FusionPotentialEvolution *root;
-                bool8 rootIsOppositeSide;
-
-                if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
-                    continue;
-                while (rootIndex > 0 && (profile->potentialEvolutions[rootIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
-                    rootIndex--;
-                root = &profile->potentialEvolutions[rootIndex];
-                rootIsOppositeSide = !(selectedParentMask
-                    & (1 << ((root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0)));
-                if ((root->methodAndSourceParent & EVO_POTENTIAL_SELECTED) || rootIsOppositeSide)
-                    sPotentialEvolutionProjection[count++] = *evolution;
+                u8 rootParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
+                if (root->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
+                    selectedParentMask |= 3;
+                else
+                    selectedParentMask |= 1 << rootParentB;
             }
         }
 
-        if (outCount != NULL)
-            *outCount = count;
+        for (i = 0; i < profile->potentialEvolutionCount; i++)
+        {
+            const struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
+            u8 rootIndex = i;
+            const struct FusionPotentialEvolution *root;
+            bool8 rootIsOppositeSide;
+
+            if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                continue;
+            while (rootIndex > 0 && (profile->potentialEvolutions[rootIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                rootIndex--;
+            root = &profile->potentialEvolutions[rootIndex];
+            rootIsOppositeSide = !(selectedParentMask
+                & (1 << ((root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0)));
+            if ((root->methodAndSourceParent & EVO_POTENTIAL_SELECTED) || rootIsOppositeSide)
+            {
+                if (projection != NULL)
+                    projection[count] = *evolution;
+                count++;
+            }
+        }
     }
 
+    return count;
+}
+
+const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount)
+{
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+    u8 count = 0;
+
+    if (profile != NULL)
+        count = ProjectBerserkGenePotentialEvolutions(profile, sPotentialEvolutionProjection);
+    if (outCount != NULL)
+        *outCount = count;
+    if (profile == NULL)
+        return NULL;
     return sPotentialEvolutionProjection;
 }
 
-void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies)
+static void ApplyBerserkGeneProfileEvolution(struct Pokemon *mon, struct BerserkGeneProfile *profile,
+                                            u16 targetSpecies, bool8 updateTraits)
 {
-    struct BerserkGeneProfile *profile;
-    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
     u8 oldDisplayName[POKEMON_NAME_BUFFER_SIZE];
     u8 nickname[POKEMON_NAME_BUFFER_SIZE];
     u8 language;
@@ -6876,23 +6881,19 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
     u16 previousSpecies;
     bool8 previousSpriteParentB;
 
-    if (profileId == 0)
-        return;
-
-    profile = GetBerserkGeneProfile(profileId);
-    if (profile == NULL)
-        return;
-
     phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
           >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
     if (phase == BERSERK_GENE_PHASE_COMPLETE)
         return;
 
-    StringCopy(oldDisplayName, GetMonDisplaySpeciesName(mon));
-    GetMonData(mon, MON_DATA_NICKNAME, nickname);
-    language = GetMonData(mon, MON_DATA_LANGUAGE);
-    previousSpecies = GetMonData(mon, MON_DATA_SPECIES);
-    previousSpriteParentB = (profile->inheritanceFlags & BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT) != 0;
+    if (updateTraits)
+    {
+        StringCopy(oldDisplayName, GetMonDisplaySpeciesName(mon));
+        GetMonData(mon, MON_DATA_NICKNAME, nickname);
+        language = GetMonData(mon, MON_DATA_LANGUAGE);
+        previousSpecies = GetMonData(mon, MON_DATA_SPECIES);
+        previousSpriteParentB = (profile->inheritanceFlags & BERSERK_GENE_FLAG_SPRITE_SOURCE_PARENT) != 0;
+    }
 
     for (i = 0; i < profile->potentialEvolutionCount; i++)
     {
@@ -7036,7 +7037,8 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
             }
         }
 
-        ReblendBerserkGeneEvolutionBaseStats(mon, profile, targetSpecies, sourceParentB, phase, pairedPhase1);
+        if (updateTraits)
+            ReblendBerserkGeneEvolutionBaseStats(mon, profile, targetSpecies, sourceParentB, phase, pairedPhase1);
 
         // A selected Phase 1 path consumes every sibling root on that same source side. Their
         // descendants must not leak into the Phase 2 menu; opposite-side roots remain available
@@ -7067,7 +7069,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
             u8 nodeIndex;
             profile->evolutionFlags = (profile->evolutionFlags & ~BERSERK_GENE_EVOLUTION_PHASE_MASK)
                 | (BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT);
-            GetMonPotentialEvolutions(mon, &activeCount);
+            activeCount = ProjectBerserkGenePotentialEvolutions(profile, NULL);
             if (activeCount == 0)
             {
                 profile->evolutionFlags = (profile->evolutionFlags & ~BERSERK_GENE_EVOLUTION_PHASE_MASK)
@@ -7114,6 +7116,9 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
         }
         profile->evolutionFlags |= BERSERK_GENE_RESOLVED_MOVE_SOURCES;
 
+        if (!updateTraits)
+            return;
+
         type1Parent = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE1_SOURCE_PARENT) != 0;
         type1Slot = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE1_SOURCE_SLOT) != 0;
         type2Parent = (profile->inheritanceFlags & BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT) != 0;
@@ -7126,6 +7131,14 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
             SetMonData(mon, MON_DATA_NICKNAME, GetMonDisplaySpeciesName(mon));
         return;
     }
+}
+
+void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies)
+{
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+
+    if (profile != NULL)
+        ApplyBerserkGeneProfileEvolution(mon, profile, targetSpecies, TRUE);
 }
 
 static void BuildBerserkGeneSideName(const struct BerserkGeneProfile *profile, bool8 parentB, u8 *name)
@@ -7149,49 +7162,65 @@ static void BuildBerserkGeneSideName(const struct BerserkGeneProfile *profile, b
     name[offset] = EOS;
 }
 
-const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
+static const u8 *GetBerserkGeneDisplaySpeciesName(const struct BerserkGeneProfile *profile, u16 species)
 {
     static u8 sDisplayName[POKEMON_NAME_BUFFER_SIZE];
-    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
 
-    if (profileId != 0)
+    if (profile != NULL
+     && profile->parentSpeciesA != SPECIES_NONE
+     && profile->parentSpeciesB != SPECIES_NONE)
     {
-        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
-        if (profile != NULL
-         && profile->parentSpeciesA != SPECIES_NONE
-         && profile->parentSpeciesB != SPECIES_NONE)
+        // Rounded sibling chunks total at most NAME_LENGTH + sourceCount - 1.
+        u8 leadingName[POKEMON_NAME_LENGTH + MAX_FUSION_POTENTIAL_EVOLUTIONS];
+        u8 trailingName[POKEMON_NAME_LENGTH + MAX_FUSION_POTENTIAL_EVOLUTIONS];
+        bool8 leadingParentB = (profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT) != 0;
+        u8 leadingLength;
+        u8 trailingLength;
+        u8 leadingCount;
+        u8 trailingCount;
+
+        BuildBerserkGeneSideName(profile, leadingParentB, leadingName);
+        BuildBerserkGeneSideName(profile, !leadingParentB, trailingName);
+        leadingLength = StringLength(leadingName);
+        trailingLength = StringLength(trailingName);
+        leadingCount = (leadingLength + 1) / 2;
+        trailingCount = (trailingLength + 1) / 2;
+
+        if (leadingCount + trailingCount > POKEMON_NAME_LENGTH)
         {
-            // Rounded sibling chunks total at most NAME_LENGTH + sourceCount - 1.
-            u8 leadingName[POKEMON_NAME_LENGTH + MAX_FUSION_POTENTIAL_EVOLUTIONS];
-            u8 trailingName[POKEMON_NAME_LENGTH + MAX_FUSION_POTENTIAL_EVOLUTIONS];
-            bool8 leadingParentB = (profile->evolutionFlags & BERSERK_GENE_NAME_PRIORITY_PARENT) != 0;
-            u8 leadingLength;
-            u8 trailingLength;
-            u8 leadingCount;
-            u8 trailingCount;
-
-            BuildBerserkGeneSideName(profile, leadingParentB, leadingName);
-            BuildBerserkGeneSideName(profile, !leadingParentB, trailingName);
-            leadingLength = StringLength(leadingName);
-            trailingLength = StringLength(trailingName);
-            leadingCount = (leadingLength + 1) / 2;
-            trailingCount = (trailingLength + 1) / 2;
-
-            if (leadingCount + trailingCount > POKEMON_NAME_LENGTH)
-            {
-                u8 total = leadingCount + trailingCount;
-                leadingCount = (leadingCount * POKEMON_NAME_LENGTH + total / 2) / total;
-                trailingCount = POKEMON_NAME_LENGTH - leadingCount;
-            }
-
-            StringCopyN(sDisplayName, leadingName, leadingCount);
-            StringCopyN(sDisplayName + leadingCount, trailingName + trailingLength - trailingCount, trailingCount);
-            sDisplayName[leadingCount + trailingCount] = EOS;
-            return sDisplayName;
+            u8 total = leadingCount + trailingCount;
+            leadingCount = (leadingCount * POKEMON_NAME_LENGTH + total / 2) / total;
+            trailingCount = POKEMON_NAME_LENGTH - leadingCount;
         }
-    }
 
-    return GetSpeciesName(GetMonData(mon, MON_DATA_SPECIES, 0));
+        StringCopyN(sDisplayName, leadingName, leadingCount);
+        StringCopyN(sDisplayName + leadingCount, trailingName + trailingLength - trailingCount, trailingCount);
+        sDisplayName[leadingCount + trailingCount] = EOS;
+        return sDisplayName;
+    }
+    return GetSpeciesName(species);
+}
+
+const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
+{
+    return GetBerserkGeneDisplaySpeciesName(
+        GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)),
+        GetMonData(mon, MON_DATA_SPECIES));
+}
+
+const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpecies)
+{
+    const struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+
+    if (profile != NULL)
+    {
+        struct BerserkGeneProfile projectedProfile = *profile;
+
+        // Share the live lineage transition, but leave trait rolls, mon data, and caches untouched.
+        ApplyBerserkGeneProfileEvolution(mon, &projectedProfile, targetSpecies, FALSE);
+        return GetBerserkGeneDisplaySpeciesName(&projectedProfile, targetSpecies);
+    }
+    return GetSpeciesName(targetSpecies);
 }
 
 u16 GetMonDisplaySpriteSpecies(struct Pokemon *mon)

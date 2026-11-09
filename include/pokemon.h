@@ -937,6 +937,7 @@ const struct Evolution *GetSpeciesEvolutions(u16 species);
 const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount);
 void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies);
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon);
+const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpecies);
 u16 GetMonDisplaySpriteSpecies(struct Pokemon *mon);
 u16 GetBoxMonDisplaySpriteSpecies(struct BoxPokemon *boxMon);
 const u8 *GetMonDisplayCategory(struct Pokemon *mon);
