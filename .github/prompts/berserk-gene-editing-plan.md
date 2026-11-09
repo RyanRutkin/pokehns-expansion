@@ -33,9 +33,40 @@ Validation:
   parent/egg setup. The paired-line script test was also confirmed failing before the empty-list
   fix. These broader failures are not resolved by this slice; do not claim a green daycare suite.
 
-Next: review ambiguous/multiple-root evolution and rebreeding cases, then finish the remaining
-pseudo-fusion trait/display aggregation described in the evolution checkpoint below. The entire
-Berserk Gene feature is not complete.
+### Multi-root follow-up (2026-11-09)
+
+Added a four-root/eight-node regression with two roots on each parent side. Its 12 parameter cases
+cover every Phase 1 choice and every remaining Phase 2 choice, including crossing to the opposite
+side. Assertions verify same-side sibling removal, root-contiguous descendants, aligned age
+nibbles after compaction, rejection of consumed item-evolution targets, counterpart resolution,
+branch-average base stats, and completion after Phase 2.
+
+Added eight rebreeding cases (all four Phase 1 choices, either daycare slot). The child samples only
+the parent's three retained active descendants, never consumed siblings or native ancestry; those
+descendants become fresh roots with preserved methods/parameters, incremented ages, and correctly
+retagged source sides. The parent's profile remains unchanged. New parameterized tests explicitly
+release their profiles between cases; resetting PC storage does not clear party/daycare profiles.
+
+A separate regression exposed and fixed a Phase 2 counterpart bug: an opposite-side node was
+excluded merely because its target species matched the chosen target. Counterpart membership now
+depends on the node's source side, not a different-species requirement. No save layout or profile
+size changed.
+
+Validation for this follow-up:
+- `make -k check BUILD=hns -j24 TESTS="Fusion lineage"`: passed, three tests / 21 parameter cases.
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: ten tests passed; three unrelated Fusion
+  Flare/Bolt tests remain marked TO_DO.
+- `make -k check BUILD=hns -j24 TESTS="(Daycare) Rebreeding"`: passed, six existing parameter cases.
+- `make -k check BUILD=hns -j24 TESTS="test/berserk_gene.c"`: 25 passed, two failed: the existing
+  egg-group compatibility fixture and the allocation fixture's assumption that slot 1 is free.
+  The latter passes alone with `make -k check BUILD=hns -j24 TESTS="Berserk Gene profile slots"`;
+  it is sensitive to other tests leaving profiles allocated. Do not claim a green combined file.
+- `make -k hns -j24`: passed; production ROM linked successfully.
+
+Next: finish the remaining pseudo-fusion trait/display aggregation described in the evolution
+checkpoint below. Exact root attribution when different roots share a target species but have
+different conditions/descendants still needs dedicated coverage: the update API currently receives
+only the target species. The entire Berserk Gene feature is not complete.
 
 ## Historical resume checkpoint (paused 2026-08-27)
 
@@ -1502,4 +1533,3 @@ migration phase must include:
   *active* link sessions. If any such asynchronous path exists, it could bypass the trade/link
   compatibility gating entirely and needs its own investigation — flagged for the trade/link
   implementation phase, not resolved here.
-

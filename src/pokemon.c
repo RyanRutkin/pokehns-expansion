@@ -6874,8 +6874,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
                 const struct FusionPotentialEvolution *root;
                 bool8 rootIsOppositeSide;
 
-                if (!(node->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
-                 || node->targetSpecies == targetSpecies)
+                if (!(node->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
                     continue;
                 while (rootIndex > 0
                     && (profile->potentialEvolutions[rootIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))

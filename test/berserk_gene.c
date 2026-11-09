@@ -461,6 +461,129 @@ TEST("Phase 2 projection selects the chosen same-side root and preserves opposit
     EXPECT_EQ(activeCount, 0);
 }
 
+TEST("Fusion lineage resolves every multi-root path and preserves aligned ages")
+{
+    const u16 roots[] = {SPECIES_GLOOM, SPECIES_POLIWHIRL, SPECIES_KIRLIA, SPECIES_CHARMELEON};
+    const u16 descendants[] = {SPECIES_VILEPLUME, SPECIES_POLIWRATH, SPECIES_GARDEVOIR, SPECIES_CHARIZARD};
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const struct FusionPotentialEvolution *active;
+    u16 profileId;
+    u8 chosenRoot = 0, chosenPhase2 = 0;
+    u8 i, count, retainedCount;
+    u8 retainedRoots[3];
+    bool32 canStopEvo = TRUE;
+
+    for (i = 0; i < ARRAY_COUNT(roots); i++)
+    {
+        u8 j;
+        for (j = 0; j < ARRAY_COUNT(roots); j++)
+        {
+            if (j == i || (j / 2 != i / 2))
+                PARAMETRIZE { chosenRoot = i; chosenPhase2 = j; }
+        }
+    }
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_ODDISH, 50, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_ODDISH;
+    profile->parentSpeciesB = SPECIES_RALTS;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_TYPE2_SOURCE_PARENT;
+    profile->potentialEvolutionCount = MAX_FUSION_POTENTIAL_EVOLUTIONS;
+    for (i = 0; i < ARRAY_COUNT(roots); i++)
+    {
+        u8 source = i >= 2 ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0;
+        profile->potentialEvolutions[2 * i] = (struct FusionPotentialEvolution){roots[i], 20, EVO_LEVEL | source, 0};
+        profile->potentialEvolutions[2 * i + 1] = (struct FusionPotentialEvolution){
+            descendants[i], ITEM_WATER_STONE + i, EVO_ITEM | source | EVO_POTENTIAL_PHASE_2, 0};
+        profile->potentialEvolutionAge[i] = (2 * i) | ((2 * i + 1) << 4);
+    }
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, roots[chosenRoot]);
+    EXPECT_EQ(profile->potentialEvolutionCount, 6);
+    retainedCount = 0;
+    for (i = 0; i < ARRAY_COUNT(roots); i++)
+    {
+        const struct FusionPotentialEvolution *root;
+        const struct FusionPotentialEvolution *descendant;
+        if (i != chosenRoot && i / 2 == chosenRoot / 2)
+            continue;
+        root = &profile->potentialEvolutions[2 * retainedCount];
+        descendant = root + 1;
+        EXPECT_EQ(root->targetSpecies, roots[i]);
+        EXPECT_EQ((root->methodAndSourceParent & EVO_POTENTIAL_SELECTED) != 0, i == chosenRoot);
+        EXPECT_EQ(descendant->targetSpecies, descendants[i]);
+        EXPECT_EQ(descendant->param, ITEM_WATER_STONE + i);
+        EXPECT(descendant->methodAndSourceParent & EVO_POTENTIAL_PHASE_2);
+        EXPECT_EQ(profile->potentialEvolutionAge[retainedCount], (2 * i) | ((2 * i + 1) << 4));
+        retainedRoots[retainedCount++] = i;
+    }
+    active = GetMonPotentialEvolutions(&mon, &count);
+    EXPECT_EQ(count, 3);
+    for (i = 0; i < count; i++)
+        EXPECT_EQ(active[i].targetSpecies, descendants[retainedRoots[i]]);
+    EXPECT_EQ(GetEvolutionTargetSpecies(&mon, EVO_MODE_ITEM_USE, ITEM_WATER_STONE + (chosenRoot ^ 1),
+        NULL, &canStopEvo, CHECK_EVO), SPECIES_NONE);
+    EXPECT_EQ(GetEvolutionTargetSpecies(&mon, EVO_MODE_ITEM_USE, ITEM_WATER_STONE + chosenPhase2,
+        NULL, &canStopEvo, CHECK_EVO), descendants[chosenPhase2]);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, descendants[chosenPhase2]);
+    if (chosenPhase2 / 2 == chosenRoot / 2)
+    {
+        u16 expectedStat;
+        u8 otherSide = chosenRoot < 2 ? 2 : 0;
+        u16 average = (GetSpeciesBaseStat(descendants[otherSide], STAT_HP)
+            + GetSpeciesBaseStat(descendants[otherSide + 1], STAT_HP) + 1) / 2;
+        u16 chosenStat = GetSpeciesBaseStat(descendants[chosenPhase2], STAT_HP);
+        expectedStat = chosenPhase2 < 2 ? (chosenStat * 62 + average * 38 + 50) / 100
+            : (average * 62 + chosenStat * 38 + 50) / 100;
+        EXPECT_EQ(profile->baseStats[STAT_HP], expectedStat);
+    }
+    else
+    {
+        EXPECT_EQ(profile->parentSpeciesA, descendants[chosenRoot < 2 ? chosenRoot : chosenPhase2]);
+        EXPECT_EQ(profile->parentSpeciesB, descendants[chosenRoot >= 2 ? chosenRoot : chosenPhase2]);
+    }
+    GetMonPotentialEvolutions(&mon, &count);
+    EXPECT_EQ(count, 0);
+    EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
+        >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT, BERSERK_GENE_PHASE_COMPLETE);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
+TEST("Fusion lineage advances a unique counterpart even when both sides share its target species")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_PUPITAR, 55, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_PUPITAR;
+    profile->parentSpeciesB = SPECIES_DRAGONAIR;
+    profile->evolutionFlags = BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){
+        SPECIES_PUPITAR, 20, EVO_LEVEL | EVO_POTENTIAL_SELECTED, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){
+        SPECIES_TYRANITAR, 55, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){
+        SPECIES_DRAGONAIR, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){
+        SPECIES_TYRANITAR, 55, EVO_LEVEL | EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutionCount = 4;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_TYRANITAR);
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_TYRANITAR);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_TYRANITAR);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
 TEST("Paired Phase 1 evolution consumes both roots and resolves the fusion counterpart")
 {
     struct Pokemon mon;

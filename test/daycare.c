@@ -958,6 +958,108 @@ TEST("(Daycare) Rebreeding preserves only the fusion parent's remaining saved li
     }
 }
 
+TEST("Fusion lineage rebreeding samples only retained multi-root descendants")
+{
+    const u16 roots[] = {SPECIES_GLOOM, SPECIES_POLIWHIRL, SPECIES_KIRLIA, SPECIES_CHARMELEON};
+    const u16 descendants[] = {SPECIES_VILEPLUME, SPECIES_POLIWRATH, SPECIES_GARDEVOIR, SPECIES_CHARIZARD};
+    struct Pokemon fusionParent, otherParent;
+    struct BerserkGeneProfile *parentProfile, *childProfile;
+    struct BerserkGeneProfile savedParentProfile;
+    const struct FusionPotentialEvolution *active;
+    struct FusionPotentialEvolution expected[3];
+    u16 profileId, parentProfileId;
+    u16 geneItem = ITEM_BERSERK_GENE;
+    u8 chosenRoot = 0, parentSlot = 0;
+    u8 i, j, count, inheritedCount = 0;
+    u8 seen = 0;
+    bool8 sawRaticate = FALSE;
+
+    for (i = 0; i < ARRAY_COUNT(roots); i++)
+    {
+        PARAMETRIZE { chosenRoot = i; parentSlot = 0; }
+        PARAMETRIZE { chosenRoot = i; parentSlot = 1; }
+    }
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&fusionParent, SPECIES_ODDISH, 50, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&otherParent, SPECIES_RATTATA, 50, 0, OTID_STRUCT_PLAYER_ID);
+    parentProfileId = AllocBerserkGeneProfile();
+    parentProfile = GetBerserkGeneProfile(parentProfileId);
+    parentProfile->parentSpeciesA = SPECIES_ODDISH;
+    parentProfile->parentSpeciesB = SPECIES_RALTS;
+    parentProfile->eggGroup1 = EGG_GROUP_FIELD;
+    parentProfile->eggGroup2 = EGG_GROUP_FIELD;
+    parentProfile->potentialEvolutionCount = MAX_FUSION_POTENTIAL_EVOLUTIONS;
+    for (i = 0; i < ARRAY_COUNT(roots); i++)
+    {
+        u8 source = i >= 2 ? EVO_POTENTIAL_SOURCE_PARENT_BIT : 0;
+        parentProfile->potentialEvolutions[2 * i] = (struct FusionPotentialEvolution){roots[i], 20, EVO_LEVEL | source, 0};
+        parentProfile->potentialEvolutions[2 * i + 1] = (struct FusionPotentialEvolution){
+            descendants[i], ITEM_WATER_STONE + i, EVO_ITEM | source | EVO_POTENTIAL_PHASE_2, 0};
+        parentProfile->potentialEvolutionAge[i] = (2 * i) | ((2 * i + 1) << 4);
+    }
+    SetMonData(&fusionParent, MON_DATA_BERSERK_GENE_PROFILE_ID, &parentProfileId);
+    SetMonData(&fusionParent, MON_DATA_HELD_ITEM, &geneItem);
+    UpdateBerserkGeneProfileAfterEvolution(&fusionParent, roots[chosenRoot]);
+    SetMonData(&fusionParent, MON_DATA_SPECIES, &roots[chosenRoot]);
+    savedParentProfile = *parentProfile;
+    active = GetMonPotentialEvolutions(&fusionParent, &count);
+    EXPECT_EQ(count, ARRAY_COUNT(expected));
+    memcpy(expected, active, sizeof(expected));
+
+    StorePokemonInDaycare(&fusionParent, &gSaveBlock1Ptr->daycare.mons[parentSlot]);
+    StorePokemonInDaycare(&otherParent, &gSaveBlock1Ptr->daycare.mons[parentSlot ^ 1]);
+    EXPECT_EQ(GetBoxMonData(&gSaveBlock1Ptr->daycare.mons[parentSlot].mon, MON_DATA_HELD_ITEM), ITEM_BERSERK_GENE);
+    EXPECT_EQ(GetBoxMonData(&gSaveBlock1Ptr->daycare.mons[parentSlot].mon, MON_DATA_BERSERK_GENE_PROFILE_ID), parentProfileId);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+    GiveEggFromDaycare();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    childProfile = GetBerserkGeneProfile(profileId);
+    EXPECT(childProfile != NULL);
+    EXPECT_NE(profileId, parentProfileId);
+    EXPECT_EQ(memcmp(parentProfile, &savedParentProfile, sizeof(savedParentProfile)), 0);
+    EXPECT_EQ(childProfile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK, 0);
+    for (i = 0; i < childProfile->potentialEvolutionCount; i++)
+    {
+        const struct FusionPotentialEvolution *node = &childProfile->potentialEvolutions[i];
+        u8 age = (childProfile->potentialEvolutionAge[i / 2] >> ((i & 1) * 4)) & 0xF;
+        EXPECT_EQ(node->methodAndSourceParent & (EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SELECTED | EVO_POTENTIAL_PAIRED_WITH_SIBLING), 0);
+        if (node->targetSpecies == SPECIES_RATICATE)
+        {
+            EXPECT(!sawRaticate);
+            sawRaticate = TRUE;
+            EXPECT_EQ((node->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0, parentSlot ^ 1);
+            EXPECT_EQ(age, 0);
+            continue;
+        }
+
+        EXPECT_EQ((node->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0, parentSlot);
+        for (j = 0; j < ARRAY_COUNT(expected); j++)
+            if (node->targetSpecies == expected[j].targetSpecies)
+                break;
+        EXPECT(j < ARRAY_COUNT(expected));
+        EXPECT_EQ(seen & (1 << j), 0);
+        seen |= 1 << j;
+        EXPECT_EQ(node->param, expected[j].param);
+        EXPECT_EQ(node->conditionSetId, expected[j].conditionSetId);
+        EXPECT_EQ(node->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK, EVO_ITEM);
+        for (j = 0; j < ARRAY_COUNT(descendants); j++)
+            if (node->targetSpecies == descendants[j])
+                break;
+        EXPECT(j < ARRAY_COUNT(descendants));
+        EXPECT_EQ(age, 2 * j + 2);
+        inheritedCount++;
+    }
+    EXPECT(sawRaticate);
+    EXPECT(inheritedCount >= 1);
+    EXPECT(inheritedCount <= ARRAY_COUNT(expected));
+    EXPECT_EQ(childProfile->potentialEvolutionCount, inheritedCount + 1);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[parentSlot].mon);
+}
+
 TEST("(Daycare) Species without evolutions return a terminated empty list")
 {
     const struct Evolution *evolutions;
