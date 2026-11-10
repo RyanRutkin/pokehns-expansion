@@ -658,6 +658,51 @@ owned-mon consumers and the full-summary scene regression. Four implementation m
 remain (2-5), in the same order. External profile-storage migration remains separate and
 deferred. No manual visual/listening or live link validation was performed.
 
+## Milestone 2 checkpoint: Pokeblock feeding and Hall of Fame induction (2026-11-10)
+
+Implemented and verified:
+- The Pokeblock feeding scene loads the saved visual donor's portrait and palette (eggs
+  retain egg graphics) and snapshots the saved independent cry, including silence, when the
+  mon sprite is created. The jump-peak cry uses that snapshot; later profile changes do not
+  change it. Ordinary mons retain species-based graphics and cry playback. Nature-based jump
+  animation, Pokeblock gain, and the fed mon's data/profile are unchanged.
+- Hall of Fame induction (both the save path and the post-save replay entry) resolves each
+  displayed party mon's saved visual donor for the pic sprite, palette, and front animation,
+  and snapshots the saved independent cry at sprite creation, including silence and hidden
+  siblings. The printed info panel uses the fused display species name and the profile-aware
+  gender for valid fusion profiles; dex number, nickname, level, and OT ID remain the
+  existing nominal/record values.
+- The saved Hall of Fame record intentionally keeps the nominal species: `HallofFameMon`
+  has no room for donor/cry fields, old saves cannot carry them, and profiles may be freed
+  or reused after induction. The Hall of Fame PC viewer therefore remains a species-only
+  reference and is unchanged, consistent with the species-reference classification used by
+  prior checkpoints.
+- No gameplay values, saved layouts, profile layout, EWRAM, or IWRAM grew.
+
+Verification:
+- `make -k check BUILD=hns -j24 TESTS="Fusion Pokeblock"`: **1 passed / 6 parameter cases**
+  (ordinary, direct/hidden donors, silent cry, shiny palettes, egg), also passed through the
+  unpatched/non-headless runner. Cases drive the real feeding scene to completion and check
+  loaded portrait pixels, all 16 palette entries, exact cry tones, snapshot isolation from
+  later profile changes, Pokeblock gain, and unchanged mon/profile data.
+- `make -k check BUILD=hns -j24 TESTS="Fusion Hall of Fame"`: **1 passed / 4 parameter
+  cases**, also passed through the unpatched/non-headless runner. Cases drive the real
+  DontSaveData induction scene from entry through the credits handoff and check loaded
+  portrait pixels, shiny palettes, snapshot-isolated cry tones and silence, and the actual
+  rendered info-window pixels (fused name and profile-aware gender versus nominal), plus
+  unchanged mon/profile data. The flash-save path and PC viewer rendering are not exercised
+  by this fixture; the PC viewer is deliberately unchanged.
+- `make -k check BUILD=hns -j24 TESTS=Fusion`: **58 passed / 3 existing move TODOs**,
+  headless and through the unpatched/non-headless runner.
+- `make -k hns -j24`: passed; EWRAM **260,116 / 262,144**, IWRAM **27,644 / 32,768**,
+  ROM **31,701,460 / 33,554,432**. `git diff --check`: passed.
+
+Milestone 2 remains **in progress**. Next: classify and finish applicable contest owned-mon
+consumers (player-mon presentation versus species/link references) and the full-summary
+scene regression. Four implementation milestones remain (2-5), in the same order. External
+profile-storage migration remains separate and deferred. No manual visual/listening or live
+link validation was performed.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -668,7 +713,7 @@ validation has been completed.
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
-| 2. Remaining display/cry consumers | In progress: prior checkpoints and party form-change cries/icons verified | Finish applicable Pokeblock/contest/Hall of Fame consumers and summary-scene regression; see checkpoints above. |
+| 2. Remaining display/cry consumers | In progress: prior checkpoints plus Pokeblock feeding and Hall of Fame induction verified | Finish applicable contest consumers and summary-scene regression; see checkpoints above. |
 | 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |

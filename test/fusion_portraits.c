@@ -12,6 +12,10 @@
 #include "menu.h"
 #include "item_menu.h"
 #include "pokeblock.h"
+#include "credits.h"
+#include "hall_of_fame.h"
+#include "international_string_util.h"
+#include "strings.h"
 #include "overworld.h"
 #include "palette.h"
 #include "pokedex.h"
@@ -182,6 +186,198 @@ TEST("Fusion Pokeblock feeding displays donor portraits and snapshots independen
     gPokeblockMonId = savedMonId;
     gPokeblockGain = savedGain;
     gMain.savedCallback = savedReturn;
+    gMain.newKeys = gMain.heldKeys = 0;
+    StopCryAndClearCrySongs();
+    ResetTasks();
+    SetVBlankCallback(savedVBlank);
+    SetMainCallback2(savedCallback);
+}
+
+TEST("Fusion Hall of Fame induction displays donor portraits, fused names, and independent cries")
+{
+    struct Pokemon *savedParty;
+    struct Pokemon beforeMon;
+    struct BerserkGeneProfile *profile = NULL;
+    struct BerserkGeneProfile beforeProfile;
+    MainCallback savedCallback = gMain.callback2;
+    IntrCallback savedVBlank = gMain.vblankCallback;
+    const u8 infoColors[4] = {TEXT_COLOR_TRANSPARENT, TEXT_COLOR_WHITE, TEXT_COLOR_DARK_GRAY};
+    u8 expectedName[POKEMON_NAME_LENGTH + 1];
+    u8 text[32];
+    u8 *stringPtr, *infoPixels;
+    u32 infoSize, fontId;
+    s32 dexNumber, width;
+    u16 frame, expectedSpecies;
+    u8 mode = 0, spriteId = MAX_SPRITES, i, expectedGender;
+    bool8 shiny = FALSE, arrived = FALSE, sawCry = FALSE, sawInfo = FALSE, finished = FALSE;
+    enum PokemonCry expectedCry;
+    const u16 *palette;
+
+    PARAMETRIZE { mode = 0; shiny = FALSE; }
+    PARAMETRIZE { mode = 1; shiny = FALSE; }
+    PARAMETRIZE { mode = 2; shiny = TRUE; }
+    PARAMETRIZE { mode = 3; shiny = FALSE; }
+
+    savedParty = Alloc(sizeof(struct Pokemon) * PARTY_SIZE);
+    EXPECT(savedParty != NULL);
+    memcpy(savedParty, gPlayerParty, sizeof(struct Pokemon) * PARTY_SIZE);
+    for (i = 1; i < PARTY_SIZE; i++)
+        ZeroMonData(&gPlayerParty[i]);
+    CreateMon(&gPlayerParty[0], SPECIES_WOBBUFFET, 30, 123456, OTID_STRUCT_PLAYER_ID);
+    SetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY, &shiny);
+    if (mode)
+    {
+        profile = SetPortraitProfile(&gPlayerParty[0], mode >= 2);
+        profile->cryId = mode == 3 ? CRY_NONE : GetCryIdBySpecies(SPECIES_PIKACHU);
+        beforeProfile = *profile;
+    }
+    beforeMon = gPlayerParty[0];
+    expectedSpecies = mode ? SPECIES_JOLTEON : SPECIES_WOBBUFFET;
+    expectedCry = GetMonCryId(&gPlayerParty[0]);
+    StringCopy(expectedName, mode ? GetMonDisplaySpeciesName(&gPlayerParty[0]) : GetSpeciesName(SPECIES_WOBBUFFET));
+    expectedGender = mode ? GetMonGender(&gPlayerParty[0]) : GetGenderFromSpeciesAndPersonality(SPECIES_WOBBUFFET, 123456);
+    if (mode)
+    {
+        EXPECT(StringCompare(expectedName, GetSpeciesName(SPECIES_WOBBUFFET)) != 0);
+        EXPECT_EQ(expectedGender, MON_MALE);
+        EXPECT_EQ(GetGenderFromSpeciesAndPersonality(SPECIES_WOBBUFFET, 123456), MON_FEMALE);
+    }
+    ResetTasks();
+    StopCryAndClearCrySongs();
+    gMain.state = 0;
+    SetMainCallback2(CB2_DoHallOfFameScreenDontSaveData);
+    for (frame = 0; frame < 2500 && !finished; frame++)
+    {
+        gMain.newKeys = A_BUTTON;
+        gMain.heldKeys = A_BUTTON;
+        gMain.callback2();
+        gPaletteFade.active = FALSE;
+        if (spriteId == MAX_SPRITES)
+        {
+            for (i = 0; i < MAX_SPRITES; i++)
+            {
+                if (gSprites[i].inUse && gSprites[i].images != NULL && gSprites[i].data[7] == expectedSpecies)
+                {
+                    spriteId = i;
+                    break;
+                }
+            }
+            if (spriteId != MAX_SPRITES)
+            {
+                EXPECT_EQ(memcmp(gSprites[spriteId].images[0].data,
+                    mode ? sJolteonFront : sWobbuffetFront, MON_PIC_SIZE), 0);
+                palette = GetMonSpritePalFromSpeciesAndPersonality(expectedSpecies, shiny, 123456);
+                for (i = 0; i < 16; i++)
+                    EXPECT_EQ(gPlttBufferUnfaded[OBJ_PLTT_ID(gSprites[spriteId].oam.paletteNum) + i], palette[i]);
+                // The cry was snapshotted at sprite creation; later profile changes must not affect it.
+                if (profile != NULL)
+                    profile->cryId = GetCryIdBySpecies(SPECIES_BULBASAUR);
+            }
+        }
+        else if (!sawCry)
+        {
+            if (arrived)
+            {
+                if (!gTestRunnerHeadless && P_CRIES_ENABLED)
+                {
+                    if (expectedCry == CRY_NONE)
+                        EXPECT(gMPlay_PokemonCry == NULL || gMPlay_PokemonCry->songHeader->tone == NULL);
+                    else
+                    {
+                        EXPECT(gMPlay_PokemonCry != NULL);
+                        EXPECT_EQ(gMPlay_PokemonCry->songHeader->tone, &gCryTable[expectedCry - 1]);
+                    }
+                }
+                sawCry = TRUE;
+            }
+            else if (gSprites[spriteId].x == gSprites[spriteId].data[1]
+                && gSprites[spriteId].y == gSprites[spriteId].data[2])
+            {
+                arrived = TRUE;
+            }
+        }
+        else if (!sawInfo && gWindows[0].tileData != NULL && gWindows[0].tileData[0] != PIXEL_FILL(1))
+        {
+            infoSize = GetWindowAttribute(0, WINDOW_WIDTH) * GetWindowAttribute(0, WINDOW_HEIGHT) * TILE_SIZE_4BPP;
+            infoPixels = Alloc(infoSize);
+            EXPECT(infoPixels != NULL);
+            memcpy(infoPixels, gWindows[0].tileData, infoSize);
+            // Re-render the expected info text and compare against the snapshot.
+            FillWindowPixelBuffer(0, PIXEL_FILL(0));
+            stringPtr = StringCopy(text, gText_Number);
+            dexNumber = SpeciesToPokedexNum(SPECIES_WOBBUFFET);
+            if (dexNumber != 0xFFFF)
+            {
+                if (IsNationalPokedexEnabled())
+                {
+                    stringPtr[0] = (dexNumber / 1000) + CHAR_0;
+                    stringPtr++;
+                    dexNumber %= 1000;
+                }
+                stringPtr[0] = (dexNumber / 100) + CHAR_0;
+                stringPtr++;
+                dexNumber %= 100;
+                stringPtr[0] = (dexNumber / 10) + CHAR_0;
+                stringPtr++;
+                stringPtr[0] = (dexNumber % 10) + CHAR_0;
+                stringPtr++;
+            }
+            else
+            {
+                *(stringPtr)++ = CHAR_QUESTION_MARK;
+                *(stringPtr)++ = CHAR_QUESTION_MARK;
+                *(stringPtr)++ = CHAR_QUESTION_MARK;
+            }
+            stringPtr[0] = EOS;
+            AddTextPrinterParameterized3(0, FONT_NORMAL, 0x10, 1, infoColors, TEXT_SKIP_DRAW, text);
+            GetMonData(&beforeMon, MON_DATA_NICKNAME, text);
+            text[POKEMON_NAME_LENGTH] = EOS;
+            fontId = GetFontIdToFit(text, FONT_NORMAL, 0, 66);
+            width = GetStringRightAlignXOffset(fontId, text, 0x80);
+            AddTextPrinterParameterized3(0, fontId, width, 1, infoColors, TEXT_SKIP_DRAW, text);
+            text[0] = CHAR_SLASH;
+            text[1] = EXT_CTRL_CODE_BEGIN;
+            text[2] = EXT_CTRL_CODE_FONT;
+            text[3] = fontId;
+            stringPtr = StringCopy(text + 4, expectedName);
+            switch (expectedGender)
+            {
+            case MON_MALE:
+                *stringPtr++ = CHAR_MALE;
+                break;
+            case MON_FEMALE:
+                *stringPtr++ = CHAR_FEMALE;
+                break;
+            }
+            stringPtr[0] = EOS;
+            AddTextPrinterParameterized3(0, FONT_NORMAL, 0x80, 1, infoColors, TEXT_SKIP_DRAW, text);
+            stringPtr = StringCopy(text, gText_Level);
+            ConvertIntToDecimalStringN(stringPtr, GetMonData(&beforeMon, MON_DATA_LEVEL), STR_CONV_MODE_LEFT_ALIGN, 3);
+            AddTextPrinterParameterized3(0, FONT_NORMAL, 0x24, 0x11, infoColors, TEXT_SKIP_DRAW, text);
+            stringPtr = StringCopy(text, gText_IDNumber);
+            ConvertIntToDecimalStringN(stringPtr, (u16)GetMonData(&beforeMon, MON_DATA_OT_ID), STR_CONV_MODE_LEADING_ZEROS, 5);
+            AddTextPrinterParameterized3(0, FONT_NORMAL, 0x68, 0x11, infoColors, TEXT_SKIP_DRAW, text);
+            EXPECT_EQ(memcmp(infoPixels, gWindows[0].tileData, infoSize), 0);
+            Free(infoPixels);
+            sawInfo = TRUE;
+        }
+        m4aSoundMain();
+        if (gMain.callback2 == CB2_StartCreditsSequence)
+            finished = TRUE;
+    }
+    EXPECT_LT(spriteId, MAX_SPRITES);
+    EXPECT(sawCry);
+    EXPECT(sawInfo);
+    EXPECT(finished);
+    EXPECT_EQ(memcmp(&gPlayerParty[0], &beforeMon, sizeof(beforeMon)), 0);
+    if (profile != NULL)
+    {
+        profile->cryId = beforeProfile.cryId;
+        EXPECT_EQ(memcmp(profile, &beforeProfile, sizeof(beforeProfile)), 0);
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    }
+    memcpy(gPlayerParty, savedParty, sizeof(struct Pokemon) * PARTY_SIZE);
+    Free(savedParty);
     gMain.newKeys = gMain.heldKeys = 0;
     StopCryAndClearCrySongs();
     ResetTasks();

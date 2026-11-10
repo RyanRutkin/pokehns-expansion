@@ -4,6 +4,7 @@
 #include "palette.h"
 #include "sprite.h"
 #include "pokemon.h"
+#include "pokemon_storage_system.h"
 #include "text.h"
 #include "text_window.h"
 #include "malloc.h"
@@ -84,7 +85,7 @@ static void Task_HofPC_HandlePaletteOnExit(u8 taskId);
 static void Task_HofPC_HandleExit(u8 taskId);
 static void Task_HofPC_ExitOnButtonPress(u8 taskId);
 static void SpriteCB_GetOnScreenAndAnimate(struct Sprite *sprite);
-static void HallOfFame_PrintMonInfo(struct HallofFameMon *currMon, u8 unused1, u8 unused2);
+static void HallOfFame_PrintMonInfo(struct HallofFameMon *currMon, struct Pokemon *mon, u8 unused1, u8 unused2);
 static void HallOfFame_PrintWelcomeText(u8 unusedPossiblyWindowId, u8 unused2);
 static void HallOfFame_PrintPlayerInfo(u8 unused1, u8 unused2);
 static void Task_DoDomeConfetti(u8 taskId);
@@ -559,15 +560,28 @@ static void Task_Hof_SetMonDisplayTask(u8 taskId)
 
 #define tDestinationX  data[1]
 #define tDestinationY  data[2]
+#define tCryId         data[6]
 #define tSpecies       data[7]
 
 static void Task_Hof_DisplayMon(u8 taskId)
 {
     u8 spriteId;
     s16 startX, startY, destX, destY;
+    u16 visualSpecies;
+    s16 cryId = -1;
 
     u16 currMonId = gTasks[taskId].tDisplayedMonId;
     struct HallofFameMon *currMon = &sHofMonPtr->mon[currMonId];
+    struct Pokemon *mon = &gPlayerParty[currMonId];
+
+    visualSpecies = currMon->species;
+    if (currMon->species != SPECIES_EGG
+        && GetMonData(mon, MON_DATA_SPECIES_OR_EGG) == currMon->species
+        && GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+    {
+        visualSpecies = GetMonDisplaySpriteSpecies(mon);
+        cryId = GetMonCryId(mon);
+    }
 
     if (gTasks[taskId].tMonNumber > PARTY_SIZE / 2)
     {
@@ -587,11 +601,12 @@ static void Task_Hof_DisplayMon(u8 taskId)
     if (currMon->species == SPECIES_EGG)
         destY += 10;
 
-    spriteId = CreateMonPicSprite_Affine(currMon->species, currMon->isShiny, currMon->personality, MON_PIC_AFFINE_FRONT, startX, startY, currMonId, TAG_NONE);
+    spriteId = CreateMonPicSprite_Affine(visualSpecies, currMon->isShiny, currMon->personality, MON_PIC_AFFINE_FRONT, startX, startY, currMonId, TAG_NONE);
     gSprites[spriteId].tDestinationX = destX;
     gSprites[spriteId].tDestinationY = destY;
     gSprites[spriteId].data[0] = 0;
-    gSprites[spriteId].tSpecies = currMon->species;
+    gSprites[spriteId].tCryId = cryId;
+    gSprites[spriteId].tSpecies = visualSpecies;
     gSprites[spriteId].callback = SpriteCB_GetOnScreenAndAnimate;
     gTasks[taskId].tMonSpriteId(currMonId) = spriteId;
     ClearDialogWindowAndFrame(0, TRUE);
@@ -607,7 +622,7 @@ static void Task_Hof_PrintMonInfoAfterAnimating(u8 taskId)
     if (monSprite->callback == SpriteCallbackDummy)
     {
         monSprite->oam.affineMode = ST_OAM_AFFINE_OFF;
-        HallOfFame_PrintMonInfo(currMon, 0, 14);
+        HallOfFame_PrintMonInfo(currMon, &gPlayerParty[currMonId], 0, 14);
         gTasks[taskId].tFrameCount = 120;
         gTasks[taskId].func = Task_Hof_TryDisplayAnotherMon;
     }
@@ -981,7 +996,7 @@ static void Task_HofPC_PrintMonInfo(u8 taskId)
         StopCryAndClearCrySongs();
         PlayCry_Normal(currMon->species, 0);
     }
-    HallOfFame_PrintMonInfo(currMon, 0, 14);
+    HallOfFame_PrintMonInfo(currMon, NULL, 0, 14);
 
     gTasks[taskId].func = Task_HofPC_HandleInput;
 }
@@ -1111,12 +1126,17 @@ static void HallOfFame_PrintWelcomeText(u8 unusedPossiblyWindowId, u8 unused2)
     CopyWindowToVram(0, COPYWIN_FULL);
 }
 
-static void HallOfFame_PrintMonInfo(struct HallofFameMon *currMon, u8 unused1, u8 unused2)
+static void HallOfFame_PrintMonInfo(struct HallofFameMon *currMon, struct Pokemon *mon, u8 unused1, u8 unused2)
 {
     u8 text[max(32, POKEMON_NAME_LENGTH + 1)];
     u8 *stringPtr;
     s32 dexNumber;
     s32 width;
+    bool32 isFusion;
+
+    isFusion = mon != NULL && currMon->species != SPECIES_EGG
+        && GetMonData(mon, MON_DATA_SPECIES_OR_EGG) == currMon->species
+        && GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL;
 
     FillWindowPixelBuffer(0, PIXEL_FILL(0));
     PutWindowTilemap(0);
@@ -1171,11 +1191,14 @@ static void HallOfFame_PrintMonInfo(struct HallofFameMon *currMon, u8 unused1, u
         text[1] = EXT_CTRL_CODE_BEGIN;
         text[2] = EXT_CTRL_CODE_FONT;
         text[3] = fontId;
-        stringPtr = StringCopy(text + 4, GetSpeciesName(currMon->species));
+        if (isFusion)
+            stringPtr = StringCopy(text + 4, GetMonDisplaySpeciesName(mon));
+        else
+            stringPtr = StringCopy(text + 4, GetSpeciesName(currMon->species));
 
         if (currMon->species != SPECIES_NIDORAN_M && currMon->species != SPECIES_NIDORAN_F)
         {
-            switch (GetGenderFromSpeciesAndPersonality(currMon->species, currMon->personality))
+            switch (isFusion ? GetMonGender(mon) : GetGenderFromSpeciesAndPersonality(currMon->species, currMon->personality))
             {
             case MON_MALE:
                 stringPtr[0] = CHAR_MALE;
@@ -1365,6 +1388,8 @@ static void SpriteCB_GetOnScreenAndAnimate(struct Sprite *sprite)
 
         if (species == SPECIES_EGG)
             DoMonFrontSpriteAnimation(sprite, species, TRUE, 3);
+        else if (sprite->tCryId >= 0)
+            DoMonFrontSpriteAnimationWithCryId(sprite, species, sprite->tCryId, FALSE, 3);
         else
             DoMonFrontSpriteAnimation(sprite, species, FALSE, 3);
     }
@@ -1372,6 +1397,7 @@ static void SpriteCB_GetOnScreenAndAnimate(struct Sprite *sprite)
 
 #undef tDestinationX
 #undef tDestinationY
+#undef tCryId
 #undef tSpecies
 
 #define sSineIdx data[0]
