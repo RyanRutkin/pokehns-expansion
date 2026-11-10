@@ -3077,6 +3077,10 @@ static void LaunchKOAnimation(enum BattlerId battlerId, u16 animId, bool32 isFro
         LaunchAnimationTaskForBackSprite(&gSprites[spriteId], animId);
     }
 
+    // The animation follows the sprite donor; its cry remains independent of that choice.
+    species = GetIllusionMonSpecies(battlerId);
+    if (species == SPECIES_NONE)
+        species = gBattleMons[battlerId].species;
     PlayCry_Normal(species, CRY_PRIORITY_NORMAL);
 }
 

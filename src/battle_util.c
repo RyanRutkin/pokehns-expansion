@@ -8931,10 +8931,15 @@ bool32 CanBattlerGetOrLoseItem(enum BattlerId fromBattler, enum BattlerId battle
 
 u32 GetBattlerVisualSpecies(enum BattlerId battler)
 {
-    u32 illusionSpecies = GetIllusionMonSpecies(battler);
-    if (illusionSpecies != SPECIES_NONE)
-        return illusionSpecies;
-    return gBattleMons[battler].species;
+    struct Pokemon *mon;
+    u16 transformSpecies = gBattleSpritesDataPtr->battlerData[battler].transformSpecies;
+
+    if (transformSpecies != SPECIES_NONE)
+        return transformSpecies;
+    mon = GetIllusionMonPtr(battler);
+    if (mon == NULL)
+        mon = GetBattlerMon(battler);
+    return GetMonDisplaySpriteSpecies(mon);
 }
 
 bool32 TryClearIllusion(enum BattlerId battler, enum Ability ability)

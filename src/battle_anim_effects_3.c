@@ -3383,17 +3383,18 @@ void AnimTask_RolePlaySilhouette(u8 taskId)
     }
     else
     {
-        struct Pokemon *mon = GetBattlerMon(gBattleAnimTarget);
+        struct Pokemon *mon = GetIllusionMonPtr(gBattleAnimTarget);
+        if (mon == NULL)
+            mon = GetBattlerMon(gBattleAnimTarget);
         if (!IsOnPlayerSide(gBattleAnimAttacker))
             isBackPic = FALSE;
         else
             isBackPic = TRUE;
-        personality = GetMonData(mon, MON_DATA_PERSONALITY);
-        isShiny = GetMonData(mon, MON_DATA_IS_SHINY);
-        if (gBattleSpritesDataPtr->battlerData[gBattleAnimTarget].transformSpecies == SPECIES_NONE)
-            species = GetMonData(mon, MON_DATA_SPECIES);
-        else
-            species = gBattleSpritesDataPtr->battlerData[gBattleAnimTarget].transformSpecies;
+        personality = gBattleMons[gBattleAnimTarget].volatiles.transformed
+            ? gTransformedPersonalities[gBattleAnimTarget] : GetMonData(mon, MON_DATA_PERSONALITY);
+        isShiny = gBattleMons[gBattleAnimTarget].volatiles.transformed
+            ? gTransformedShininess[gBattleAnimTarget] : GetMonData(mon, MON_DATA_IS_SHINY);
+        species = GetBattlerVisualSpecies(gBattleAnimTarget);
 
         xOffset = -20;
     }
@@ -5274,13 +5275,14 @@ void AnimTask_SnatchOpposingMonMove(u8 taskId)
         }
         else
         {
-            struct Pokemon *mon = GetBattlerMon(gBattleAnimAttacker);
-            personality = GetMonData(mon, MON_DATA_PERSONALITY);
-            isShiny = GetMonData(mon, MON_DATA_IS_SHINY);
-            if (gBattleSpritesDataPtr->battlerData[gBattleAnimAttacker].transformSpecies == SPECIES_NONE)
-                species = GetMonData(mon, MON_DATA_SPECIES);
-            else
-                species = gBattleSpritesDataPtr->battlerData[gBattleAnimAttacker].transformSpecies;
+            struct Pokemon *mon = GetIllusionMonPtr(gBattleAnimAttacker);
+            if (mon == NULL)
+                mon = GetBattlerMon(gBattleAnimAttacker);
+            personality = gBattleMons[gBattleAnimAttacker].volatiles.transformed
+                ? gTransformedPersonalities[gBattleAnimAttacker] : GetMonData(mon, MON_DATA_PERSONALITY);
+            isShiny = gBattleMons[gBattleAnimAttacker].volatiles.transformed
+                ? gTransformedShininess[gBattleAnimAttacker] : GetMonData(mon, MON_DATA_IS_SHINY);
+            species = GetBattlerVisualSpecies(gBattleAnimAttacker);
 
             if (IsOnPlayerSide(gBattleAnimAttacker))
             {

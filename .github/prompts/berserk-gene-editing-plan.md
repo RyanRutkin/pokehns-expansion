@@ -254,11 +254,56 @@ Validation:
 - No manual emulator inspection or actual save/reload was performed; restoration coverage uses
   the saved profile and `BoxMonToMon`.
 
-Next: remaining sprite/display surfaces, especially battle visuals and evolution animation.
-Battle, hatch, and owned-Pokedex portrait paths still need donor plumbing/audit. Evolution scenes
+### Battle visual-donor checkpoint
+
+- `GetBattlerVisualSpecies` is now rendering-only: explicit Transform/form graphics take
+  precedence, then an active Illusion model's saved donor, then the actual mon's saved donor.
+  `GetIllusionMonSpecies` remains nominal for gameplay/AI consumers.
+- Battle loading uses donor front/back graphics and the matching normal/shiny palette.
+  Controller sprite templates, animations, shadows, offsets, elevation, and picture dimensions
+  follow the same visual species. Role Play/Snatch duplicate sprites also resolve the donor,
+  Illusion model personality, and transformed personality/shininess.
+- Transform copies the visible target donor without copying it into gameplay species; its
+  existing Gigantamax base-form exception remains. Illusion reveal restores the user's own donor.
+  Temporary form graphics still override the donor. Switching clears the temporary override,
+  restoring the saved donor; Substitute restoration uses the same loader.
+- Dynamax species restrictions explicitly retain their previous nominal/Illusion-species checks,
+  rather than following sprite donors. KO animation cry playback also retains its previous
+  species choice; this slice does not make the sprite donor override the independent cry trait
+  or complete the remaining cry-playback consumer audit.
+- No saved layout or persistent buffer increased.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 32 passed; three unrelated Fusion Flare/Bolt TODOs.
+  Eight new battle tests cover 21 parameter cases, including front/back loading, ordinary/legacy/
+  hidden donors, shiny palettes, dimensions, Illusion reveal, Transform, form changes,
+  switch/Substitute restoration, Role Play/Snatch animations, and nominal Dynamax restrictions.
+  Assertions compare actual loaded first-frame pixels with raw source assets and all 16 palette
+  entries (including Transform tint). Raw assets avoid stack-heavy decompressors on the battle
+  DSL's 1KB stack. Form/reveal/Substitute/duplicate-sprite fixtures force real animations in
+  headless mode; ordinary Transform already runs there.
+- `make -k check BUILD=hns -j24 TESTS="test/battle/move_effect/role_play.c"`: four passed.
+- Broader affected suites were run both with these changes and in an isolated worktree at
+  committed baseline `92f4e6574d`, with matching outcomes:
+  - `make -k check BUILD=hns -j24 TESTS="test/battle/move_effect/transform.c"`:
+    two passed, five unmatched-message failures, one TODO.
+  - `make -k check BUILD=hns -j24 TESTS="test/battle/ability/illusion.c"`:
+    five passed, three unmatched-message failures.
+  - `make -k check BUILD=hns -j24 TESTS="Dynamax"`:
+    16 passed, 67 failed, five TODOs. All 88 individual outcomes were normalized and compared
+    with the baseline, not just the totals; they match exactly.
+  - `make -k check BUILD=hns -j24 TESTS="test/battle/move_effect/snatch.c"`:
+    one passed, five unmatched-message failures, two TODOs.
+  These existing suite failures were not changed or hidden; do not claim a clean broad suite.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
+  ROM 31,697,332/33,554,432 bytes.
+- No manual emulator inspection or link-battle verification was performed.
+
+Next: evolution-animation donor handling, followed by hatch/owned-Pokedex portrait plumbing/audit.
+Evolution scenes
 must prepare the final donor exactly once without double-rolling or changing cancellation
 semantics; current read-only name previews intentionally do not roll or promise a future
-sprite/color/cry donor. This is a donor-persistence/PC checkpoint, not completed feature-wide rendering.
+sprite/color/cry donor. Battle/PC rendering is now wired, but feature-wide rendering is not complete.
 The target-species-only ambiguity described below remains shared by preview and live evolution;
 this slice does not distinguish same-target nodes with different conditions or descendants.
 Previously saved default nicknames are not automatically migrated when their newly reconstructed
