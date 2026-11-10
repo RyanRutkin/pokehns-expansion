@@ -504,6 +504,55 @@ their lifecycle/link verification. No manual visual/listening or live link valid
 performed. Four current-implementation milestones still remain (2-5); their order and count
 have not changed, and external-storage migration remains deferred.
 
+## Milestone 2 checkpoint: hatch/evolution and battle entrance/release cries
+
+The hatch/evolution checkpoint was committed as `312e40b3d8`; this entry restores the
+bookkeeping blocked by the earlier workspace-access outage.
+- Hatch reveal uses the saved independent cry, including silence, without suppressing the
+  donor's second-frame animation. Ordinary hatch cries retain species-based playback.
+- Normal and trade evolution snapshot the original and prepared future cries. Intro and
+  cancellation use the original; successful reveal uses the prepared cry before commit.
+  Tests verify unchanged live data at first reveal, exact committed profiles, silence,
+  panning, and cancellation replay.
+- The prior targeted hatch/evolution suites passed headless and non-headless. The full
+  Fusion rerun blocked at that checkpoint has now completed.
+
+Battle entrance/release checkpoint implemented:
+- Wild entrance, player slide-in, single/double ball release, fainting, and KO/recovery
+  animations use saved cries independently of visual donors, including hidden donors.
+- Presentation follows the Illusion model where the original consumer did; fainting uses
+  the actual party mon. KO/recovery playback preserves explicit temporary battle-species
+  overrides rather than substituting a donor cry.
+- Ball-release tasks snapshot the resolved cry before delayed playback. Weak modes still
+  depend on the actual battler's condition. Ordinary species/Mega behavior, doubles timing,
+  multi-battle music handling, and BGM restoration ownership remain unchanged.
+- Added mon-aware mode playback and a cry-ID release-double entry preserving existing
+  no-restore semantics. No profile-layout or runtime-memory allocation growth.
+- Real release fixtures cover both sides, silence, Illusion, weak single/double modes,
+  first/second doubles, multi battles, and profile changes after the cry is snapshotted.
+  Wild entrance tests cover portrait animation and skipped animations. Faint, slide-in,
+  and KO/recovery fixtures check exact tones and panning.
+- Full non-headless runs exposed clock-zero-only observers in existing evolution/trade
+  fixtures. They now detect tone changes/clock resets, retaining exact cry/pan/count and
+  pre-commit assertions without depending on sampling the first audio tick.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS=test/battle/fusion_visuals.c`: **12 passed**;
+  the same selector through the unpatched/non-headless runner also passed.
+- `make -k check BUILD=hns -j24 TESTS=Fusion`: **51 passed / 3 existing move TODOs**.
+- `tools/mgba-rom-test-hydra/mgba-rom-test-hydra tools/mgba/mgba-rom-test arm-none-eabi-objcopy pokehns-test.elf`
+  with the full Fusion selector: **51 passed / 3 existing move TODOs**, including actual
+  audio-tone and second-frame assertions.
+- `make -k hns -j24`: passed; EWRAM **260,116 / 262,144**, IWRAM **27,644 / 32,768**,
+  ROM **31,700,628 / 33,554,432**.
+- `git diff --check`: passed. A second full non-headless Fusion run also passed.
+
+Milestone 2 remains **in progress**. Next: move-animation cries (Growl/Roar, high pitch,
+normal, echo, Dynamax), retaining contest/species fallbacks and delayed playback identity.
+Then finish the owned-mon cry/UI audit and summary-scene regression. No manual listening,
+live link validation, or external-storage migration has been performed. Milestone order
+and count are unchanged: four current-implementation milestones remain (2-5).
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -514,7 +563,7 @@ validation has been completed.
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
-| 2. Remaining display/cry consumers | In progress: naming/trade checkpoint verified | Naming screens, trade portraits/icons/cries, shared cry-ID playback, and summary cry routing are wired. Finish evolution/hatch/battle and remaining per-mon consumer audit and regressions; see checkpoint above. |
+| 2. Remaining display/cry consumers | In progress: naming/trade, hatch/evolution, battle entrance/release checkpoints verified | These consumers and summary cry routing are wired. Finish move-animation cries, remaining per-mon consumer audit, and summary-scene regression; see checkpoints above. |
 | 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |

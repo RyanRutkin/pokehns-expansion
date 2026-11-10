@@ -2,9 +2,17 @@
 #include "battle_anim.h"
 #include "battle_dynamax.h"
 #include "battle_util.h"
+#include "battle_controllers.h"
+#include "battle_main.h"
+#include "gba/m4a_internal.h"
+#include "m4a.h"
+#include "pokeball.h"
 #include "palette.h"
 #include "pokemon_storage_system.h"
+#include "sound.h"
+#include "task.h"
 #include "test/battle.h"
+#include "test_runner.h"
 #include "constants/rgb.h"
 
 // Compare raw assets without running stack-heavy decompressors on the 1KB battle-test stack.
@@ -65,6 +73,261 @@ static void SetFusionSpriteDonor(struct Pokemon *mon, u16 donor, bool8 hidden)
         profile->potentialEvolutionCount = 2;
     }
     SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+}
+
+extern struct ToneData gCryTable[];
+extern struct MusicPlayerInfo *gMPlay_PokemonCry;
+
+static void ExpectCryTone(enum PokemonCry cryId, s8 pan)
+{
+    if (!gTestRunnerHeadless && P_CRIES_ENABLED)
+    {
+        if (cryId == CRY_NONE)
+            EXPECT(gMPlay_PokemonCry == NULL || gMPlay_PokemonCry->songHeader->tone == NULL);
+        else
+        {
+            EXPECT(gMPlay_PokemonCry != NULL);
+            EXPECT_EQ(gMPlay_PokemonCry->songHeader->tone, &gCryTable[cryId - 1]);
+            EXPECT_EQ(gPokemonCrySong.panValue, 64 + pan);
+        }
+    }
+}
+
+static void FinishTestCry(void)
+{
+    u8 frame;
+
+    StopCryAndClearCrySongs();
+    for (frame = 0; frame < 3; frame++)
+        RunTasks();
+}
+
+static void ExpectBallRelease(enum BattlerId battler, enum PokemonCry cryId, bool8 weak, u8 mode)
+{
+    struct Pokemon *mon = GetBattlerMon(battler);
+    struct PokemonCrySong expectedSong;
+    struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+    u16 frame;
+    bool8 finished = FALSE, changed = FALSE;
+    s8 pan = IsOnPlayerSide(battler) ? -25 : 25;
+
+    SetMonData(mon, MON_DATA_HP, &(u32){weak ? 1 : GetMonData(mon, MON_DATA_MAX_HP)});
+    PlayCryId_ByMode(cryId, pan, mode);
+    expectedSong = gPokemonCrySong;
+    FinishTestCry();
+    DoPokeballSendOutAnimation(battler, 0, IsOnPlayerSide(battler) ? POKEBALL_PLAYER_SENDOUT : POKEBALL_OPPONENT_SENDOUT);
+    for (frame = 0; frame < 600; frame++)
+    {
+        AnimateSprites();
+        RunTasks();
+        if (!changed && gBattleSpritesDataPtr->healthBoxesData[battler].waitForCry)
+        {
+            profile->cryId = GetCryIdBySpecies(SPECIES_EEVEE);
+            changed = TRUE;
+        }
+        if (frame > 10 && !gBattleSpritesDataPtr->healthBoxesData[battler].waitForCry
+            && !gBattleSpritesDataPtr->healthBoxesData[battler].ballAnimActive)
+        {
+            finished = TRUE;
+            break;
+        }
+        m4aSoundMain();
+    }
+    EXPECT(finished);
+    EXPECT(changed);
+    ExpectCryTone(cryId, pan);
+    EXPECT_EQ(memcmp(&gPokemonCrySong, &expectedSong, sizeof(expectedSong)), 0);
+    FinishTestCry();
+    for (frame = 0; frame < 120; frame++)
+    {
+        AnimateSprites();
+        RunTasks();
+        UpdatePaletteFade();
+        m4aSoundMain();
+    }
+}
+
+SINGLE_BATTLE_TEST("Fusion battle faint slide and KO cries separate actual and Illusion identities")
+{
+    bool8 opponentSide = FALSE, illusion = FALSE, silent = FALSE;
+
+    PARAMETRIZE { opponentSide = FALSE; illusion = FALSE; silent = FALSE; }
+    PARAMETRIZE { opponentSide = TRUE; illusion = FALSE; silent = FALSE; }
+    PARAMETRIZE { opponentSide = FALSE; illusion = TRUE; silent = FALSE; }
+    PARAMETRIZE { opponentSide = TRUE; illusion = TRUE; silent = FALSE; }
+    PARAMETRIZE { opponentSide = FALSE; illusion = TRUE; silent = TRUE; }
+    PARAMETRIZE { opponentSide = TRUE; illusion = TRUE; silent = TRUE; }
+
+    GIVEN {
+        struct Pokemon *party;
+        PLAYER(opponentSide ? SPECIES_WOBBUFFET : SPECIES_ZOROARK);
+        PLAYER(SPECIES_WOBBUFFET);
+        OPPONENT(opponentSide ? SPECIES_ZOROARK : SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_WOBBUFFET);
+        party = opponentSide ? OPPONENT_PARTY : PLAYER_PARTY;
+        SetFusionSpriteDonor(&party[0], SPECIES_FLAREON, TRUE);
+        SetFusionSpriteDonor(&party[1], SPECIES_JOLTEON, TRUE);
+        GetBerserkGeneProfile(GetMonData(&party[0], MON_DATA_BERSERK_GENE_PROFILE_ID))->cryId = silent ? CRY_NONE : GetCryIdBySpecies(SPECIES_PIKACHU);
+        GetBerserkGeneProfile(GetMonData(&party[1], MON_DATA_BERSERK_GENE_PROFILE_ID))->cryId = GetCryIdBySpecies(SPECIES_EEVEE);
+        if (!illusion)
+        {
+            struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(&party[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
+            profile->ability1 = profile->ability2 = profile->abilityHidden = ABILITY_SHADOW_TAG;
+        }
+    } WHEN {
+        TURN {}
+    } THEN {
+        enum BattlerId battler = GetBattlerAtPosition(opponentSide ? B_POSITION_OPPONENT_LEFT : B_POSITION_PLAYER_LEFT);
+        struct Pokemon *party = opponentSide ? gEnemyParty : gPlayerParty;
+        struct Sprite sprite = {0};
+        u16 frame;
+
+        EXPECT_EQ(GetIllusionMonPtr(battler), illusion ? &party[1] : NULL);
+        StopCryAndClearCrySongs();
+        sprite.data[0] = battler;
+        sprite.data[2] = GetBattlerVisualSpecies(battler);
+        sprite.data[3] = 27;
+        SpriteCB_PlayerMonSlideIn(&sprite);
+        ExpectCryTone(illusion ? GetMonCryId(&party[1]) : GetMonCryId(&party[0]), -25);
+        FinishTestCry();
+        {
+            struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(&party[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
+            enum PokemonCry savedCry = profile->cryId;
+
+            ExpectBallRelease(battler, illusion ? GetMonCryId(&party[1]) : savedCry, FALSE, CRY_MODE_NORMAL);
+            profile->cryId = savedCry;
+        }
+        AnimateMonAfterPokeBallFail(battler);
+        ExpectCryTone(illusion ? GetMonCryId(&party[1]) : GetMonCryId(&party[0]), CRY_PRIORITY_NORMAL);
+        for (frame = 0; frame < 240; frame++)
+        {
+            AnimateSprites();
+            RunTasks();
+            m4aSoundMain();
+        }
+        StopCryAndClearCrySongs();
+        BtlController_HandleFaintingCry(battler);
+        ExpectCryTone(GetMonCryId(&party[0]), opponentSide ? 25 : -25);
+        FinishTestCry();
+        ClearBoxMonBerserkGeneProfile(&party[0].box);
+        ClearBoxMonBerserkGeneProfile(&party[1].box);
+    }
+}
+
+SINGLE_BATTLE_TEST("Fusion wild entrance plays its saved cry without suppressing the portrait animation")
+{
+    bool8 silent = FALSE, skip = FALSE;
+
+    PARAMETRIZE { silent = FALSE; skip = FALSE; }
+    PARAMETRIZE { silent = TRUE; skip = FALSE; }
+    PARAMETRIZE { silent = FALSE; skip = TRUE; }
+
+    GIVEN {
+        PLAYER(SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_WOBBUFFET);
+        SetFusionSpriteDonor(&OPPONENT_PARTY[0], SPECIES_JOLTEON, TRUE);
+        GetBerserkGeneProfile(GetMonData(&OPPONENT_PARTY[0], MON_DATA_BERSERK_GENE_PROFILE_ID))->cryId = silent ? CRY_NONE : GetCryIdBySpecies(SPECIES_PIKACHU);
+    } WHEN {
+        TURN {}
+    } THEN {
+        enum BattlerId battler = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
+        struct Sprite *sprite = &gSprites[gBattlerSpriteIds[battler]];
+        u32 savedHitMarker = gHitMarker;
+        u16 savedSlideFlags = gIntroSlideFlags, frame;
+        bool8 savedFastIntro = gSaveBlock3Ptr->challengeSettings.fastIntro;
+
+        FinishTestCry();
+        gIntroSlideFlags = 0;
+        gSaveBlock3Ptr->challengeSettings.fastIntro = FALSE;
+        if (skip)
+            gHitMarker |= HITMARKER_NO_ANIMATIONS;
+        else
+            gHitMarker &= ~HITMARKER_NO_ANIMATIONS;
+        SpriteCB_WildMon(sprite);
+        sprite->callback(sprite);
+        sprite->animEnded = TRUE;
+        sprite->callback(sprite);
+        gPaletteFade.active = FALSE;
+        sprite->callback(sprite);
+        ExpectCryTone(GetMonCryId(GetBattlerMon(battler)), 25);
+        if (!skip && !gTestRunnerHeadless)
+            EXPECT_EQ(sprite->animNum, 1);
+        for (frame = 0; frame < 240; frame++)
+        {
+            AnimateSprites();
+            RunTasks();
+            m4aSoundMain();
+        }
+        FinishTestCry();
+        gHitMarker = savedHitMarker;
+        gIntroSlideFlags = savedSlideFlags;
+        gSaveBlock3Ptr->challengeSettings.fastIntro = savedFastIntro;
+        ClearBoxMonBerserkGeneProfile(&GetBattlerMon(battler)->box);
+    }
+}
+
+SINGLE_BATTLE_TEST("Fusion ball release snapshots independent cries and retains weak modes")
+{
+    bool8 opponentSide = FALSE, weak = FALSE, silent = FALSE;
+
+    PARAMETRIZE { opponentSide = FALSE; weak = FALSE; silent = FALSE; }
+    PARAMETRIZE { opponentSide = TRUE; weak = FALSE; silent = FALSE; }
+    PARAMETRIZE { opponentSide = FALSE; weak = TRUE; silent = FALSE; }
+    PARAMETRIZE { opponentSide = TRUE; weak = TRUE; silent = FALSE; }
+    PARAMETRIZE { opponentSide = FALSE; weak = FALSE; silent = TRUE; }
+    PARAMETRIZE { opponentSide = TRUE; weak = FALSE; silent = TRUE; }
+
+    GIVEN {
+        struct Pokemon *mon;
+        PLAYER(SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_WOBBUFFET);
+        mon = opponentSide ? &OPPONENT_PARTY[0] : &PLAYER_PARTY[0];
+        SetFusionSpriteDonor(mon, SPECIES_JOLTEON, TRUE);
+        GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID))->cryId = silent ? CRY_NONE : GetCryIdBySpecies(SPECIES_PIKACHU);
+    } WHEN {
+        TURN {}
+    } THEN {
+        enum BattlerId battler = GetBattlerAtPosition(opponentSide ? B_POSITION_OPPONENT_LEFT : B_POSITION_PLAYER_LEFT);
+        ExpectBallRelease(battler, GetMonCryId(GetBattlerMon(battler)), weak, weak ? CRY_MODE_WEAK : CRY_MODE_NORMAL);
+        ClearBoxMonBerserkGeneProfile(&GetBattlerMon(battler)->box);
+    }
+}
+
+DOUBLE_BATTLE_TEST("Fusion doubles release preserves first second weak and multi cry modes")
+{
+    bool8 right = FALSE, opponentSide = FALSE, weak = FALSE, multi = FALSE;
+
+    PARAMETRIZE { right = FALSE; opponentSide = FALSE; weak = FALSE; multi = FALSE; }
+    PARAMETRIZE { right = TRUE; opponentSide = FALSE; weak = FALSE; multi = FALSE; }
+    PARAMETRIZE { right = FALSE; opponentSide = TRUE; weak = TRUE; multi = FALSE; }
+    PARAMETRIZE { right = TRUE; opponentSide = TRUE; weak = TRUE; multi = FALSE; }
+    PARAMETRIZE { right = FALSE; opponentSide = FALSE; weak = TRUE; multi = TRUE; }
+    PARAMETRIZE { right = TRUE; opponentSide = FALSE; weak = TRUE; multi = TRUE; }
+    PARAMETRIZE { right = FALSE; opponentSide = TRUE; weak = FALSE; multi = TRUE; }
+    PARAMETRIZE { right = TRUE; opponentSide = TRUE; weak = FALSE; multi = TRUE; }
+
+    GIVEN {
+        PLAYER(SPECIES_WOBBUFFET);
+        PLAYER(SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_WOBBUFFET);
+        SetFusionSpriteDonor(&(opponentSide ? OPPONENT_PARTY : PLAYER_PARTY)[right], SPECIES_JOLTEON, TRUE);
+        GetBerserkGeneProfile(GetMonData(&(opponentSide ? OPPONENT_PARTY : PLAYER_PARTY)[right], MON_DATA_BERSERK_GENE_PROFILE_ID))->cryId = GetCryIdBySpecies(SPECIES_PIKACHU);
+    } WHEN {
+        TURN {}
+    } THEN {
+        enum BattlerId battler = GetBattlerAtPosition((opponentSide ? B_POSITION_OPPONENT_LEFT : B_POSITION_PLAYER_LEFT) + (right ? 2 : 0));
+        u32 savedBattleType = gBattleTypeFlags;
+        u8 mode = right ? (weak ? CRY_MODE_WEAK : CRY_MODE_NORMAL) : (weak ? CRY_MODE_WEAK_DOUBLES : CRY_MODE_DOUBLES);
+
+        if (multi)
+            gBattleTypeFlags |= BATTLE_TYPE_MULTI;
+        gBattleSpritesDataPtr->animationData->introAnimActive = TRUE;
+        ExpectBallRelease(battler, GetMonCryId(GetBattlerMon(battler)), weak, mode);
+        gBattleSpritesDataPtr->animationData->introAnimActive = FALSE;
+        gBattleTypeFlags = savedBattleType;
+        ClearBoxMonBerserkGeneProfile(&GetBattlerMon(battler)->box);
+    }
 }
 
 static void ExpectBattleSprite(enum BattlerId battler, u16 species, struct Pokemon *model, bool8 transformed)

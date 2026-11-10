@@ -3,6 +3,8 @@
 
 #include "constants/sound.h"
 
+struct Pokemon;
+
 void InitMapMusic(void);
 void MapMusicMain(void);
 void ResetMapMusic(void);
@@ -29,7 +31,9 @@ void PlayCry_NormalNoDucking(u16 species, s8 pan, s8 volume, u8 priority);
 void PlayCryId_NormalNoDucking(enum PokemonCry cryId, s8 pan, s8 volume, u8 priority);
 void PlayCry_ByMode(u16 species, s8 pan, u8 mode);
 void PlayCryId_ByMode(enum PokemonCry cryId, s8 pan, u8 mode);
+void PlayMonCry_ByMode(struct Pokemon *mon, s8 pan, u8 mode);
 void PlayCry_ReleaseDouble(u16 species, s8 pan, u8 mode);
+void PlayCryId_ReleaseDouble(enum PokemonCry cryId, s8 pan, u8 mode);
 void PlayCry_Script(u16 species, u8 mode);
 void PlayCry_DuckNoRestore(u16 species, s8 pan, u8 mode);
 void PlayCryInternal(u16 species, s8 pan, s8 volume, u8 priority, u8 mode);

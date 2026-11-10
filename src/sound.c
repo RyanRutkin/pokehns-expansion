@@ -5,6 +5,7 @@
 #include "m4a.h"
 #include "main.h"
 #include "pokemon.h"
+#include "pokemon_storage_system.h"
 #include "constants/cries.h"
 #include "constants/songs.h"
 #include "task.h"
@@ -416,6 +417,14 @@ void PlayCryId_ByMode(enum PokemonCry cryId, s8 pan, u8 mode)
     }
 }
 
+void PlayMonCry_ByMode(struct Pokemon *mon, s8 pan, u8 mode)
+{
+    if (GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+        PlayCryId_ByMode(GetMonCryId(mon), pan, mode);
+    else
+        PlayCry_ByMode(GetMonData(mon, MON_DATA_SPECIES), pan, mode);
+}
+
 // Used when releasing multiple Pokémon at once in battle.
 void PlayCry_ReleaseDouble(u16 species, s8 pan, u8 mode)
 {
@@ -429,6 +438,13 @@ void PlayCry_ReleaseDouble(u16 species, s8 pan, u8 mode)
             m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 85);
         PlayCryInternal(species, pan, CRY_VOLUME, CRY_PRIORITY_NORMAL, mode);
     }
+}
+
+void PlayCryId_ReleaseDouble(enum PokemonCry cryId, s8 pan, u8 mode)
+{
+    if (mode != CRY_MODE_DOUBLES && !(gBattleTypeFlags & BATTLE_TYPE_MULTI))
+        m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 85);
+    PlayCryIdInternal(cryId, pan, CRY_VOLUME, CRY_PRIORITY_NORMAL, mode);
 }
 
 // Duck the BGM but don't restore it. Not present in R/S

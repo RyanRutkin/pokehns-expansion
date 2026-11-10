@@ -2803,7 +2803,7 @@ void BtlController_HandleFaintingCry(enum BattlerId battler)
     else
         pan = 25;
 
-    PlayCry_ByMode(GetMonData(&party[gBattlerPartyIndexes[battler]], MON_DATA_SPECIES), pan, CRY_MODE_FAINT);
+    PlayMonCry_ByMode(&party[gBattlerPartyIndexes[battler]], pan, CRY_MODE_FAINT);
     BtlController_Complete(battler);
 }
 
@@ -3078,10 +3078,16 @@ static void LaunchKOAnimation(enum BattlerId battlerId, u16 animId, bool32 isFro
     }
 
     // The animation follows the sprite donor; its cry remains independent of that choice.
-    species = GetIllusionMonSpecies(battlerId);
-    if (species == SPECIES_NONE)
-        species = gBattleMons[battlerId].species;
-    PlayCry_Normal(species, CRY_PRIORITY_NORMAL);
+    {
+        struct Pokemon *mon = GetIllusionMonPtr(battlerId);
+
+        if (mon != NULL)
+            PlayMonCry_ByMode(mon, CRY_PRIORITY_NORMAL, CRY_MODE_NORMAL);
+        else if (gBattleMons[battlerId].species == GetMonData(GetBattlerMon(battlerId), MON_DATA_SPECIES))
+            PlayMonCry_ByMode(GetBattlerMon(battlerId), CRY_PRIORITY_NORMAL, CRY_MODE_NORMAL);
+        else
+            PlayCry_Normal(gBattleMons[battlerId].species, CRY_PRIORITY_NORMAL);
+    }
 }
 
 static u32 ReturnAnimIdForBattler(bool32 wasPlayerSideKnockedOut, u32 specificBattler)

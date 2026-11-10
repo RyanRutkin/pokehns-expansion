@@ -245,6 +245,8 @@ TEST("Fusion evolution scenes carry the exact same-target choice through the fad
     u8 direct = FALSE, cancel = FALSE, phase2 = FALSE, i;
     bool8 fusion = TRUE, silent = FALSE, sawPostCry = FALSE;
     u8 preCryCount = 0;
+    const struct ToneData *previousTone = NULL;
+    u32 previousCryClock = 0;
     enum PokemonCry preCry, postCry;
     u8 preview[POKEMON_NAME_BUFFER_SIZE];
     rng_value_t savedRng;
@@ -312,7 +314,7 @@ TEST("Fusion evolution scenes carry the exact same-target choice through the fad
             const struct ToneData *tone = gMPlay_PokemonCry->songHeader->tone;
             if (preCry != CRY_NONE && tone == &gCryTable[preCry - 1])
             {
-                if (gMPlay_PokemonCry->clock == 0)
+                if (tone != previousTone || gMPlay_PokemonCry->clock < previousCryClock)
                 {
                     EXPECT_EQ(gPokemonCrySong.panValue, 64 - 25);
                     preCryCount++;
@@ -330,7 +332,11 @@ TEST("Fusion evolution scenes carry the exact same-target choice through the fad
                 }
                 sawPostCry = TRUE;
             }
+            previousTone = tone;
+            previousCryClock = gMPlay_PokemonCry->clock;
         }
+        else
+            previousTone = NULL;
         m4aSoundMain();
         gPaletteFade.active = FALSE;
     }

@@ -7,6 +7,7 @@
 #include "m4a.h"
 #include "pokeball.h"
 #include "pokemon.h"
+#include "pokemon_storage_system.h"
 #include "sound.h"
 #include "sprite.h"
 #include "task.h"
@@ -732,6 +733,7 @@ static void SpriteCB_BallThrow_Shake(struct Sprite *sprite)
 #define tCryTaskMonSpriteId     data[4]
 #define tCryTaskMonPtr1         data[5]
 #define tCryTaskMonPtr2         data[6]
+#define tCryTaskCryId           data[7]
 #define tCryTaskFrames          data[10]
 #define tCryTaskState           data[15]
 
@@ -753,7 +755,9 @@ static void Task_PlayCryWhenReleasedFromBall(u8 taskId)
         break;
     case 1:
         // Play single cry
-        if (ShouldPlayNormalMonCry(mon) == TRUE)
+        if (gTasks[taskId].tCryTaskCryId >= 0)
+            PlayCryId_ByMode(gTasks[taskId].tCryTaskCryId, pan, ShouldPlayNormalMonCry(mon) ? CRY_MODE_NORMAL : CRY_MODE_WEAK);
+        else if (ShouldPlayNormalMonCry(mon) == TRUE)
             PlayCry_ByMode(species, pan, CRY_MODE_NORMAL);
         else
             PlayCry_ByMode(species, pan, CRY_MODE_WEAK);
@@ -769,7 +773,9 @@ static void Task_PlayCryWhenReleasedFromBall(u8 taskId)
         if (gTasks[taskId].tCryTaskFrames == 0)
         {
             // Play first doubles cry
-            if (ShouldPlayNormalMonCry(mon) == TRUE)
+            if (gTasks[taskId].tCryTaskCryId >= 0)
+                PlayCryId_ReleaseDouble(gTasks[taskId].tCryTaskCryId, pan, ShouldPlayNormalMonCry(mon) ? CRY_MODE_DOUBLES : CRY_MODE_WEAK_DOUBLES);
+            else if (ShouldPlayNormalMonCry(mon) == TRUE)
                 PlayCry_ReleaseDouble(species, pan, CRY_MODE_DOUBLES);
             else
                 PlayCry_ReleaseDouble(species, pan, CRY_MODE_WEAK_DOUBLES);
@@ -809,7 +815,9 @@ static void Task_PlayCryWhenReleasedFromBall(u8 taskId)
             break;
         }
         // Play second doubles cry
-        if (ShouldPlayNormalMonCry(mon) == TRUE)
+        if (gTasks[taskId].tCryTaskCryId >= 0)
+            PlayCryId_ReleaseDouble(gTasks[taskId].tCryTaskCryId, pan, ShouldPlayNormalMonCry(mon) ? CRY_MODE_NORMAL : CRY_MODE_WEAK);
+        else if (ShouldPlayNormalMonCry(mon) == TRUE)
             PlayCry_ReleaseDouble(species, pan, CRY_MODE_NORMAL);
         else
             PlayCry_ReleaseDouble(species, pan, CRY_MODE_WEAK);
@@ -875,6 +883,10 @@ static void SpriteCB_ReleaseMonFromBall(struct Sprite *sprite)
         else
             gTasks[taskId].tCryTaskSpecies = GetMonData(mon, MON_DATA_SPECIES);
 
+        gTasks[taskId].tCryTaskCryId = -1;
+        if (GetBerserkGeneProfile(GetMonData(illusionMon != NULL ? illusionMon : mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+            gTasks[taskId].tCryTaskCryId = GetMonCryId(illusionMon != NULL ? illusionMon : mon);
+
         gTasks[taskId].tCryTaskPan = pan;
         gTasks[taskId].tCryTaskWantedCry = wantedCryCase;
         gTasks[taskId].tCryTaskBattler = battler;
@@ -902,6 +914,7 @@ static void SpriteCB_ReleaseMonFromBall(struct Sprite *sprite)
 #undef tCryTaskMonSpriteId
 #undef tCryTaskMonPtr1
 #undef tCryTaskMonPtr2
+#undef tCryTaskCryId
 #undef tCryTaskFrames
 #undef tCryTaskState
 

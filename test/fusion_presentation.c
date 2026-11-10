@@ -194,8 +194,62 @@ TEST("Fusion cry-ID playback preserves species playback modes ducking and tone s
     PlayCryId_NormalNoDucking(cryId, -25, 60, CRY_PRIORITY_AMBIENT);
     EXPECT_EQ(memcmp(&gPokemonCrySong, &expectedSong, sizeof(expectedSong)), 0);
     EXPECT_EQ(gPokemonCryBGMDuckingCounter, 7);
+    {
+        u32 savedBattleType = gBattleTypeFlags;
+        u8 multi;
+
+        for (multi = 0; multi < 2; multi++)
+        {
+            gBattleTypeFlags = multi ? BATTLE_TYPE_MULTI : BATTLE_TYPE_DOUBLE;
+            StopCryAndClearCrySongs();
+            PlayCry_ReleaseDouble(SPECIES_PIKACHU, 25, mode);
+            expectedSong = gPokemonCrySong;
+            PlayCryId_ReleaseDouble(cryId, 25, mode);
+            EXPECT_EQ(memcmp(&gPokemonCrySong, &expectedSong, sizeof(expectedSong)), 0);
+            EXPECT_EQ(gPokemonCryBGMDuckingCounter, 7);
+        }
+        gBattleTypeFlags = savedBattleType;
+    }
     PlayCryId_NormalNoDucking(CRY_NONE, 25, 90, CRY_PRIORITY_NORMAL);
     EXPECT_EQ(memcmp(&gPokemonCrySong, &expectedSong, sizeof(expectedSong)), 0);
+    StopCryAndClearCrySongs();
+    ResetTasks();
+    gPokemonCryBGMDuckingCounter = savedDucking;
+}
+
+TEST("Fusion mon cry playback preserves ordinary and Mega modes and saved silence")
+{
+    struct Pokemon mon;
+    struct PokemonCrySong expectedSong;
+    struct BerserkGeneProfile *profile = NULL;
+    u8 mode = 0;
+    u8 savedDucking = gPokemonCryBGMDuckingCounter;
+
+    PARAMETRIZE { mode = 0; }
+    PARAMETRIZE { mode = 1; }
+    PARAMETRIZE { mode = 2; }
+    PARAMETRIZE { mode = 3; }
+
+    CreateMon(&mon, mode == 1 ? SPECIES_CHARIZARD_MEGA_X : SPECIES_WOBBUFFET, 30, 0, OTID_STRUCT_PLAYER_ID);
+    if (mode >= 2)
+    {
+        profile = SetPresentationProfile(&mon, TRUE);
+        if (mode == 3)
+            profile->cryId = CRY_NONE;
+    }
+    StopCryAndClearCrySongs();
+    if (profile != NULL)
+        PlayCryId_ByMode(profile->cryId, -25, CRY_MODE_FAINT);
+    else
+        PlayCry_ByMode(GetMonData(&mon, MON_DATA_SPECIES), -25, CRY_MODE_FAINT);
+    expectedSong = gPokemonCrySong;
+    StopCryAndClearCrySongs();
+    PlayMonCry_ByMode(&mon, -25, CRY_MODE_FAINT);
+    EXPECT_EQ(memcmp(&gPokemonCrySong, &expectedSong, sizeof(expectedSong)), 0);
+    if (!gTestRunnerHeadless && P_CRIES_ENABLED && mode != 3)
+        EXPECT_EQ(gMPlay_PokemonCry->songHeader->tone, &gCryTable[GetMonCryId(&mon) - 1]);
+    if (profile != NULL)
+        ClearBoxMonBerserkGeneProfile(&mon.box);
     StopCryAndClearCrySongs();
     ResetTasks();
     gPokemonCryBGMDuckingCounter = savedDucking;
@@ -227,6 +281,8 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     enum PokemonCry expectedArrivalCry;
     const u16 *palette;
     bool32 sawOutgoingCry = FALSE, sawIncomingCry = FALSE, sawForeignCry = FALSE, sawSecondFrame = FALSE;
+    const struct ToneData *previousTone = NULL;
+    u32 previousCryClock = 0;
 
     PARAMETRIZE { mode = 0; shiny = FALSE; }
     PARAMETRIZE { mode = 0; shiny = TRUE; }
@@ -340,7 +396,8 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
                 sawIncomingCry = TRUE;
             if (foreignProfileId && gMPlay_PokemonCry->songHeader->tone == &gCryTable[saved->incoming.cryId - 1])
                 sawForeignCry = TRUE;
-            if (prepared && gMPlay_PokemonCry->clock == 0)
+            if (prepared && (gMPlay_PokemonCry->songHeader->tone != previousTone
+                || gMPlay_PokemonCry->clock < previousCryClock))
             {
                 const struct ToneData *tone = gMPlay_PokemonCry->songHeader->tone;
                 if (tone == &gCryTable[saved->incoming.cryId - 1])
@@ -360,7 +417,11 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
                     EXPECT_EQ(tone, &gCryTable[saved->prepared.cryId - 1]);
                 }
             }
+            previousTone = gMPlay_PokemonCry->songHeader->tone;
+            previousCryClock = gMPlay_PokemonCry->clock;
         }
+        else
+            previousTone = NULL;
         m4aSoundMain();
         if (gSprites[spriteId].animNum == 1)
             sawSecondFrame = TRUE;

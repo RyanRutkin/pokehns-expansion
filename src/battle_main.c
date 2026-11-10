@@ -44,6 +44,7 @@
 #include "pokeball.h"
 #include "pokedex.h"
 #include "pokemon.h"
+#include "pokemon_storage_system.h"
 #include "pokerus.h"
 #include "random.h"
 #include "randomizer.h"
@@ -2845,7 +2846,20 @@ static void SpriteCB_WildMonAnimate(struct Sprite *sprite)
 {
     if (!gPaletteFade.active)
     {
-        BattleAnimateFrontSprite(sprite, sprite->sSpeciesId, FALSE, 1);
+        struct Pokemon *mon = GetIllusionMonPtr(sprite->sBattler);
+
+        if (mon == NULL)
+            mon = GetBattlerMon(sprite->sBattler);
+        if (GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+        {
+            u8 panMode = 1;
+
+            if (gHitMarker & HITMARKER_NO_ANIMATIONS && !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK)))
+                panMode |= SKIP_FRONT_ANIM;
+            DoMonFrontSpriteAnimationWithCryId(sprite, sprite->sSpeciesId, GetMonCryId(mon), FALSE, panMode);
+        }
+        else
+            BattleAnimateFrontSprite(sprite, sprite->sSpeciesId, FALSE, 1);
     }
 }
 
@@ -3105,7 +3119,13 @@ void SpriteCB_PlayerMonSlideIn(struct Sprite *sprite)
         sprite->x = sprite->data[4];
         sprite->data[4] = 0;
         sprite->callback = SpriteCB_PlayerMonFromBall;
-        PlayCry_ByMode(sprite->sSpeciesId, -25, CRY_MODE_NORMAL);
+        {
+            struct Pokemon *mon = GetIllusionMonPtr(sprite->sBattler);
+
+            if (mon == NULL)
+                mon = GetBattlerMon(sprite->sBattler);
+            PlayMonCry_ByMode(mon, -25, CRY_MODE_NORMAL);
+        }
     }
 }
 
