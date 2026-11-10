@@ -4,6 +4,7 @@
 #include "bg.h"
 #include "blit.h"
 #include "decompress.h"
+extern s32 Test_MgbaPrintf(const char *fmt, ...);
 
 COMMON_DATA void *gWindowBgTilemapBuffers[NUM_BACKGROUNDS] = {0};
 extern u32 gWindowTileAutoAllocEnabled;
@@ -214,6 +215,7 @@ int AddWindowWithoutTileMap(const struct WindowTemplate *template)
 void RemoveWindow(u32 windowId)
 {
     u32 bgLayer = gWindows[windowId].window.bg;
+    Test_MgbaPrintf("RemoveWindow %d", windowId);
 
     if (gWindowTileAutoAllocEnabled == TRUE)
         BgTileAllocOp(bgLayer, gWindows[windowId].window.baseBlock, gWindows[windowId].window.width * gWindows[windowId].window.height, 2);
@@ -252,6 +254,7 @@ void RemoveAllWindowsOnBg(u32 bgId)
 
 void FreeAllWindowBuffers(void)
 {
+    Test_MgbaPrintf("FreeAllWindowBuffers");
     int i;
 
     for (i = 0; i < NUM_BACKGROUNDS; ++i)

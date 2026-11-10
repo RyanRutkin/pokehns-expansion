@@ -22,6 +22,7 @@
 #include "pokedex_plus_hgss.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
+#include "pokemon_summary_screen.h"
 #include "sound.h"
 #include "sprite.h"
 #include "string_util.h"
@@ -80,6 +81,183 @@ static void FieldPortraitVBlank(void)
 
 static void FeedingPortraitReturn(void)
 {
+}
+
+static void SummaryPortraitReturn(void)
+{
+}
+
+#define SUMMARY_SPECIES_WINDOW_ID 19 // PSS_LABEL_WINDOW_PORTRAIT_SPECIES
+
+TEST("Fusion summary screens display donor portraits, fused names, and independent cries")
+{
+    struct Pokemon savedMon = gPlayerParty[0], beforeMon;
+    struct BoxPokemon savedBoxMon;
+    struct BerserkGeneProfile *profile = NULL;
+    struct BerserkGeneProfile beforeProfile;
+    MainCallback savedCallback = gMain.callback2;
+    IntrCallback savedVBlank = gMain.vblankCallback;
+    const u8 colorsNormal[3] = {0, 1, 2};
+    const u8 colorsMale[3] = {0, 7, 8};
+    const u8 colorsFemale[3] = {0, 9, 10};
+    u8 expectedName[POKEMON_NAME_LENGTH + 1];
+    u8 text[32];
+    u8 *stringPtr, *infoPixels;
+    const u8 *picBuffer;
+    u32 infoSize, fontId, paletteSlot, j;
+    u16 frame, expectedSpecies;
+    u8 mode = 0, spriteId = MAX_SPRITES, i, expectedGender, framesSinceSprite = 0;
+    bool8 shiny = FALSE, boxMon = FALSE, sawCry = FALSE, sawName = FALSE, finished = FALSE;
+    enum PokemonCry expectedCry;
+    const u16 *palette;
+
+    PARAMETRIZE { mode = 0; shiny = FALSE; }
+    PARAMETRIZE { mode = 1; shiny = FALSE; }
+    PARAMETRIZE { mode = 2; shiny = TRUE; }
+    PARAMETRIZE { mode = 3; shiny = FALSE; }
+    //PARAMETRIZE { mode = 2; shiny = TRUE; boxMon = TRUE; }
+
+    CreateMon(&gPlayerParty[0], SPECIES_WOBBUFFET, 30, 123456, OTID_STRUCT_PLAYER_ID);
+    SetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY, &shiny);
+    if (mode)
+    {
+        profile = SetPortraitProfile(&gPlayerParty[0], mode >= 2);
+        profile->cryId = mode == 3 ? CRY_NONE : GetCryIdBySpecies(SPECIES_PIKACHU);
+        beforeProfile = *profile;
+    }
+    beforeMon = gPlayerParty[0];
+    savedBoxMon = gPokemonStoragePtr->boxes[0][0];
+    if (boxMon)
+        gPokemonStoragePtr->boxes[0][0] = gPlayerParty[0].box;
+    expectedSpecies = mode ? SPECIES_JOLTEON : SPECIES_WOBBUFFET;
+    expectedCry = GetMonCryId(&gPlayerParty[0]);
+    StringCopy(expectedName, mode ? GetMonDisplaySpeciesName(&gPlayerParty[0]) : GetSpeciesName(SPECIES_WOBBUFFET));
+    expectedGender = mode ? GetMonGender(&gPlayerParty[0]) : GetGenderFromSpeciesAndPersonality(SPECIES_WOBBUFFET, 123456);
+    if (mode)
+        EXPECT(StringCompare(expectedName, GetSpeciesName(SPECIES_WOBBUFFET)) != 0);
+    ResetTasks();
+    StopCryAndClearCrySongs();
+    gMain.newKeys = gMain.heldKeys = 0;
+    if (boxMon)
+        ShowPokemonSummaryScreen(SUMMARY_MODE_BOX, gPokemonStoragePtr->boxes[0], 0, 0, SummaryPortraitReturn);
+    else
+        ShowPokemonSummaryScreen(SUMMARY_MODE_NORMAL, gPlayerParty, 0, 0, SummaryPortraitReturn);
+    Test_MgbaPrintf("show ok");
+    for (frame = 0; frame < 1200 && !finished; frame++)
+    {
+        if ((frame % 100) == 0)
+            Test_MgbaPrintf("frame %d", frame);
+        if (sawCry && sawName)
+        {
+            gMain.newKeys = B_BUTTON;
+            gMain.heldKeys = B_BUTTON;
+        }
+        gMain.callback2();
+        gPaletteFade.active = FALSE;
+        if (spriteId == MAX_SPRITES)
+        {
+            for (i = 0; i < MAX_SPRITES; i++)
+            {
+                if (gSprites[i].inUse && gSprites[i].x == 40 && gSprites[i].y == 64
+                    && gSprites[i].data[0] == expectedSpecies)
+                {
+                    spriteId = i;
+                    break;
+                }
+            }
+            if (spriteId != MAX_SPRITES)
+            {
+                Test_MgbaPrintf("sprite %d at frame %d", spriteId, frame);
+                if (gMonSpritesGfxPtr != NULL)
+                    picBuffer = gMonSpritesGfxPtr->spritesGfx[B_POSITION_OPPONENT_LEFT];
+                else
+                    picBuffer = MonSpritesGfxManager_GetSpritePtr(MON_SPR_GFX_MANAGER_A, B_POSITION_OPPONENT_LEFT);
+                EXPECT_EQ(memcmp(picBuffer, mode ? sJolteonFront : sWobbuffetFront, MON_PIC_SIZE), 0);
+                paletteSlot = IndexOfSpritePaletteTag(expectedSpecies);
+                EXPECT_NE(paletteSlot, 0xFF);
+                palette = GetMonSpritePalFromSpeciesAndPersonality(expectedSpecies, shiny, 123456);
+                for (i = 0; i < 16; i++)
+                    EXPECT_EQ(gPlttBufferUnfaded[OBJ_PLTT_ID(paletteSlot) + i], palette[i]);
+            }
+        }
+        else if (!sawCry)
+        {
+            // The portrait cry plays on the first non-fade frame after the sprite exists.
+            if (++framesSinceSprite >= 2)
+            {
+                if (!gTestRunnerHeadless && P_CRIES_ENABLED)
+                {
+                    if (expectedCry == CRY_NONE)
+                        EXPECT(gMPlay_PokemonCry == NULL || gMPlay_PokemonCry->songHeader->tone == NULL);
+                    else
+                    {
+                        EXPECT(gMPlay_PokemonCry != NULL);
+                        EXPECT_EQ(gMPlay_PokemonCry->songHeader->tone, &gCryTable[expectedCry - 1]);
+                    }
+                }
+                sawCry = TRUE;
+                Test_MgbaPrintf("cry done frame %d", frame);
+            }
+        }
+        else if (!sawName && gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData != NULL)
+        {
+            infoSize = GetWindowAttribute(SUMMARY_SPECIES_WINDOW_ID, WINDOW_WIDTH)
+                * GetWindowAttribute(SUMMARY_SPECIES_WINDOW_ID, WINDOW_HEIGHT) * TILE_SIZE_4BPP;
+            if ((frame % 100) == 3)
+                Test_MgbaPrintf("win size %d t0 %d t64 %d", infoSize,
+                    gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData[0],
+                    gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData[64]);
+            for (j = 0; j < infoSize; j++)
+            {
+                if (gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData[j] != 0)
+                    break;
+            }
+            if (j < infoSize)
+            {
+                infoPixels = Alloc(infoSize);
+                EXPECT(infoPixels != NULL);
+                memcpy(infoPixels, gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData, infoSize);
+                // Re-render the expected level, fused name, and gender, then compare.
+                FillWindowPixelBuffer(SUMMARY_SPECIES_WINDOW_ID, PIXEL_FILL(0));
+                stringPtr = StringCopy(text, gText_LevelSymbol);
+                ConvertIntToDecimalStringN(stringPtr, GetMonData(&beforeMon, MON_DATA_LEVEL), STR_CONV_MODE_LEFT_ALIGN, 3);
+                AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 24, 17, 0, 0, colorsNormal, 0, text);
+                AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 0, 1, 0, 0, colorsNormal, 0, gText_Slash);
+                fontId = GetFontIdToFit(expectedName, FONT_NORMAL, 0,
+                    GetWindowAttribute(SUMMARY_SPECIES_WINDOW_ID, WINDOW_WIDTH) * 8 - 9);
+                AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, fontId, 6, 1, 0, 0, colorsNormal, 0, expectedName);
+                if (expectedGender == MON_MALE)
+                    AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 57, 17, 0, 0, colorsMale, 0, gText_MaleSymbol);
+                else if (expectedGender == MON_FEMALE)
+                    AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 57, 17, 0, 0, colorsFemale, 0, gText_FemaleSymbol);
+                EXPECT_EQ(memcmp(infoPixels, gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData, infoSize), 0);
+                Free(infoPixels);
+                sawName = TRUE;
+                Test_MgbaPrintf("name done frame %d", frame);
+            }
+        }
+        m4aSoundMain();
+
+        if (gMain.callback2 == SummaryPortraitReturn)
+            finished = TRUE;
+    }
+    EXPECT_LT(spriteId, MAX_SPRITES);
+    EXPECT(sawCry);
+    EXPECT(sawName);
+    EXPECT(finished);
+    EXPECT_EQ(memcmp(&gPlayerParty[0], &beforeMon, sizeof(beforeMon)), 0);
+    if (profile != NULL)
+    {
+        EXPECT_EQ(memcmp(profile, &beforeProfile, sizeof(beforeProfile)), 0);
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    }
+    gPokemonStoragePtr->boxes[0][0] = savedBoxMon;
+    gPlayerParty[0] = savedMon;
+    gMain.newKeys = gMain.heldKeys = 0;
+    StopCryAndClearCrySongs();
+    ResetTasks();
+    SetVBlankCallback(savedVBlank);
+    SetMainCallback2(savedCallback);
 }
 
 TEST("Fusion Pokeblock feeding displays donor portraits and snapshots independent cries")

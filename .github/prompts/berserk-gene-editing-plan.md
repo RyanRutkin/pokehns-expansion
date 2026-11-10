@@ -703,6 +703,20 @@ scene regression. Four implementation milestones remain (2-5), in the same order
 profile-storage migration remains separate and deferred. No manual visual/listening or live
 link validation was performed.
 
+### Contest classification (user decision, 2026-11-10)
+
+All contest surfaces remain species-only references; no code changes. Rationale and scope:
+- `gContestMons` are standalone `ContestPokemon` copies, also transmitted raw over the link,
+  so remote entries can never resolve local fusion profiles.
+- Museum paintings and saved `ContestWinner` records have no room for donor/cry data, the
+  same constraint that kept the Hall of Fame PC viewer species-only.
+- The user explicitly chose to keep the player's own contestant species-only as well:
+  appeal slide-in/back sprite, winner slide-in portrait and cry, the contest entry mon pic
+  special, appeal move-animation cries (already species-based from the move-anim checkpoint),
+  paintings, and saved winner records all retain nominal species presentation.
+This supersedes any plan to resolve the player's contestant through
+`gContestMonPartyIndex`. Contest consumers are complete for milestone 2 by classification.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -713,7 +727,7 @@ validation has been completed.
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
-| 2. Remaining display/cry consumers | In progress: prior checkpoints plus Pokeblock feeding and Hall of Fame induction verified | Finish applicable contest consumers and summary-scene regression; see checkpoints above. |
+| 2. Remaining display/cry consumers | In progress: prior checkpoints plus Pokeblock feeding and Hall of Fame induction verified; contests classified species-only by user decision | Finish the full-summary scene regression; see checkpoints above. |
 | 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |
