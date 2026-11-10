@@ -940,10 +940,14 @@ const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon 
 void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies);
 // Preparation rolls traits on a copy; discard it to cancel. Commit consumes no RNG.
 bool8 PrepareBerserkGeneProfileEvolution(struct Pokemon *mon, u16 targetSpecies, struct BerserkGeneProfile *prepared);
+// Choices are ordinals in GetMonPotentialEvolutions, valid until the profile changes.
+bool8 PrepareBerserkGeneProfileEvolutionForChoice(struct Pokemon *mon, u16 targetSpecies, u8 choice, struct BerserkGeneProfile *prepared);
+#define FUSION_EVOLUTION_CHOICE_NONE 0xFF
 void CommitBerserkGeneProfileEvolution(struct Pokemon *mon, const struct BerserkGeneProfile *prepared);
 u16 GetBerserkGeneSpriteSpecies(const struct BerserkGeneProfile *profile, u16 fallbackSpecies);
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon);
 const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpecies);
+const u8 *GetMonEvolutionDisplaySpeciesNameForChoice(struct Pokemon *mon, u16 targetSpecies, u8 choice);
 u16 GetMonDisplaySpriteSpecies(struct Pokemon *mon);
 u16 GetBoxMonDisplaySpriteSpecies(struct BoxPokemon *boxMon);
 const u8 *GetMonDisplayCategory(struct Pokemon *mon);
@@ -971,6 +975,7 @@ u8 GetNatureFromPersonality(u32 personality);
 u32 GetGMaxTargetSpecies(u32 species);
 bool32 DoesMonMeetAdditionalConditions(struct Pokemon *mon, const struct EvolutionParam *params, struct Pokemon *tradePartner, u32 partyId, bool32 *canStopEvo, enum EvoState evoState);
 u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 evolutionItem, struct Pokemon *tradePartner, bool32 *canStopEvo, enum EvoState evoState);
+u32 GetEvolutionTargetSpeciesWithChoice(struct Pokemon *mon, enum EvolutionMode mode, u16 evolutionItem, struct Pokemon *tradePartner, bool32 *canStopEvo, enum EvoState evoState, u8 *fusionChoice);
 bool8 IsMonPastEvolutionLevel(struct Pokemon *mon);
 u16 NationalPokedexNumToSpecies(enum NationalDexOrder nationalNum);
 u32 NationalToRegionalOrder(enum NationalDexOrder nationalNum);

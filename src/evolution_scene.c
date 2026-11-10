@@ -75,10 +75,10 @@ static void StopBgAnimation(void);
 static void Task_AnimateBg(u8 taskId);
 static void RestoreBgAfterAnim(void);
 
-static void PrepareEvolutionAppearance(struct Pokemon *mon, u16 targetSpecies)
+static void PrepareEvolutionAppearance(struct Pokemon *mon, u16 targetSpecies, u8 fusionChoice)
 {
     sEvoStructPtr->preEvoSpriteSpecies = GetMonDisplaySpriteSpecies(mon);
-    sEvoStructPtr->hasPreparedProfile = PrepareBerserkGeneProfileEvolution(mon, targetSpecies,
+    sEvoStructPtr->hasPreparedProfile = PrepareBerserkGeneProfileEvolutionForChoice(mon, targetSpecies, fusionChoice,
         &sEvoStructPtr->preparedProfile);
     sEvoStructPtr->postEvoSpriteSpecies = sEvoStructPtr->hasPreparedProfile
         ? GetBerserkGeneSpriteSpecies(&sEvoStructPtr->preparedProfile, targetSpecies) : targetSpecies;
@@ -190,6 +190,7 @@ static void CB2_BeginEvolutionScene(void)
 #define tLearnMoveNoState   data[8]
 #define tEvoWasStopped      data[9]
 #define tPartyId            data[10]
+#define tFusionChoice       data[11]
 
 #define TASK_BIT_CAN_STOP       (1 << 0)
 #define TASK_BIT_LEARN_MOVE     (1 << 7)
@@ -209,6 +210,7 @@ static void Task_BeginEvolutionScene(u8 taskId)
             u16 postEvoSpecies;
             bool8 canStopEvo;
             u8 partyId;
+            u8 fusionChoice = gTasks[taskId].tFusionChoice;
 
             mon = &gPlayerParty[gTasks[taskId].tPartyId];
             postEvoSpecies = gTasks[taskId].tPostEvoSpecies;
@@ -216,23 +218,24 @@ static void Task_BeginEvolutionScene(u8 taskId)
             partyId = gTasks[taskId].tPartyId;
 
             DestroyTask(taskId);
-            EvolutionScene(mon, postEvoSpecies, canStopEvo, partyId);
+            EvolutionScene(mon, postEvoSpecies, canStopEvo, partyId, fusionChoice);
         }
         break;
     }
 }
 
-void BeginEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u8 partyId)
+void BeginEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u8 partyId, u8 fusionChoice)
 {
     u8 taskId = CreateTask(Task_BeginEvolutionScene, 0);
     gTasks[taskId].tState = 0;
     gTasks[taskId].tPostEvoSpecies = postEvoSpecies;
     gTasks[taskId].tCanStop = canStopEvo;
     gTasks[taskId].tPartyId = partyId;
+    gTasks[taskId].tFusionChoice = fusionChoice;
     SetMainCallback2(CB2_BeginEvolutionScene);
 }
 
-void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u8 partyId)
+void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u8 partyId, u8 fusionChoice)
 {
     u8 name[POKEMON_NAME_BUFFER_SIZE];
     u16 currSpecies;
@@ -275,12 +278,12 @@ void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u
     gReservedSpritePaletteCount = 4;
 
     sEvoStructPtr = AllocZeroed(sizeof(struct EvoInfo));
-    PrepareEvolutionAppearance(mon, postEvoSpecies);
+    PrepareEvolutionAppearance(mon, postEvoSpecies, fusionChoice);
     AllocateMonSpritesGfx();
 
     GetMonData(mon, MON_DATA_NICKNAME, name);
     StringCopy_Nickname(gStringVar1, name);
-    StringCopy(gStringVar2, GetMonEvolutionDisplaySpeciesName(mon, postEvoSpecies));
+    StringCopy(gStringVar2, GetMonEvolutionDisplaySpeciesNameForChoice(mon, postEvoSpecies, fusionChoice));
 
     // preEvo sprite
     currSpecies = GetMonData(mon, MON_DATA_SPECIES);
@@ -494,7 +497,7 @@ static void CB2_TradeEvolutionSceneLoadGraphics(void)
     }
 }
 
-void TradeEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, u8 preEvoSpriteId, u8 partyId)
+void TradeEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, u8 preEvoSpriteId, u8 partyId, u8 fusionChoice)
 {
     u8 name[POKEMON_NAME_BUFFER_SIZE];
     u16 currSpecies;
@@ -504,7 +507,7 @@ void TradeEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, u8 preEvoSprit
 
     GetMonData(mon, MON_DATA_NICKNAME, name);
     StringCopy_Nickname(gStringVar1, name);
-    StringCopy(gStringVar2, GetMonEvolutionDisplaySpeciesName(mon, postEvoSpecies));
+    StringCopy(gStringVar2, GetMonEvolutionDisplaySpeciesNameForChoice(mon, postEvoSpecies, fusionChoice));
 
     gAffineAnimsDisabled = TRUE;
 
@@ -514,7 +517,7 @@ void TradeEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, u8 preEvoSprit
     isShiny = GetMonData(mon, MON_DATA_IS_SHINY);
 
     sEvoStructPtr = AllocZeroed(sizeof(struct EvoInfo));
-    PrepareEvolutionAppearance(mon, postEvoSpecies);
+    PrepareEvolutionAppearance(mon, postEvoSpecies, fusionChoice);
     sEvoStructPtr->preEvoSpriteId = preEvoSpriteId;
 
     // The incoming trade sprite owns the right-side buffer; retain its id and palette slot.
@@ -1526,6 +1529,7 @@ static void Task_TradeEvolutionScene(u8 taskId)
 #undef tLearnMoveNoState
 #undef tEvoWasStopped
 #undef tPartyId
+#undef tFusionChoice
 
 static void EvoDummyFunc(void)
 {

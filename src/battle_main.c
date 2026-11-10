@@ -5983,10 +5983,12 @@ static void TryEvolvePokemon(void)
 
             if (species != SPECIES_NONE)
             {
+                u8 fusionChoice;
+
                 FreeAllWindowBuffers();
                 gBattleMainFunc = WaitForEvoSceneToFinish;
-                GetEvolutionTargetSpecies(&gPlayerParty[i], mode, evolutionItemArg, NULL, &canStopEvo, DO_EVO);
-                EvolutionScene(&gPlayerParty[i], species, canStopEvo, i);
+                GetEvolutionTargetSpeciesWithChoice(&gPlayerParty[i], mode, evolutionItemArg, NULL, &canStopEvo, DO_EVO, &fusionChoice);
+                EvolutionScene(&gPlayerParty[i], species, canStopEvo, i, fusionChoice);
                 return;
             }
         }

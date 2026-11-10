@@ -5900,11 +5900,12 @@ void ItemUseCB_RareCandy(u8 taskId, TaskFunc task)
 
         if (targetSpecies != SPECIES_NONE)
         {
-            GetEvolutionTargetSpecies(mon, EVO_MODE_NORMAL, ITEM_NONE, NULL, &canStopEvo, DO_EVO);
+            u8 fusionChoice;
+            GetEvolutionTargetSpeciesWithChoice(mon, EVO_MODE_NORMAL, ITEM_NONE, NULL, &canStopEvo, DO_EVO, &fusionChoice);
             RemoveBagItem(gSpecialVar_ItemId, 1);
             FreePartyPointers();
             gCB2_AfterEvolution = gPartyMenu.exitCallback;
-            BeginEvolutionScene(mon, targetSpecies, canStopEvo, gPartyMenu.slotId);
+            BeginEvolutionScene(mon, targetSpecies, canStopEvo, gPartyMenu.slotId, fusionChoice);
             DestroyTask(taskId);
         }
         else
@@ -6089,13 +6090,14 @@ static void PartyMenuTryEvolution(u8 taskId)
 
     if (targetSpecies != SPECIES_NONE)
     {
-        GetEvolutionTargetSpecies(mon, EVO_MODE_NORMAL, ITEM_NONE, NULL, &canStopEvo, DO_EVO);
+        u8 fusionChoice;
+        GetEvolutionTargetSpeciesWithChoice(mon, EVO_MODE_NORMAL, ITEM_NONE, NULL, &canStopEvo, DO_EVO, &fusionChoice);
         FreePartyPointers();
         if (GetItemFieldFunc(gSpecialVar_ItemId) == ItemUseOutOfBattle_RareCandy && gPartyMenu.menuType == PARTY_MENU_TYPE_FIELD && CheckBagHasItem(gSpecialVar_ItemId, 1))
             gCB2_AfterEvolution = CB2_ReturnToPartyMenuUsingRareCandy;
         else
             gCB2_AfterEvolution = gPartyMenu.exitCallback;
-        BeginEvolutionScene(mon, targetSpecies, canStopEvo, gPartyMenu.slotId);
+        BeginEvolutionScene(mon, targetSpecies, canStopEvo, gPartyMenu.slotId, fusionChoice);
         DestroyTask(taskId);
     }
     else

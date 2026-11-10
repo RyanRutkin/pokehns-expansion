@@ -1,6 +1,6 @@
 # Berserk Gene Editing — Implementation Plan (finalized)
 
-Status: IMPLEMENTATION IN PROGRESS; latest checkpoint is the 2026-11-10 hatch/portrait checkpoint below.
+Status: IMPLEMENTATION IN PROGRESS; milestone 1 is complete at the 2026-11-10 same-target checkpoint below.
 This file consolidates `berserk-gene-editing-prompt-1.md` and `beserk-gene-editing-prompt-1-answers.md`
 plus the resulting plan and decisions. Resume implementation from here when prompted.
 
@@ -385,12 +385,11 @@ Validation:
 - No manual visual inspection or live link verification was performed. Cry/size subpage
   navigation was audited through the shared factory but not exercised in the new UI fixture.
 
-Next: same-target evolution-node attribution. Battle/PC/evolution/hatch/owned-Pokedex portrait
+Rendering status after the hatch checkpoint: Battle/PC/evolution/hatch/owned-Pokedex portrait
 rendering is wired, but feature-wide rendering/cry auditing is not complete. In particular,
 naming-screen icons/titles and the surrounding trade presentation still need a separate consumer
 audit; this checkpoint does not change those species-only interfaces.
-The target-species-only ambiguity described below remains shared by preview and live evolution;
-this slice does not distinguish same-target nodes with different conditions or descendants.
+The same-target attribution gap from this checkpoint is resolved by the following checkpoint.
 Previously saved default nicknames are not automatically migrated when their newly reconstructed
 species name differs: preserve existing nicknames until a deliberate migration policy is chosen.
 Older saved fusion profiles
@@ -398,11 +397,82 @@ already contain a growth curve, but their existing EXP may have been earned on t
 curve before these consumers honored the stored value. No legacy EXP migration is performed here;
 audit/decide migration before treating old-save behavior as release-ready. Summary/battle UI code
 was compiled, but the summary screen has not been manually inspected in an emulator.
-Exact root
-attribution when different roots share a target species but have different conditions/descendants
-still needs dedicated coverage: the update API currently receives only the target species.
 Rebreeding of the remaining non-lineage override traits also remains to be audited. The entire Berserk Gene
 feature is not complete.
+
+### Same-target evolution attribution checkpoint (2026-11-10; milestone 1 complete)
+
+- Added an explicit transient choice ordinal returned alongside the target species by
+  `GetEvolutionTargetSpeciesWithChoice`. It identifies the exact condition-matched entry in
+  `GetMonPotentialEvolutions`, not a target-species lookup or a shared pending-choice cache.
+  Selection order and condition side effects remain unchanged. The ordinal is valid until the
+  profile changes; ordinary/unsuccessful checks return `FUSION_EVOLUTION_CHOICE_NONE`.
+- The existing active-choice projector optionally maps ordinals back to saved node indices.
+  Preparation and read-only previews use that mapping, validating target/active membership
+  before mutation. This preserves same-side duplicate roots with different descendants,
+  opposite-side choices with the same target, and exact Phase 2 descendant selection.
+  Legacy retained but inactive Phase 2 groups cannot intercept an earlier target match.
+- All scene-launch paths now pass the selected ordinal from their `DO_EVO` check: post-battle,
+  Rare Candy/party evolution, evolution stones, script/special entry points, in-game party/PC
+  trades, and link-trade evolution. The fade task retains it until preparation; normal/trade
+  scenes prepare once and use the same choice for evolution text. No condition recheck is
+  needed after the trigger consumes a held item. Existing prepared-profile commit/discard
+  semantics, appearance roll count, growth, EXP, and save layout remain unchanged.
+- The owned-Pokedex evolution list previews each actual row's ordinal, so different rows with
+  identical target species can show different fused names. Previews remain RNG-free and do not
+  overwrite live profiles, mons, cached projections, or another caller's explicit choice.
+- Existing target-only helpers remain deterministic compatibility wrappers selecting the first
+  active matching target; they cannot identify a condition-matched duplicate by themselves.
+  Production trigger/scene paths and row-specific Pokedex previews use the explicit APIs.
+- Paired-root matching also requires equal condition-set IDs, in addition to the existing
+  matching method/parameter/source-side checks.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="test/fusion_evolution_choice.c"`: six passed /
+  30 parameter cases. Covers both phases and source sides; normal/battle-only/item/trade/
+  battle-special triggers; matching additional conditions and consumed held items; differing
+  primary item parameters; retained descendants, selected flags, parent/name priority and
+  preview/commit parity; unchanged preview RNG/cache/profile/mon; invalid/inactive choices;
+  ordinary/no-match results; and legacy inactive duplicate-target descendants.
+  Real normal evolution scenes run both immediate and fade-delayed entry points through success
+  and B-button cancellation, asserting exact prepared-profile commit or unchanged Pokemon/profile.
+  The fixture drives the usual per-frame sound update as well as scene callbacks.
+- With the same file selector patched into the non-headless ELF:
+  `tools/mgba-rom-test-hydra/mgba-rom-test-hydra tools/mgba/mgba-rom-test arm-none-eabi-objcopy pokehns-test.elf`:
+  six passed / the same 30 parameter cases, including real front animations.
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 43 passed; three unrelated Fusion Flare/Bolt TODOs.
+- `make -k check BUILD=hns -j24 TESTS="(Daycare) Rebreeding"`: one passed / six parameter cases.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
+  ROM 31,698,516/33,554,432 bytes.
+- `git diff --check`: passed.
+- Trigger-level trade attribution is tested and trade entry points compile; live trade/link UI
+  and profile-transfer verification, manual visual inspection, and full lifecycle validation
+  remain milestone 5 work. No new support for previously unsupported fusion evolution methods
+  is introduced by this attribution change.
+
+Next: milestone 2, remaining display/cry consumers. Four current-implementation milestones
+remain; the external-storage migration remains deferred and separate.
+
+## Remaining milestone tracker (agreed 2026-11-10)
+
+The current goal is a working, manually testable implementation using the internal capped
+profile store. Keep external storage migration separate; do not begin it before that version
+is available for manual testing. Automated builds/tests alone do not establish that manual
+validation has been completed.
+
+| Milestone | Status | Completion criteria |
+| --- | --- | --- |
+| 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
+| 2. Remaining display/cry consumers | Next | Audit and wire naming screens, trade presentation, and remaining per-mon UI/cry consumers without changing nominal gameplay identity; verify relevant paths. |
+| 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
+| 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
+| 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |
+| External profile-storage migration | Deferred, separate milestone | Begin only after the working, manually testable internal-storage version is available; follow the dedicated migration requirements below. |
+
+Report when each milestone completes and proceed toward the next. If investigation changes
+scope, ordering, or the number of milestones, update this tracker and explicitly notify the
+user rather than silently changing the completion estimate. Keep implementation completion,
+automated verification, and outstanding manual verification distinct in progress reports.
 
 ## Historical resume checkpoint (paused 2026-08-27)
 

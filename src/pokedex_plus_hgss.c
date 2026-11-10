@@ -6817,7 +6817,7 @@ static void PrintMonPotentialEvolutions(u8 taskId)
         sPokedexView->sEvoScreenData.numAllEvolutions++;
         HandleTargetSpeciesPrintIcon(taskId, targetSpecies, printed, potentialEvolutionCount);
         CreateCaughtBallEvolutionScreen(targetSpecies, baseX - 9, baseY + baseYOffset * printed, 0);
-        name = GetMonEvolutionDisplaySpeciesName(sPokedexView->displayMon, targetSpecies);
+        name = GetMonEvolutionDisplaySpeciesNameForChoice(sPokedexView->displayMon, targetSpecies, i);
         HandleTargetSpeciesPrintText(targetSpecies, name, baseX, baseY, baseYOffset, printed, 0);
 
         StringCopy(gStringVar4, COMPOUND_STRING("Unknown"));

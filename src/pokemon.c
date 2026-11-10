@@ -6530,7 +6530,7 @@ const u16 *GetMonEggMoveLearnset(struct Pokemon *mon)
 
 static struct FusionPotentialEvolution sPotentialEvolutionProjection[MAX_FUSION_POTENTIAL_EVOLUTIONS];
 static u8 ProjectBerserkGenePotentialEvolutions(const struct BerserkGeneProfile *profile,
-                                              struct FusionPotentialEvolution *projection);
+                                              struct FusionPotentialEvolution *projection, u8 *indices);
 
 static u8 GetBerserkGeneEvolutionAge(const struct BerserkGeneProfile *profile, u8 index)
 {
@@ -6732,7 +6732,7 @@ static void ReblendBerserkGeneEvolutionBaseStats(struct BerserkGeneProfile *prof
     {
         struct FusionPotentialEvolution active[MAX_FUSION_POTENTIAL_EVOLUTIONS];
         u8 activeCount;
-        activeCount = ProjectBerserkGenePotentialEvolutions(profile, active);
+        activeCount = ProjectBerserkGenePotentialEvolutions(profile, active, NULL);
         for (i = 0; i < activeCount && counterpartCount < ARRAY_COUNT(counterpartSpecies); i++)
         {
             bool8 nodeParentB = (active[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
@@ -6825,7 +6825,7 @@ static void ReblendBerserkGeneEvolutionBaseStats(struct BerserkGeneProfile *prof
 }
 
 static u8 ProjectBerserkGenePotentialEvolutions(const struct BerserkGeneProfile *profile,
-                                              struct FusionPotentialEvolution *projection)
+                                              struct FusionPotentialEvolution *projection, u8 *indices)
 {
     u8 phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
              >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
@@ -6845,6 +6845,8 @@ static u8 ProjectBerserkGenePotentialEvolutions(const struct BerserkGeneProfile 
             {
                 if (projection != NULL)
                     projection[count] = *evolution;
+                if (indices != NULL)
+                    indices[count] = i;
                 count++;
             }
         }
@@ -6883,6 +6885,8 @@ static u8 ProjectBerserkGenePotentialEvolutions(const struct BerserkGeneProfile 
             {
                 if (projection != NULL)
                     projection[count] = *evolution;
+                if (indices != NULL)
+                    indices[count] = i;
                 count++;
             }
         }
@@ -6897,7 +6901,7 @@ const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon 
     u8 count = 0;
 
     if (profile != NULL)
-        count = ProjectBerserkGenePotentialEvolutions(profile, sPotentialEvolutionProjection);
+        count = ProjectBerserkGenePotentialEvolutions(profile, sPotentialEvolutionProjection, NULL);
     if (outCount != NULL)
         *outCount = count;
     if (profile == NULL)
@@ -6906,11 +6910,24 @@ const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon 
 }
 
 static bool8 ApplyBerserkGeneProfileEvolution(struct BerserkGeneProfile *profile,
-                                            u16 targetSpecies, bool8 updateTraits, u16 previousSpecies)
+                                            u16 targetSpecies, u8 choice, bool8 updateTraits, u16 previousSpecies)
 {
     u8 i;
     u8 phase;
     u8 selectedParentMask = 0;
+    u8 indices[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 activeCount = ProjectBerserkGenePotentialEvolutions(profile, NULL, indices);
+    u8 selectedIndex = FUSION_EVOLUTION_CHOICE_NONE;
+
+    for (i = 0; i < activeCount; i++)
+    {
+        if ((choice == FUSION_EVOLUTION_CHOICE_NONE || choice == i)
+         && profile->potentialEvolutions[indices[i]].targetSpecies == targetSpecies)
+        {
+            selectedIndex = indices[i];
+            break;
+        }
+    }
 
     phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
           >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
@@ -6927,9 +6944,7 @@ static bool8 ApplyBerserkGeneProfileEvolution(struct BerserkGeneProfile *profile
         u8 type2Parent;
         u8 type2Slot;
 
-        if (((potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2) != 0)
-            != (phase == BERSERK_GENE_PHASE_2)
-         || potentialEvolution->targetSpecies != targetSpecies)
+        if (i != selectedIndex)
             continue;
 
         sourceParentB = (potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
@@ -6954,7 +6969,8 @@ static bool8 ApplyBerserkGeneProfileEvolution(struct BerserkGeneProfile *profile
                  && (sibling->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
                  && siblingSourceParentB != sourceParentB
                  && (sibling->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == (potentialEvolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK)
-                 && sibling->param == potentialEvolution->param)
+                 && sibling->param == potentialEvolution->param
+                 && sibling->conditionSetId == potentialEvolution->conditionSetId)
                 {
                     pairedPhase1 = TRUE;
                     if (siblingSourceParentB)
@@ -7091,7 +7107,7 @@ static bool8 ApplyBerserkGeneProfileEvolution(struct BerserkGeneProfile *profile
             u8 nodeIndex;
             profile->evolutionFlags = (profile->evolutionFlags & ~BERSERK_GENE_EVOLUTION_PHASE_MASK)
                 | (BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT);
-            activeCount = ProjectBerserkGenePotentialEvolutions(profile, NULL);
+            activeCount = ProjectBerserkGenePotentialEvolutions(profile, NULL, NULL);
             if (activeCount == 0)
             {
                 profile->evolutionFlags = (profile->evolutionFlags & ~BERSERK_GENE_EVOLUTION_PHASE_MASK)
@@ -7156,12 +7172,17 @@ static bool8 ApplyBerserkGeneProfileEvolution(struct BerserkGeneProfile *profile
 
 bool8 PrepareBerserkGeneProfileEvolution(struct Pokemon *mon, u16 targetSpecies, struct BerserkGeneProfile *prepared)
 {
+    return PrepareBerserkGeneProfileEvolutionForChoice(mon, targetSpecies, FUSION_EVOLUTION_CHOICE_NONE, prepared);
+}
+
+bool8 PrepareBerserkGeneProfileEvolutionForChoice(struct Pokemon *mon, u16 targetSpecies, u8 choice, struct BerserkGeneProfile *prepared)
+{
     const struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
 
     if (profile == NULL)
         return FALSE;
     *prepared = *profile;
-    return ApplyBerserkGeneProfileEvolution(prepared, targetSpecies, TRUE, GetMonDisplaySpriteSpecies(mon));
+    return ApplyBerserkGeneProfileEvolution(prepared, targetSpecies, choice, TRUE, GetMonDisplaySpriteSpecies(mon));
 }
 
 void CommitBerserkGeneProfileEvolution(struct Pokemon *mon, const struct BerserkGeneProfile *prepared)
@@ -7260,6 +7281,11 @@ const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
 
 const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpecies)
 {
+    return GetMonEvolutionDisplaySpeciesNameForChoice(mon, targetSpecies, FUSION_EVOLUTION_CHOICE_NONE);
+}
+
+const u8 *GetMonEvolutionDisplaySpeciesNameForChoice(struct Pokemon *mon, u16 targetSpecies, u8 choice)
+{
     const struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
 
     if (profile != NULL)
@@ -7267,7 +7293,7 @@ const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpeci
         struct BerserkGeneProfile projectedProfile = *profile;
 
         // Share the live lineage transition, but leave trait rolls, mon data, and caches untouched.
-        ApplyBerserkGeneProfileEvolution(&projectedProfile, targetSpecies, FALSE, SPECIES_NONE);
+        ApplyBerserkGeneProfileEvolution(&projectedProfile, targetSpecies, choice, FALSE, SPECIES_NONE);
         return GetBerserkGeneDisplaySpeciesName(&projectedProfile, targetSpecies);
     }
     return GetSpeciesName(targetSpecies);
@@ -7880,8 +7906,9 @@ bool8 PokemonUseItemEffects(struct Pokemon *mon, enum Item item, u8 partyIndex, 
 
                             if (targetSpecies != SPECIES_NONE)
                             {
-                                GetEvolutionTargetSpecies(mon, EVO_MODE_ITEM_USE, item, NULL, &canStopEvo, DO_EVO);
-                                BeginEvolutionScene(mon, targetSpecies, canStopEvo, partyIndex);
+                                u8 fusionChoice;
+                                GetEvolutionTargetSpeciesWithChoice(mon, EVO_MODE_ITEM_USE, item, NULL, &canStopEvo, DO_EVO, &fusionChoice);
+                                BeginEvolutionScene(mon, targetSpecies, canStopEvo, partyIndex, fusionChoice);
                                 return FALSE;
                             }
                         }
@@ -8619,7 +8646,7 @@ static bool32 IsSpeciesAlreadyEvolved(u32 species)
     return FALSE;
 }
 
-static u32 CheckMonPotentialEvolutions(struct Pokemon *mon, enum EvolutionMode mode, u16 evolutionItem, struct Pokemon *tradePartner, const struct FusionPotentialEvolution *potentialEvolutions, u8 potentialEvolutionCount, bool32 *canStopEvo, enum EvoState evoState)
+static u32 CheckMonPotentialEvolutions(struct Pokemon *mon, enum EvolutionMode mode, u16 evolutionItem, struct Pokemon *tradePartner, const struct FusionPotentialEvolution *potentialEvolutions, u8 potentialEvolutionCount, bool32 *canStopEvo, enum EvoState evoState, u8 *fusionChoice)
 {
     u32 i;
     u32 level = GetMonData(mon, MON_DATA_LEVEL, 0);
@@ -8673,6 +8700,8 @@ static u32 CheckMonPotentialEvolutions(struct Pokemon *mon, enum EvolutionMode m
             const struct EvolutionParam *params = GetEvolutionConditionSet(potentialEvolutions[i].conditionSetId);
             if (DoesMonMeetAdditionalConditions(mon, params, tradePartner, PARTY_SIZE, canStopEvo, evoState))
             {
+                if (fusionChoice != NULL)
+                    *fusionChoice = i;
                 return potentialEvolutions[i].targetSpecies;
             }
         }
@@ -8683,6 +8712,11 @@ static u32 CheckMonPotentialEvolutions(struct Pokemon *mon, enum EvolutionMode m
 
 u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 evolutionItem, struct Pokemon *tradePartner, bool32 *canStopEvo, enum EvoState evoState)
 {
+    return GetEvolutionTargetSpeciesWithChoice(mon, mode, evolutionItem, tradePartner, canStopEvo, evoState, NULL);
+}
+
+u32 GetEvolutionTargetSpeciesWithChoice(struct Pokemon *mon, enum EvolutionMode mode, u16 evolutionItem, struct Pokemon *tradePartner, bool32 *canStopEvo, enum EvoState evoState, u8 *fusionChoice)
+{
     int i;
     u32 targetSpecies = SPECIES_NONE;
     u32 species = GetMonData(mon, MON_DATA_SPECIES, 0);
@@ -8692,6 +8726,9 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
     const struct Evolution *evolutions;
     const struct FusionPotentialEvolution *potentialEvolutions;
     u8 potentialEvolutionCount;
+
+    if (fusionChoice != NULL)
+        *fusionChoice = FUSION_EVOLUTION_CHOICE_NONE;
 
     u8 evoLimit = gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit;
     if (evoLimit == 2)
@@ -8728,7 +8765,7 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
         return SPECIES_NONE;
 
     if (evolutions == NULL)
-        return CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
+        return CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState, fusionChoice);
 
     switch (mode)
     {
@@ -8766,7 +8803,7 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
         // Check potential evolutions if no vanilla evolution was found
         if (targetSpecies == SPECIES_NONE && potentialEvolutions != NULL)
         {
-            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
+            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState, fusionChoice);
         }
         break;
     case EVO_MODE_TRADE:
@@ -8796,7 +8833,7 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
         // Check potential evolutions if no vanilla evolution was found
         if (targetSpecies == SPECIES_NONE && potentialEvolutions != NULL)
         {
-            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
+            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState, fusionChoice);
         }
         break;
     case EVO_MODE_ITEM_USE:
@@ -8830,7 +8867,7 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
         // Check potential evolutions if no vanilla evolution was found
         if (targetSpecies == SPECIES_NONE && potentialEvolutions != NULL)
         {
-            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
+            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState, fusionChoice);
         }
         break;
     // Battle evolution without leveling; party slot is being passed into the evolutionItem arg.
@@ -8861,7 +8898,7 @@ u32 GetEvolutionTargetSpecies(struct Pokemon *mon, enum EvolutionMode mode, u16 
         // Check potential evolutions if no vanilla evolution was found
         if (targetSpecies == SPECIES_NONE && potentialEvolutions != NULL)
         {
-            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState);
+            targetSpecies = CheckMonPotentialEvolutions(mon, mode, evolutionItem, tradePartner, potentialEvolutions, potentialEvolutionCount, canStopEvo, evoState, fusionChoice);
         }
         break;
     // Overworld evolution without leveling; evolution method is being passed into the evolutionItem arg.
@@ -10976,12 +11013,13 @@ void TryScriptEvolution(void)
 
         if (targetSpecies != SPECIES_NONE && !(sTriedEvolving & (1u << i)))
         {
-            GetEvolutionTargetSpecies(&gPlayerParty[i], EVO_MODE_SCRIPT_TRIGGER, 0, NULL, &canStopEvo, DO_EVO);
+            u8 fusionChoice;
+            GetEvolutionTargetSpeciesWithChoice(&gPlayerParty[i], EVO_MODE_SCRIPT_TRIGGER, 0, NULL, &canStopEvo, DO_EVO, &fusionChoice);
             sTriedEvolving |= 1u << i;
             if (gMain.callback2 == TryScriptEvolution) // This fixes small graphics glitches.
-                EvolutionScene(&gPlayerParty[i], targetSpecies, canStopEvo, i);
+                EvolutionScene(&gPlayerParty[i], targetSpecies, canStopEvo, i, fusionChoice);
             else
-                BeginEvolutionScene(&gPlayerParty[i], targetSpecies, canStopEvo, i);
+                BeginEvolutionScene(&gPlayerParty[i], targetSpecies, canStopEvo, i, fusionChoice);
 
             if (tryMultiple)
                 gCB2_AfterEvolution = TryScriptEvolution;
@@ -11007,12 +11045,13 @@ void TrySpecialOverworldEvo(void)
 
         if (targetSpecies != SPECIES_NONE && !(sTriedEvolving & (1u << i)))
         {
-            GetEvolutionTargetSpecies(&gPlayerParty[i], EVO_MODE_OVERWORLD_SPECIAL, 0, NULL, &canStopEvo, DO_EVO);
+            u8 fusionChoice;
+            GetEvolutionTargetSpeciesWithChoice(&gPlayerParty[i], EVO_MODE_OVERWORLD_SPECIAL, 0, NULL, &canStopEvo, DO_EVO, &fusionChoice);
             sTriedEvolving |= 1u << i;
             if (gMain.callback2 == TrySpecialOverworldEvo) // This fixes small graphics glitches.
-                EvolutionScene(&gPlayerParty[i], targetSpecies, canStopEvo, i);
+                EvolutionScene(&gPlayerParty[i], targetSpecies, canStopEvo, i, fusionChoice);
             else
-                BeginEvolutionScene(&gPlayerParty[i], targetSpecies, canStopEvo, i);
+                BeginEvolutionScene(&gPlayerParty[i], targetSpecies, canStopEvo, i, fusionChoice);
 
             if (tryMultiple)
                 gCB2_AfterEvolution = TrySpecialOverworldEvo;
