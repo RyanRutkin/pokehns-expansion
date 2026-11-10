@@ -4,18 +4,25 @@
 #include "daycare.h"
 #include "egg_hatch.h"
 #include "event_data.h"
+#include "gba/m4a_internal.h"
 #include "malloc.h"
 #include "main.h"
+#include "m4a.h"
 #include "overworld.h"
 #include "palette.h"
 #include "pokedex.h"
 #include "pokedex_plus_hgss.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
+#include "sound.h"
 #include "sprite.h"
 #include "string_util.h"
 #include "task.h"
 #include "test/test.h"
+#include "test_runner.h"
+
+extern struct ToneData gCryTable[];
+extern struct MusicPlayerInfo *gMPlay_PokemonCry;
 
 #if P_GBA_STYLE_SPECIES_GFX
 static const u32 sJolteonFront[] = INCBIN_U32("graphics/pokemon/jolteon/anim_front_gba.4bpp");
@@ -126,7 +133,7 @@ static void PortraitTestReturn(void)
 {
 }
 
-TEST("Fusion hatch scenes load the saved donor graphics palette and animation")
+TEST("Fusion hatch scenes load the saved donor graphics palette animation and independent cry")
 {
     struct Pokemon savedPartyMon = gPlayerParty[0];
     struct Pokemon savedScratchMon = gEnemyParty[0];
@@ -139,7 +146,8 @@ TEST("Fusion hatch scenes load the saved donor graphics palette and animation")
     u16 savedSpecial = gSpecialVar_0x8004;
     u16 frame, expectedSpecies;
     u8 mode = 0, shiny = FALSE, isEgg = TRUE, spriteId, i;
-    bool8 sawSecondFrame = FALSE;
+    bool8 sawSecondFrame = FALSE, silent = FALSE, sawCry = FALSE;
+    enum PokemonCry expectedCry;
     u32 savedBattleType = gBattleTypeFlags;
     const u16 *palette;
     const u32 *picture;
@@ -150,22 +158,26 @@ TEST("Fusion hatch scenes load the saved donor graphics palette and animation")
     PARAMETRIZE { mode = 1; shiny = TRUE; }
     PARAMETRIZE { mode = 2; shiny = FALSE; }
     PARAMETRIZE { mode = 2; shiny = TRUE; }
+    PARAMETRIZE { mode = 2; shiny = TRUE; silent = TRUE; }
 
     CreateMon(&gPlayerParty[0], SPECIES_WOBBUFFET, EGG_HATCH_LEVEL, 123456, OTID_STRUCT_PLAYER_ID);
     if (mode)
     {
         profile = SetPortraitProfile(&gPlayerParty[0], mode == 2);
+        profile->cryId = silent ? CRY_NONE : gSpeciesInfo[SPECIES_PIKACHU].cryId;
         savedProfile = *profile;
     }
     SetMonData(&gPlayerParty[0], MON_DATA_IS_EGG, &isEgg);
     SetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY, &shiny);
     expectedSpecies = mode ? SPECIES_JOLTEON : SPECIES_WOBBUFFET;
+    expectedCry = mode ? profile->cryId : gSpeciesInfo[SPECIES_WOBBUFFET].cryId;
     palette = GetMonSpritePalFromSpeciesAndPersonality(expectedSpecies, shiny, 123456);
     picture = mode ? sJolteonFront : sWobbuffetFront;
     ResetTasks();
     ResetSpriteData();
     FreeAllSpritePalettes();
     ResetPaletteFade();
+    StopCryAndClearCrySongs();
     gBattleTypeFlags = 0;
     gSpecialVar_0x8004 = 0;
     EggHatch();
@@ -193,6 +205,16 @@ TEST("Fusion hatch scenes load the saved donor graphics palette and animation")
         gMain.newKeys = B_BUTTON;
         gMain.heldKeys = B_BUTTON;
         gMain.callback2();
+        if (!gTestRunnerHeadless && P_CRIES_ENABLED && gMPlay_PokemonCry != NULL
+         && gMPlay_PokemonCry->songHeader->tone != NULL)
+        {
+            EXPECT_NE(expectedCry, CRY_NONE);
+            EXPECT_EQ(gMPlay_PokemonCry->songHeader->tone, &gCryTable[expectedCry - 1]);
+            if (!sawCry)
+                EXPECT_EQ(gPokemonCrySong.panValue, 64 + 25);
+            sawCry = TRUE;
+        }
+        m4aSoundMain();
         if (gSprites[spriteId].animNum == 1)
             sawSecondFrame = TRUE;
         gPaletteFade.active = FALSE;
@@ -200,6 +222,8 @@ TEST("Fusion hatch scenes load the saved donor graphics palette and animation")
     EXPECT_EQ(gMain.callback2, CB2_ReturnToField);
     if (HasTwoFramesAnimation(expectedSpecies))
         EXPECT(sawSecondFrame);
+    if (!gTestRunnerHeadless && P_CRIES_ENABLED)
+        EXPECT_EQ(sawCry, !silent);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_WOBBUFFET);
     if (mode)
     {
@@ -209,6 +233,7 @@ TEST("Fusion hatch scenes load the saved donor graphics palette and animation")
     // Stop before field reinitialization and release the scene's detached background buffers.
     Free(bg0);
     Free(bg1);
+    StopCryAndClearCrySongs();
     ResetSpriteData();
     FreeAllSpritePalettes();
     ResetTasks();

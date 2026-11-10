@@ -1,15 +1,21 @@
 #include "global.h"
 #include "battle.h"
 #include "evolution_scene.h"
+#include "gba/m4a_internal.h"
 #include "main.h"
 #include "m4a.h"
 #include "palette.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
+#include "sound.h"
 #include "sprite.h"
 #include "string_util.h"
 #include "task.h"
 #include "test/test.h"
+#include "test_runner.h"
+
+extern struct ToneData gCryTable[];
+extern struct MusicPlayerInfo *gMPlay_PokemonCry;
 
 static const struct EvolutionParam sScaleCondition[] = {
     {IF_HOLD_ITEM, ITEM_DEEP_SEA_SCALE, 0, 0}, {CONDITIONS_END}
@@ -236,7 +242,10 @@ TEST("Fusion evolution scenes carry the exact same-target choice through the fad
     u32 savedBattleType = gBattleTypeFlags;
     u16 target = SPECIES_DRAGONAIR;
     u16 frame;
-    u8 direct = FALSE, cancel = FALSE, i;
+    u8 direct = FALSE, cancel = FALSE, phase2 = FALSE, i;
+    bool8 fusion = TRUE, silent = FALSE, sawPostCry = FALSE;
+    u8 preCryCount = 0;
+    enum PokemonCry preCry, postCry;
     u8 preview[POKEMON_NAME_BUFFER_SIZE];
     rng_value_t savedRng;
 
@@ -244,21 +253,48 @@ TEST("Fusion evolution scenes carry the exact same-target choice through the fad
     PARAMETRIZE { direct = TRUE; }
     PARAMETRIZE { direct = FALSE; cancel = TRUE; }
     PARAMETRIZE { direct = TRUE; cancel = TRUE; }
-    CreateMon(&gPlayerParty[0], SPECIES_DRATINI, 60, 0, OTID_STRUCT_PLAYER_ID);
-    profile = SetChoiceProfile(&gPlayerParty[0], FALSE, FALSE, EVO_MODE_NORMAL);
-    for (i = 0; i < NUM_STATS; i++)
-        profile->baseStats[i] = GetSpeciesBaseStat(SPECIES_DRATINI, i);
-    profile->ability1 = profile->ability2 = profile->abilityHidden = ABILITY_SHED_SKIN;
-    before = *profile;
+    PARAMETRIZE { direct = FALSE; phase2 = TRUE; }
+    PARAMETRIZE { direct = TRUE; phase2 = TRUE; }
+    PARAMETRIZE { direct = FALSE; cancel = TRUE; phase2 = TRUE; }
+    PARAMETRIZE { direct = TRUE; cancel = TRUE; phase2 = TRUE; }
+    PARAMETRIZE { direct = FALSE; fusion = FALSE; }
+    PARAMETRIZE { direct = TRUE; fusion = FALSE; }
+    PARAMETRIZE { direct = FALSE; cancel = TRUE; fusion = FALSE; }
+    PARAMETRIZE { direct = TRUE; cancel = TRUE; fusion = FALSE; }
+    PARAMETRIZE { direct = TRUE; silent = TRUE; }
+    PARAMETRIZE { direct = TRUE; cancel = TRUE; silent = TRUE; }
+    target = phase2 ? SPECIES_DRAGONITE : SPECIES_DRAGONAIR;
+    CreateMon(&gPlayerParty[0], phase2 ? SPECIES_DRAGONAIR : SPECIES_DRATINI, 60, 0, OTID_STRUCT_PLAYER_ID);
+    profile = fusion ? SetChoiceProfile(&gPlayerParty[0], phase2, FALSE, EVO_MODE_NORMAL) : NULL;
+    if (fusion)
+    {
+        profile->cryId = silent ? CRY_NONE : gSpeciesInfo[SPECIES_PIKACHU].cryId;
+        for (i = 0; i < NUM_STATS; i++)
+            profile->baseStats[i] = GetSpeciesBaseStat(SPECIES_DRATINI, i);
+        profile->ability1 = profile->ability2 = profile->abilityHidden = ABILITY_SHED_SKIN;
+        before = *profile;
+    }
     beforeMon = gPlayerParty[0];
     StringCopy(preview, GetMonEvolutionDisplaySpeciesNameForChoice(&gPlayerParty[0], target, 1));
+    SeedRng(0);
     savedRng = gRngValue;
-    EXPECT(PrepareBerserkGeneProfileEvolutionForChoice(&gPlayerParty[0], target, 1, &prepared));
+    if (fusion)
+    {
+        EXPECT(PrepareBerserkGeneProfileEvolutionForChoice(&gPlayerParty[0], target, 1, &prepared));
+        if (!phase2)
+        {
+            EXPECT_NE(prepared.cryId, gSpeciesInfo[target].cryId);
+            EXPECT_NE(prepared.cryId, gSpeciesInfo[GetBerserkGeneSpriteSpecies(&prepared, target)].cryId);
+        }
+    }
     gRngValue = savedRng;
+    preCry = fusion ? before.cryId : gSpeciesInfo[GetMonData(&gPlayerParty[0], MON_DATA_SPECIES)].cryId;
+    postCry = fusion ? prepared.cryId : gSpeciesInfo[target].cryId;
     ResetTasks();
     ResetSpriteData();
     FreeAllSpritePalettes();
     ResetPaletteFade();
+    StopCryAndClearCrySongs();
     gBattleTypeFlags = 0;
     gCB2_AfterEvolution = EvolutionChoiceReturn;
     if (direct)
@@ -270,22 +306,55 @@ TEST("Fusion evolution scenes carry the exact same-target choice through the fad
         gMain.newKeys = B_BUTTON;
         gMain.heldKeys = B_BUTTON;
         gMain.callback2();
+        if (!gTestRunnerHeadless && P_CRIES_ENABLED && gMPlay_PokemonCry != NULL
+         && gMPlay_PokemonCry->songHeader->tone != NULL)
+        {
+            const struct ToneData *tone = gMPlay_PokemonCry->songHeader->tone;
+            if (preCry != CRY_NONE && tone == &gCryTable[preCry - 1])
+            {
+                if (gMPlay_PokemonCry->clock == 0)
+                {
+                    EXPECT_EQ(gPokemonCrySong.panValue, 64 - 25);
+                    preCryCount++;
+                }
+            }
+            else
+            {
+                EXPECT_EQ(tone, &gCryTable[postCry - 1]);
+                if (!sawPostCry)
+                {
+                    EXPECT_EQ(gPokemonCrySong.panValue, 64 - 25);
+                    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), GetMonData(&beforeMon, MON_DATA_SPECIES));
+                    if (fusion)
+                        EXPECT_EQ(memcmp(profile, &before, sizeof(before)), 0);
+                }
+                sawPostCry = TRUE;
+            }
+        }
         m4aSoundMain();
         gPaletteFade.active = FALSE;
     }
     EXPECT_EQ(gMain.callback2, EvolutionChoiceReturn);
+    if (!gTestRunnerHeadless && P_CRIES_ENABLED)
+    {
+        EXPECT_EQ(preCryCount, silent ? 0 : cancel ? 2 : 1);
+        EXPECT_EQ(sawPostCry, !cancel);
+    }
     if (cancel)
     {
-        EXPECT_EQ(memcmp(profile, &before, sizeof(before)), 0);
+        if (fusion)
+            EXPECT_EQ(memcmp(profile, &before, sizeof(before)), 0);
         EXPECT_EQ(memcmp(&gPlayerParty[0], &beforeMon, sizeof(beforeMon)), 0);
     }
     else
     {
         EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), target);
-        EXPECT_EQ(memcmp(profile, &prepared, sizeof(prepared)), 0);
+        if (fusion)
+            EXPECT_EQ(memcmp(profile, &prepared, sizeof(prepared)), 0);
         EXPECT_EQ(StringCompare(preview, GetMonDisplaySpeciesName(&gPlayerParty[0])), 0);
     }
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    StopCryAndClearCrySongs();
     ResetTasks();
     ResetSpriteData();
     FreeAllSpritePalettes();

@@ -656,8 +656,6 @@ static void Task_EggHatchPlayBGM(u8 taskId)
 
 static void CB2_EggHatch(void)
 {
-    u16 species;
-
     switch (sEggHatchData->state)
     {
     case 0:
@@ -688,8 +686,11 @@ static void CB2_EggHatch(void)
         // Wait for hatching animation to finish
         if (gSprites[sEggHatchData->eggSpriteId].callback == SpriteCallbackDummy)
         {
-            species = GetMonData(&gPlayerParty[sEggHatchData->eggPartyId], MON_DATA_SPECIES);
-            DoMonFrontSpriteAnimationWithCry(&gSprites[sEggHatchData->monSpriteId], sEggHatchData->species, species, FALSE, 1);
+            struct Pokemon *mon = &gPlayerParty[sEggHatchData->eggPartyId];
+            if (GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+                DoMonFrontSpriteAnimationWithCryId(&gSprites[sEggHatchData->monSpriteId], sEggHatchData->species, GetMonCryId(mon), FALSE, 1);
+            else
+                DoMonFrontSpriteAnimationWithCry(&gSprites[sEggHatchData->monSpriteId], sEggHatchData->species, GetMonData(mon, MON_DATA_SPECIES), FALSE, 1);
             sEggHatchData->state++;
         }
         break;

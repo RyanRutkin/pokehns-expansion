@@ -49,6 +49,9 @@ struct EvoInfo
     u16 savedPalette[48];
     u16 preEvoSpriteSpecies;
     u16 postEvoSpriteSpecies;
+    enum PokemonCry preEvoCryId;
+    enum PokemonCry postEvoCryId;
+    bool8 hasFusionProfile;
     bool8 hasPreparedProfile;
     struct BerserkGeneProfile preparedProfile;
 };
@@ -78,10 +81,14 @@ static void RestoreBgAfterAnim(void);
 static void PrepareEvolutionAppearance(struct Pokemon *mon, u16 targetSpecies, u8 fusionChoice)
 {
     sEvoStructPtr->preEvoSpriteSpecies = GetMonDisplaySpriteSpecies(mon);
+    sEvoStructPtr->hasFusionProfile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL;
+    sEvoStructPtr->preEvoCryId = GetMonCryId(mon);
     sEvoStructPtr->hasPreparedProfile = PrepareBerserkGeneProfileEvolutionForChoice(mon, targetSpecies, fusionChoice,
         &sEvoStructPtr->preparedProfile);
     sEvoStructPtr->postEvoSpriteSpecies = sEvoStructPtr->hasPreparedProfile
         ? GetBerserkGeneSpriteSpecies(&sEvoStructPtr->preparedProfile, targetSpecies) : targetSpecies;
+    sEvoStructPtr->postEvoCryId = sEvoStructPtr->hasPreparedProfile
+        ? sEvoStructPtr->preparedProfile.cryId : sEvoStructPtr->preEvoCryId;
 }
 
 static void CommitEvolutionAppearance(struct Pokemon *mon)
@@ -1178,7 +1185,10 @@ static void Task_TradeEvolutionScene(u8 taskId)
     case T_EVOSTATE_INTRO_CRY:
         if (!IsTextPrinterActiveOnWindow(0))
         {
-            PlayCry_Normal(gTasks[taskId].tPreEvoSpecies, 0);
+            if (sEvoStructPtr->hasFusionProfile)
+                PlayCryId_ByMode(sEvoStructPtr->preEvoCryId, 0, CRY_MODE_NORMAL);
+            else
+                PlayCry_Normal(gTasks[taskId].tPreEvoSpecies, 0);
             gTasks[taskId].tState++;
         }
         break;
@@ -1778,7 +1788,16 @@ static void RestoreBgAfterAnim(void)
 
 static void EvoScene_DoMonAnimAndCry(u8 monSpriteId, u16 speciesId, u16 crySpecies)
 {
-    DoMonFrontSpriteAnimationWithCry(&gSprites[monSpriteId], speciesId, crySpecies, FALSE, 0);
+    if (sEvoStructPtr->hasFusionProfile)
+    {
+        enum PokemonCry cryId = monSpriteId == sEvoStructPtr->postEvoSpriteId
+            ? sEvoStructPtr->postEvoCryId : sEvoStructPtr->preEvoCryId;
+        DoMonFrontSpriteAnimationWithCryId(&gSprites[monSpriteId], speciesId, cryId, FALSE, 0);
+    }
+    else
+    {
+        DoMonFrontSpriteAnimationWithCry(&gSprites[monSpriteId], speciesId, crySpecies, FALSE, 0);
+    }
 }
 
 static bool32 EvoScene_IsMonAnimFinished(u8 monSpriteId)

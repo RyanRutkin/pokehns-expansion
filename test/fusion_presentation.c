@@ -2,6 +2,7 @@
 #include "battle.h"
 #include "bg.h"
 #include "event_data.h"
+#include "evolution_scene.h"
 #include "field_control_avatar.h"
 #include "gba/m4a_internal.h"
 #include "link.h"
@@ -203,7 +204,7 @@ TEST("Fusion cry-ID playback preserves species playback modes ducking and tone s
 struct TradePresentationSavedState
 {
     struct Pokemon partyMon, enemyMon;
-    struct BerserkGeneProfile outgoing, incoming;
+    struct BerserkGeneProfile outgoing, incoming, prepared;
     struct LinkPlayer linkPlayers[2];
     u8 playerName[PLAYER_NAME_LENGTH + 1];
 };
@@ -213,13 +214,16 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     struct TradePresentationSavedState *saved = Alloc(sizeof(*saved));
     struct BerserkGeneProfile *outgoing, *incoming = NULL;
     MainCallback savedCallback = gMain.callback2;
+    MainCallback savedAfterEvolution = gCB2_AfterEvolution;
     IntrCallback savedVBlank = gMain.vblankCallback;
     void (*savedFieldCallback)(void) = gFieldCallback;
     u16 savedSpecial4 = gSpecialVar_0x8004, savedSpecial5 = gSpecialVar_0x8005;
     u8 savedRemote = gReceivedRemoteLinkPlayers;
     u8 savedPositions[2], mode = 0, shiny = FALSE, isEgg = FALSE;
     bool32 foreignProfileId = FALSE;
+    bool32 evolve = FALSE, prepared = FALSE, sawEvolutionIntroCry = FALSE, sawEvolutionCry = FALSE;
     u16 frame, spriteId, expectedSpecies, i, outgoingSpriteId;
+    u16 incomingProfileId = 0;
     enum PokemonCry expectedArrivalCry;
     const u16 *palette;
     bool32 sawOutgoingCry = FALSE, sawIncomingCry = FALSE, sawForeignCry = FALSE, sawSecondFrame = FALSE;
@@ -232,6 +236,8 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     PARAMETRIZE { mode = 2; shiny = TRUE; }
     PARAMETRIZE { mode = 2; shiny = TRUE; isEgg = TRUE; }
     PARAMETRIZE { mode = 2; shiny = TRUE; foreignProfileId = TRUE; }
+    PARAMETRIZE { mode = 1; shiny = TRUE; evolve = TRUE; }
+    PARAMETRIZE { mode = 2; shiny = TRUE; evolve = TRUE; }
 
     EXPECT(saved != NULL);
     saved->partyMon = gPlayerParty[0];
@@ -248,6 +254,23 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     if (mode)
     {
         incoming = SetPresentationProfile(&gEnemyParty[0], mode == 2);
+        incomingProfileId = GetMonData(&gEnemyParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        if (evolve)
+        {
+            if (mode == 1)
+            {
+                incoming->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_DRAGONAIR, 0, EVO_TRADE, 0};
+                incoming->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 0, EVO_TRADE | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+                incoming->potentialEvolutionCount = 2;
+            }
+            else
+            {
+                incoming->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_DRAGONAIR, 0, EVO_TRADE | EVO_POTENTIAL_PHASE_2, 0};
+                incoming->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+                incoming->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_LUXRAY, 0, EVO_TRADE | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+                incoming->potentialEvolutionCount = 4;
+            }
+        }
         saved->incoming = *incoming;
     }
     SetMonData(&gEnemyParty[0], MON_DATA_IS_SHINY, &shiny);
@@ -258,6 +281,7 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     ResetSpriteData();
     FreeAllSpritePalettes();
     ResetPaletteFade();
+    StopCryAndClearCrySongs();
     DoInGameTradeScene();
     gPaletteFade.active = FALSE;
     RunTasks();
@@ -291,10 +315,22 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
         EXPECT_EQ(gPlttBufferUnfaded[OBJ_PLTT_ID(gSprites[outgoingSpriteId].oam.paletteNum) + i], palette[i]);
     for (frame = 0; frame < 4000 && gMain.callback2 != CB2_ReturnToField; frame++)
     {
+        MainCallback beforeCallback = gMain.callback2;
+        rng_value_t beforeRng = gRngValue;
         gMain.newKeys = A_BUTTON;
         gMain.heldKeys = A_BUTTON;
         gMain.callback2();
-        m4aSoundMain();
+        if (evolve && !prepared && gMain.callback2 != beforeCallback
+         && GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID) == incomingProfileId
+         && GetMonData(&gPlayerParty[0], MON_DATA_SPECIES) == SPECIES_WOBBUFFET)
+        {
+            rng_value_t afterRng = gRngValue;
+            gRngValue = beforeRng;
+            EXPECT(PrepareBerserkGeneProfileEvolutionForChoice(&gPlayerParty[0], SPECIES_DRAGONAIR, 0, &saved->prepared));
+            gRngValue = afterRng;
+            EXPECT_EQ(memcmp(incoming, &saved->incoming, sizeof(saved->incoming)), 0);
+            prepared = TRUE;
+        }
         gPaletteFade.active = FALSE;
         if (!gTestRunnerHeadless && gMPlay_PokemonCry != NULL)
         {
@@ -304,7 +340,28 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
                 sawIncomingCry = TRUE;
             if (foreignProfileId && gMPlay_PokemonCry->songHeader->tone == &gCryTable[saved->incoming.cryId - 1])
                 sawForeignCry = TRUE;
+            if (prepared && gMPlay_PokemonCry->clock == 0)
+            {
+                const struct ToneData *tone = gMPlay_PokemonCry->songHeader->tone;
+                if (tone == &gCryTable[saved->incoming.cryId - 1])
+                {
+                    EXPECT_EQ(gPokemonCrySong.panValue, 64);
+                    sawEvolutionIntroCry = TRUE;
+                }
+                else if (tone == &gCryTable[saved->prepared.cryId - 1])
+                {
+                    EXPECT_EQ(gPokemonCrySong.panValue, 64 - 25);
+                    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_WOBBUFFET);
+                    EXPECT_EQ(memcmp(incoming, &saved->incoming, sizeof(saved->incoming)), 0);
+                    sawEvolutionCry = TRUE;
+                }
+                else if (tone != NULL)
+                {
+                    EXPECT_EQ(tone, &gCryTable[saved->prepared.cryId - 1]);
+                }
+            }
         }
+        m4aSoundMain();
         if (gSprites[spriteId].animNum == 1)
             sawSecondFrame = TRUE;
     }
@@ -314,12 +371,22 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
         EXPECT(sawOutgoingCry);
         EXPECT_EQ(sawIncomingCry, !isEgg);
         EXPECT(!sawForeignCry);
+        if (evolve)
+        {
+            EXPECT(sawEvolutionIntroCry);
+            EXPECT(sawEvolutionCry);
+        }
     }
     if (!isEgg && HasTwoFramesAnimation(expectedSpecies))
         EXPECT(sawSecondFrame);
-    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_WOBBUFFET);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), evolve ? SPECIES_DRAGONAIR : SPECIES_WOBBUFFET);
     EXPECT_EQ(memcmp(outgoing, &saved->outgoing, sizeof(saved->outgoing)), 0);
-    if (mode)
+    if (evolve)
+    {
+        EXPECT(prepared);
+        EXPECT_EQ(memcmp(incoming, &saved->prepared, sizeof(saved->prepared)), 0);
+    }
+    else if (mode)
         EXPECT_EQ(memcmp(incoming, &saved->incoming, sizeof(saved->incoming)), 0);
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
     ClearBoxMonBerserkGeneProfile(&gEnemyParty[0].box);
@@ -338,6 +405,7 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     memcpy(gSaveBlock2Ptr->playerName, saved->playerName, sizeof(saved->playerName));
     memcpy(gSelectedTradeMonPositions, savedPositions, sizeof(savedPositions));
     gFieldCallback = savedFieldCallback;
+    gCB2_AfterEvolution = savedAfterEvolution;
     SetVBlankCallback(savedVBlank);
     SetMainCallback2(savedCallback);
     Free(saved);
