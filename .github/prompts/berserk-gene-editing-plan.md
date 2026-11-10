@@ -588,6 +588,41 @@ scene regression, distinguishing owned-mon presentation from species-only refere
 Manual audio/visual and live-link validation remain outstanding. Four implementation
 milestones remain (2-5); order/count are unchanged and external-storage migration is deferred.
 
+## Milestone 2 checkpoint: field-move banner portraits and cries
+
+Implemented and verified:
+- The party-mon field-move entry resolves its saved visual donor before loading the
+  indoor/outdoor banner portrait. Actual personality and shininess are retained.
+- Cry playback is independent of that portrait: valid profiles snapshot their saved cry,
+  including silence, when the banner is created. Delayed playback does not read a changed
+  profile. Ordinary mons retain their nominal species cry and configured species modes.
+- The species-only banner entry remains species-based and cannot inherit an owned profile
+  accidentally. Ambient overworld cries remain wild-species references.
+- Fixed the tightly coupled no-ducking flag extraction: the bit-31 flag was shifted into
+  bit 15 and then truncated when assigned to sprite data. It is now normalized to boolean,
+  restoring the intended no-ducking behavior for both ordinary and fusion banners.
+- A real field-effect regression runs ten cases through indoor/outdoor banner creation,
+  delayed cry, slide-off, and cleanup. It checks ordinary, direct/hidden donors, shiny
+  palettes, silent profiles, species-only entry, profile mutation after snapshot, exact
+  loaded portrait pixels, audio tone/pan, BGM-restoration ownership, and unchanged mon data.
+  The fixture supplies the overworld windows and chained VBlank callback the effect needs.
+- No save-layout, profile-layout, EWRAM, or IWRAM growth.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS=test/fusion_portraits.c`: **4 passed / 31 parameter
+  cases**, also passed through the unpatched/non-headless runner.
+- `make -k check BUILD=hns -j24 TESTS=Fusion`: **55 passed / 3 existing move TODOs**.
+- `tools/mgba-rom-test-hydra/mgba-rom-test-hydra tools/mgba/mgba-rom-test arm-none-eabi-objcopy pokehns-test.elf`
+  with the full Fusion selector: **55 passed / 3 existing move TODOs**.
+- `make -k hns -j24`: passed; EWRAM **260,116 / 262,144**, IWRAM **27,644 / 32,768**,
+  ROM **31,701,140 / 33,554,432**. `git diff --check`: passed.
+
+Milestone 2 remains **in progress**. Next: party form-change cries/icons, applicable
+Pokeblock/contest/Hall of Fame owned-mon consumers, and the full-summary scene regression.
+The field banner checkpoint does not complete that broader audit. Four implementation
+milestones remain (2-5), in the same order; external profile-storage migration stays
+separate and deferred. No manual visual/listening or live link validation was performed.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -598,7 +633,7 @@ validation has been completed.
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
-| 2. Remaining display/cry consumers | In progress: naming/trade, hatch/evolution, battle entrance/release, move-animation cries wired | Finish remaining per-mon consumer audit and summary-scene regression; see checkpoints above. |
+| 2. Remaining display/cry consumers | In progress: naming/trade, hatch/evolution, battle entrance/release, move-animation and field-banner checkpoints verified | Finish party form-change and applicable Pokeblock/contest/Hall of Fame consumers, plus summary-scene regression; see checkpoints above. |
 | 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |

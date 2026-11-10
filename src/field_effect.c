@@ -2967,6 +2967,7 @@ static void TeleportWarpInFieldEffect_SpinGround(struct Task *task)
 // Sprite data for field move mon sprite
 #define sSpecies       data[0]
 #define sOnscreenTimer data[1]
+#define sCryId         data[2]
 #define sSlidOffscreen data[7]
 
 // There are two variants (outdoor/indoor) of the "show mon for a field move" effect
@@ -2990,13 +2991,25 @@ bool8 FldEff_FieldMoveShowMon(void)
 bool8 FldEff_FieldMoveShowMonInit(void)
 {
     struct Pokemon *pokemon;
+    struct Sprite *sprite;
+    u16 species;
+    u8 taskId;
     bool32 noDucking = gFieldEffectArguments[0] & SHOW_MON_CRY_NO_DUCKING;
     pokemon = &gPlayerParty[(u8)gFieldEffectArguments[0]];
-    gFieldEffectArguments[0] = GetMonData(pokemon, MON_DATA_SPECIES);
+    species = GetMonData(pokemon, MON_DATA_SPECIES);
+    gFieldEffectArguments[0] = GetMonDisplaySpriteSpecies(pokemon);
     gFieldEffectArguments[1] = GetMonData(pokemon, MON_DATA_IS_SHINY);
     gFieldEffectArguments[2] = GetMonData(pokemon, MON_DATA_PERSONALITY);
     gFieldEffectArguments[0] |= noDucking;
     FieldEffectStart(FLDEFF_FIELD_MOVE_SHOW_MON);
+    if (IsMapTypeOutdoors(GetCurrentMapType()))
+        taskId = FindTaskIdByFunc(Task_FieldMoveShowMonOutdoors);
+    else
+        taskId = FindTaskIdByFunc(Task_FieldMoveShowMonIndoors);
+    sprite = &gSprites[gTasks[taskId].tMonSpriteId];
+    sprite->sSpecies = species;
+    if (GetBerserkGeneProfile(GetMonData(pokemon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+        sprite->sCryId = GetMonCryId(pokemon);
     FieldEffectActiveListRemove(FLDEFF_FIELD_MOVE_SHOW_MON_INIT);
     return FALSE;
 }
@@ -3335,16 +3348,17 @@ static bool8 SlideIndoorBannerOffscreen(struct Task *task)
 
 static u8 InitFieldMoveMonSprite(u32 species, bool8 isShiny, u32 personality)
 {
-    bool16 noDucking;
+    bool32 noDucking;
     u8 monSprite;
     struct Sprite *sprite;
-    noDucking = (species & SHOW_MON_CRY_NO_DUCKING) >> 16;
+    noDucking = (species & SHOW_MON_CRY_NO_DUCKING) != 0;
     species &= ~SHOW_MON_CRY_NO_DUCKING;
     monSprite = CreateMonSprite_FieldMove(species, isShiny, personality, 320, 80, 0);
     sprite = &gSprites[monSprite];
     sprite->callback = SpriteCallbackDummy;
     sprite->oam.priority = 0;
     sprite->sSpecies = species;
+    sprite->sCryId = -1;
     sprite->data[6] = noDucking;
     return monSprite;
 }
@@ -3356,7 +3370,14 @@ static void SpriteCB_FieldMoveMonSlideOnscreen(struct Sprite *sprite)
         sprite->x = DISPLAY_WIDTH / 2;
         sprite->sOnscreenTimer = 30;
         sprite->callback = SpriteCB_FieldMoveMonWaitAfterCry;
-        if (sprite->data[6])
+        if (sprite->sCryId >= 0)
+        {
+            if (sprite->data[6])
+                PlayCryId_NormalNoDucking(sprite->sCryId, 0, CRY_VOLUME_RS, CRY_PRIORITY_NORMAL);
+            else
+                PlayCryId_ByMode(sprite->sCryId, 0, CRY_MODE_NORMAL);
+        }
+        else if (sprite->data[6])
             PlayCry_NormalNoDucking(sprite->sSpecies, 0, CRY_VOLUME_RS, CRY_PRIORITY_NORMAL);
         else
             PlayCry_Normal(sprite->sSpecies, 0);
@@ -3382,6 +3403,7 @@ static void SpriteCB_FieldMoveMonSlideOffscreen(struct Sprite *sprite)
 #undef sSpecies
 #undef sSlidOffscreen
 #undef sOnscreenTimer
+#undef sCryId
 
 #define tState data[0]
 #define tDestX data[1]

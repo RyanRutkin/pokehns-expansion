@@ -4,10 +4,12 @@
 #include "daycare.h"
 #include "egg_hatch.h"
 #include "event_data.h"
+#include "field_effect.h"
 #include "gba/m4a_internal.h"
 #include "malloc.h"
 #include "main.h"
 #include "m4a.h"
+#include "menu.h"
 #include "overworld.h"
 #include "palette.h"
 #include "pokedex.h"
@@ -20,9 +22,13 @@
 #include "task.h"
 #include "test/test.h"
 #include "test_runner.h"
+#include "window.h"
+#include "constants/field_effects.h"
+#include "constants/map_groups.h"
 
 extern struct ToneData gCryTable[];
 extern struct MusicPlayerInfo *gMPlay_PokemonCry;
+extern u8 gPokemonCryBGMDuckingCounter;
 
 #if P_GBA_STYLE_SPECIES_GFX
 static const u32 sJolteonFront[] = INCBIN_U32("graphics/pokemon/jolteon/anim_front_gba.4bpp");
@@ -60,6 +66,143 @@ static struct BerserkGeneProfile *SetPortraitProfile(struct Pokemon *mon, bool8 
     }
     SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     return profile;
+}
+
+static void FieldPortraitVBlank(void)
+{
+}
+
+TEST("Fusion field move banners display donor portraits and snapshot independent cries indoors and outdoors")
+{
+    struct Pokemon savedMon = gPlayerParty[0], beforeMon;
+    struct BerserkGeneProfile *profile = NULL;
+    struct BerserkGeneProfile beforeProfile;
+    struct WarpData savedLocation = gSaveBlock1Ptr->location;
+    s32 savedArgs[8];
+    IntrCallback savedVBlank = gMain.vblankCallback;
+    u8 mode = 0, spriteId = MAX_SPRITES, i;
+    bool8 indoor = FALSE, noDucking = FALSE, shiny = FALSE, speciesOnly = FALSE;
+    bool8 sawCry = FALSE, finished = FALSE;
+    u16 frame, expectedSpecies;
+    enum PokemonCry expectedCry;
+    const u16 *palette;
+    u8 savedDucking = gPokemonCryBGMDuckingCounter;
+
+    PARAMETRIZE { mode = 0; indoor = FALSE; noDucking = FALSE; }
+    PARAMETRIZE { mode = 0; indoor = TRUE; noDucking = TRUE; }
+    PARAMETRIZE { mode = 1; indoor = FALSE; noDucking = FALSE; }
+    PARAMETRIZE { mode = 1; indoor = TRUE; noDucking = TRUE; }
+    PARAMETRIZE { mode = 2; indoor = FALSE; noDucking = TRUE; shiny = TRUE; }
+    PARAMETRIZE { mode = 2; indoor = TRUE; noDucking = FALSE; shiny = TRUE; }
+    PARAMETRIZE { mode = 3; indoor = FALSE; noDucking = FALSE; }
+    PARAMETRIZE { mode = 3; indoor = TRUE; noDucking = TRUE; }
+    PARAMETRIZE { mode = 2; indoor = FALSE; noDucking = FALSE; speciesOnly = TRUE; }
+    PARAMETRIZE { mode = 2; indoor = TRUE; noDucking = TRUE; speciesOnly = TRUE; }
+
+    memcpy(savedArgs, gFieldEffectArguments, sizeof(savedArgs));
+    CreateMon(&gPlayerParty[0], SPECIES_WOBBUFFET, 30, 123456, OTID_STRUCT_PLAYER_ID);
+    SetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY, &shiny);
+    if (mode)
+    {
+        profile = SetPortraitProfile(&gPlayerParty[0], mode >= 2);
+        profile->cryId = mode == 3 ? CRY_NONE : GetCryIdBySpecies(SPECIES_PIKACHU);
+        beforeProfile = *profile;
+    }
+    beforeMon = gPlayerParty[0];
+    expectedSpecies = mode && !speciesOnly ? SPECIES_JOLTEON : SPECIES_WOBBUFFET;
+    expectedCry = speciesOnly ? GetCryIdBySpecies(SPECIES_WOBBUFFET) : GetMonCryId(&gPlayerParty[0]);
+    gSaveBlock1Ptr->location.mapGroup = MAP_GROUP(MAP_NEW_BARK_TOWN_HNS);
+    gSaveBlock1Ptr->location.mapNum = MAP_NUM(MAP_NEW_BARK_TOWN_HNS);
+    if (indoor)
+    {
+        gSaveBlock1Ptr->location.mapGroup = MAP_GROUP(MAP_NEW_BARK_TOWN_LAB_HNS);
+        gSaveBlock1Ptr->location.mapNum = MAP_NUM(MAP_NEW_BARK_TOWN_LAB_HNS);
+    }
+    ResetTasks();
+    ResetSpriteData();
+    FreeAllSpritePalettes();
+    ResetPaletteFade();
+    InitStandardTextBoxWindows();
+    SetVBlankCallback(FieldPortraitVBlank);
+    FieldEffectActiveListClear();
+    StopCryAndClearCrySongs();
+    gPokemonCryBGMDuckingCounter = 0;
+    if (speciesOnly)
+    {
+        gFieldEffectArguments[0] = SPECIES_WOBBUFFET | (noDucking ? (1u << 31) : 0);
+        gFieldEffectArguments[1] = shiny;
+        gFieldEffectArguments[2] = 123456;
+        FieldEffectStart(FLDEFF_FIELD_MOVE_SHOW_MON);
+    }
+    else
+    {
+        gFieldEffectArguments[0] = noDucking ? (1u << 31) : 0;
+        FieldEffectStart(FLDEFF_FIELD_MOVE_SHOW_MON_INIT);
+    }
+    for (i = 0; i < MAX_SPRITES; i++)
+        if (gSprites[i].inUse && gSprites[i].images != NULL)
+        {
+            spriteId = i;
+            break;
+        }
+    EXPECT_LT(spriteId, MAX_SPRITES);
+    EXPECT_EQ(memcmp(gSprites[spriteId].images[0].data,
+        expectedSpecies == SPECIES_JOLTEON ? sJolteonFront : sWobbuffetFront, MON_PIC_SIZE), 0);
+    palette = GetMonSpritePalFromSpeciesAndPersonality(expectedSpecies, shiny, 123456);
+    for (i = 0; i < 16; i++)
+        EXPECT_EQ(gPlttBufferUnfaded[OBJ_PLTT_ID(gSprites[spriteId].oam.paletteNum) + i], palette[i]);
+    EXPECT_EQ(gSprites[spriteId].data[6], noDucking);
+    if (profile != NULL)
+        profile->cryId = GetCryIdBySpecies(SPECIES_BULBASAUR);
+    for (frame = 0; frame < 500; frame++)
+    {
+        RunTasks();
+        AnimateSprites();
+        if (!sawCry && gSprites[spriteId].x == DISPLAY_WIDTH / 2)
+        {
+            if (!gTestRunnerHeadless && P_CRIES_ENABLED)
+            {
+                if (expectedCry == CRY_NONE)
+                    EXPECT(gMPlay_PokemonCry == NULL || gMPlay_PokemonCry->songHeader->tone == NULL);
+                else
+                {
+                    EXPECT(gMPlay_PokemonCry != NULL);
+                    EXPECT_EQ(gMPlay_PokemonCry->songHeader->tone, &gCryTable[expectedCry - 1]);
+                    EXPECT_EQ(gPokemonCrySong.panValue, 64);
+                }
+            }
+            EXPECT_EQ(FuncIsActiveTask(Task_DuckBGMForPokemonCry), !noDucking);
+            if (noDucking)
+                EXPECT_EQ(gPokemonCryBGMDuckingCounter, 0);
+            sawCry = TRUE;
+        }
+        m4aSoundMain();
+        if (!FieldEffectActiveListContains(FLDEFF_FIELD_MOVE_SHOW_MON))
+        {
+            finished = TRUE;
+            break;
+        }
+    }
+    EXPECT(sawCry);
+    EXPECT(finished);
+    EXPECT(!gSprites[spriteId].inUse);
+    EXPECT_EQ(memcmp(&gPlayerParty[0], &beforeMon, sizeof(beforeMon)), 0);
+    if (profile != NULL)
+    {
+        profile->cryId = beforeProfile.cryId;
+        EXPECT_EQ(memcmp(profile, &beforeProfile, sizeof(beforeProfile)), 0);
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    }
+    StopCryAndClearCrySongs();
+    ResetTasks();
+    ResetSpriteData();
+    FreeAllSpritePalettes();
+    FreeAllWindowBuffers();
+    gPokemonCryBGMDuckingCounter = savedDucking;
+    gPlayerParty[0] = savedMon;
+    gSaveBlock1Ptr->location = savedLocation;
+    memcpy(gFieldEffectArguments, savedArgs, sizeof(savedArgs));
+    SetVBlankCallback(savedVBlank);
 }
 
 TEST("Fusion hatching preserves the profile donor growth and inherited moves")
