@@ -37,6 +37,7 @@ extern struct ToneData gCryTable_Reverse[];
 static void Task_Fanfare(u8 taskId);
 static void CreateFanfareTask(void);
 static void RestoreBGMVolumeAfterPokemonCry(void);
+static void PlayCryIdInternal(enum PokemonCry cryId, s8 pan, s8 volume, u8 priority, u8 mode);
 
 // The 1st argument in the table is the length of the fanfare, measured in frames. This is calculated by taking the duration of the midi file, multiplying by 59.72750056960583, and rounding up to the next nearest integer.
 static const struct Fanfare sFanfares[] = {
@@ -384,18 +385,7 @@ void PlayCryId_NormalNoDucking(enum PokemonCry cryId, s8 pan, s8 volume, u8 prio
 {
     if (cryId == CRY_NONE)
         return;
-
-    SetPokemonCryVolume(volume);
-    SetPokemonCryPanpot(pan);
-    SetPokemonCryPitch(15360);
-    SetPokemonCryLength(210);
-    SetPokemonCryProgress(0);
-    SetPokemonCryRelease(0);
-    SetPokemonCryChorus(0);
-    SetPokemonCryPriority(priority);
-
-    cryId--;
-    gMPlay_PokemonCry = SetPokemonCryTone(&gCryTable[cryId]);
+    PlayCryIdInternal(cryId, pan, volume, priority, CRY_MODE_NORMAL);
 }
 
 // Assuming it's not CRY_MODE_DOUBLES, this is equivalent to PlayCry_Normal except it allows other modes.
@@ -409,6 +399,18 @@ void PlayCry_ByMode(u16 species, s8 pan, u8 mode)
     {
         m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 85);
         PlayCryInternal(species, pan, CRY_VOLUME, CRY_PRIORITY_NORMAL, mode);
+        gPokemonCryBGMDuckingCounter = 2;
+        RestoreBGMVolumeAfterPokemonCry();
+    }
+}
+
+void PlayCryId_ByMode(enum PokemonCry cryId, s8 pan, u8 mode)
+{
+    if (mode != CRY_MODE_DOUBLES)
+        m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 85);
+    PlayCryIdInternal(cryId, pan, CRY_VOLUME, CRY_PRIORITY_NORMAL, mode);
+    if (mode != CRY_MODE_DOUBLES)
+    {
         gPokemonCryBGMDuckingCounter = 2;
         RestoreBGMVolumeAfterPokemonCry();
     }
@@ -454,6 +456,13 @@ void PlayCry_Script(u16 species, u8 mode)
 
 void PlayCryInternal(u16 species, s8 pan, s8 volume, u8 priority, u8 mode)
 {
+    if (!P_MODIFIED_MEGA_CRIES && gSpeciesInfo[species].isMegaEvolution)
+        mode = P_MODIFIED_MEGA_CRY_MODE;
+    PlayCryIdInternal(GetCryIdBySpecies(species), pan, volume, priority, mode);
+}
+
+static void PlayCryIdInternal(enum PokemonCry cryId, s8 pan, s8 volume, u8 priority, u8 mode)
+{
     bool32 reverse;
     u32 release;
     u32 length;
@@ -467,10 +476,6 @@ void PlayCryInternal(u16 species, s8 pan, s8 volume, u8 priority, u8 mode)
     release = 0;
     pitch = 15360;
     chorus = 0;
-
-    // If we're not using extra mega cries, we need to modify the cry mode for mega evolutions.
-    if (!P_MODIFIED_MEGA_CRIES && gSpeciesInfo[species].isMegaEvolution)
-        mode = P_MODIFIED_MEGA_CRY_MODE;
 
     switch (mode)
     {
@@ -556,8 +561,7 @@ void PlayCryInternal(u16 species, s8 pan, s8 volume, u8 priority, u8 mode)
     SetPokemonCryChorus(chorus);
     SetPokemonCryPriority(priority);
 
-    enum PokemonCry cryId = GetCryIdBySpecies(species);
-    if (cryId != CRY_NONE)
+    if (P_CRIES_ENABLED && !gTestRunnerHeadless && cryId > CRY_NONE && cryId < CRY_COUNT)
     {
         cryId--;
         gMPlay_PokemonCry = SetPokemonCryTone(reverse ? &gCryTable_Reverse[cryId] : &gCryTable[cryId]);

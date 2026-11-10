@@ -946,6 +946,7 @@ bool8 PrepareBerserkGeneProfileEvolutionForChoice(struct Pokemon *mon, u16 targe
 void CommitBerserkGeneProfileEvolution(struct Pokemon *mon, const struct BerserkGeneProfile *prepared);
 u16 GetBerserkGeneSpriteSpecies(const struct BerserkGeneProfile *profile, u16 fallbackSpecies);
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon);
+const u8 *GetBoxMonDisplaySpeciesName(struct BoxPokemon *mon);
 const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpecies);
 const u8 *GetMonEvolutionDisplaySpeciesNameForChoice(struct Pokemon *mon, u16 targetSpecies, u8 choice);
 u16 GetMonDisplaySpriteSpecies(struct Pokemon *mon);
@@ -1037,6 +1038,7 @@ const u8 *GetTrainerPartnerName(void);
 void BattleAnimateFrontSprite(struct Sprite *sprite, u16 species, bool8 noCry, u8 panMode);
 void DoMonFrontSpriteAnimation(struct Sprite *sprite, u16 species, bool8 noCry, u8 panModeAnimFlag);
 void DoMonFrontSpriteAnimationWithCry(struct Sprite *sprite, u16 species, u16 crySpecies, bool8 noCry, u8 panModeAnimFlag);
+void DoMonFrontSpriteAnimationWithCryId(struct Sprite *sprite, u16 species, enum PokemonCry cryId, bool8 noCry, u8 panModeAnimFlag);
 void PokemonSummaryDoMonAnimation(struct Sprite *sprite, u16 species, bool8 oneFrame);
 void StopPokemonAnimationDelayTask(void);
 void BattleAnimateBackSprite(struct Sprite *sprite, u16 species);

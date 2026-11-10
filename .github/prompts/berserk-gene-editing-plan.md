@@ -453,6 +453,57 @@ Validation:
 Next: milestone 2, remaining display/cry consumers. Four current-implementation milestones
 remain; the external-storage migration remains deferred and separate.
 
+## Milestone 2 checkpoint: naming, trade presentation, and cry playback groundwork
+
+Implemented and automatically verified:
+- Added a boxed-mon display-name accessor and a mon-aware naming entry. Hatch (including
+  mandatory Nuzlocke naming), caught-mon naming, and party/PC nickname changes now copy the
+  fused title and use the saved sprite donor for the icon. Species-only/player/box/rival
+  naming remains on its original entry; nominal species, gender, personality, shininess,
+  and the caller's nickname buffer retain their existing roles.
+- Trade menu icons and both trade-animation loaders use the saved visual donor, including
+  hidden siblings. Graphics, palettes, templates, offsets, flipping, and arrival release
+  follow that identity without writing donor species into the Pokemon.
+- The real trade scene regression exposed shared palette tags when the two mons have the
+  same donor but different shininess. Each trade portrait now has its own palette tag,
+  preserving both palettes simultaneously.
+- Outgoing trade cries and incoming ball-release cries use the saved independent cry.
+  Added cry-ID mode playback through the existing sound engine, preserving normal/weak,
+  reverse/echo, pitch, length, priority, panning, and BGM-ducking behavior. Summary playback
+  now uses the saved cry for valid fusion profiles; ordinary mons retain species-mode
+  handling, including the configured Mega cry modifier.
+- The front-animation helper now supports a cry ID independently of visual species while
+  retaining second-frame playback. Existing species-based entry points remain available.
+- Foreign link profile IDs must not resolve against the local profile table. The current
+  trade-party packets copy Pokemon records without their associated profile entries; remote
+  portraits/icons/cries therefore retain species-only presentation until milestone 5
+  supplies safe profile transfer/import. This guard does NOT make cross-save fusion trades
+  safe or establish link compatibility.
+
+Verification:
+- `make -k check BUILD=hns -j24 TESTS="test/fusion_presentation.c"`:
+  **3 passed / 28 parameter cases** (six real naming-screen cases, fourteen sound modes,
+  eight complete in-game trade scenes).
+- `tools/mgba-rom-test-hydra/mgba-rom-test-hydra tools/mgba/mgba-rom-test arm-none-eabi-objcopy pokehns-test.elf`
+  with that selector retained: **3 passed / the same 28 cases**, without headless
+  suppression. Checks actual cry tones (not merely the selected profile ID), second-frame
+  animation, loaded portrait pixels and both palettes, rendered naming-title pixels,
+  donor icons, ordinary/legacy/hidden donors, eggs, and normal/shiny collisions.
+- The foreign-ID case simulates remote presentation during the real loader, deliberately
+  using a foreign ID that aliases a valid local profile; it is not a two-instance link test.
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: **46 passed / 3 existing move TODOs**.
+- `make -k hns -j24`: passed; EWRAM **260,116 / 262,144**, IWRAM **27,644 / 32,768**,
+  ROM **31,699,860 / 33,554,432**. `git diff --check`: passed. No save-layout growth.
+
+Milestone 2 is **in progress, not complete**. Next: finish independent cry routing for
+prepared evolution appearances, hatch reveal, battle/ball release and remaining per-mon
+consumers; classify species-reference/world/intro consumers rather than changing them
+blindly. Summary playback is wired but has no new full-summary scene regression in this
+checkpoint. Trade menu return, PC-origin trades, and real cable/wireless transfer still need
+their lifecycle/link verification. No manual visual/listening or live link validation was
+performed. Four current-implementation milestones still remain (2-5); their order and count
+have not changed, and external-storage migration remains deferred.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -463,7 +514,7 @@ validation has been completed.
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
-| 2. Remaining display/cry consumers | Next | Audit and wire naming screens, trade presentation, and remaining per-mon UI/cry consumers without changing nominal gameplay identity; verify relevant paths. |
+| 2. Remaining display/cry consumers | In progress: naming/trade checkpoint verified | Naming screens, trade portraits/icons/cries, shared cry-ID playback, and summary cry routing are wired. Finish evolution/hatch/battle and remaining per-mon consumer audit and regressions; see checkpoint above. |
 | 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |

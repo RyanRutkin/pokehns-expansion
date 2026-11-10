@@ -250,7 +250,10 @@ static EWRAM_DATA struct {
     u16 gbaScale;
     u16 alpha;
     bool8 isLinkTrade;
-    u16 monSpecies[2];
+    u16 monSpecies[2]; // Visual species; gameplay identity remains on the traded mon.
+    enum PokemonCry monCryIds[2];
+    u8 monCryModes[2];
+    bool8 monUsesFusionCry[2];
     u16 cachedMapMusic;
     u8 textColors[3];
     u8 filler_F9;
@@ -298,6 +301,7 @@ static void SpriteCB_CableEndSending(struct Sprite *);
 static void SpriteCB_CableEndReceiving(struct Sprite *);
 static void SpriteCB_GbaScreen(struct Sprite *);
 static void TradeAnimInit_LoadGfx(void);
+static u16 GetTradeMonVisualSpecies(struct Pokemon *mon, u8 whichParty);
 static void CB2_InGameTrade(void);
 static void SetTradeSequenceBgGpuRegs(u8);
 static void LoadTradeSequenceSpriteSheetsAndPalettes(void);
@@ -568,7 +572,7 @@ static void CB2_CreateTradeMenu(void)
         for (i = 0; i < sTradeMenu->partyCounts[TRADE_PLAYER]; i++)
         {
             struct Pokemon *mon = &gPlayerParty[i];
-            sTradeMenu->partySpriteIds[TRADE_PLAYER][i] = CreateMonIcon(GetMonData(mon, MON_DATA_SPECIES_OR_EGG),
+            sTradeMenu->partySpriteIds[TRADE_PLAYER][i] = CreateMonIcon(GetTradeMonVisualSpecies(mon, TRADE_PLAYER),
                                                          SpriteCB_MonIcon,
                                                          (sTradeMonSpriteCoords[i][0] * 8) + 14,
                                                          (sTradeMonSpriteCoords[i][1] * 8) - 12,
@@ -579,7 +583,7 @@ static void CB2_CreateTradeMenu(void)
         for (i = 0; i < sTradeMenu->partyCounts[TRADE_PARTNER]; i++)
         {
             struct Pokemon *mon = &gEnemyParty[i];
-            sTradeMenu->partySpriteIds[TRADE_PARTNER][i] = CreateMonIcon(GetMonData(mon, MON_DATA_SPECIES_OR_EGG),
+            sTradeMenu->partySpriteIds[TRADE_PARTNER][i] = CreateMonIcon(GetTradeMonVisualSpecies(mon, TRADE_PARTNER),
                                                          SpriteCB_MonIcon,
                                                          (sTradeMonSpriteCoords[i + PARTY_SIZE][0] * 8) + 14,
                                                          (sTradeMonSpriteCoords[i + PARTY_SIZE][1] * 8) - 12,
@@ -757,7 +761,7 @@ static void CB2_ReturnToTradeMenu(void)
         for (i = 0; i < sTradeMenu->partyCounts[TRADE_PLAYER]; i++)
         {
             struct Pokemon *mon = &gPlayerParty[i];
-            sTradeMenu->partySpriteIds[TRADE_PLAYER][i] = CreateMonIcon(GetMonData(mon, MON_DATA_SPECIES_OR_EGG),
+            sTradeMenu->partySpriteIds[TRADE_PLAYER][i] = CreateMonIcon(GetTradeMonVisualSpecies(mon, TRADE_PLAYER),
                                                          SpriteCB_MonIcon,
                                                          (sTradeMonSpriteCoords[i][0] * 8) + 14,
                                                          (sTradeMonSpriteCoords[i][1] * 8) - 12,
@@ -768,7 +772,7 @@ static void CB2_ReturnToTradeMenu(void)
         for (i = 0; i < sTradeMenu->partyCounts[TRADE_PARTNER]; i++)
         {
             struct Pokemon *mon = &gEnemyParty[i];
-            sTradeMenu->partySpriteIds[TRADE_PARTNER][i] = CreateMonIcon(GetMonData(mon, MON_DATA_SPECIES_OR_EGG),
+            sTradeMenu->partySpriteIds[TRADE_PARTNER][i] = CreateMonIcon(GetTradeMonVisualSpecies(mon, TRADE_PARTNER),
                                                          SpriteCB_MonIcon,
                                                          (sTradeMonSpriteCoords[i + PARTY_SIZE][0] * 8) + 14,
                                                          (sTradeMonSpriteCoords[i + PARTY_SIZE][1] * 8) - 12,
@@ -2779,11 +2783,27 @@ static u32 TradeGetMultiplayerId(void)
     return 0;
 }
 
+static bool32 CanUseTradeMonProfile(u8 whichParty)
+{
+    // Link packets do not yet transfer the remote save's profile table.
+    return whichParty != TRADE_PARTNER || !gReceivedRemoteLinkPlayers;
+}
+
+static u16 GetTradeMonVisualSpecies(struct Pokemon *mon, u8 whichParty)
+{
+    if (GetMonData(mon, MON_DATA_IS_EGG))
+        return SPECIES_EGG;
+    if (!CanUseTradeMonProfile(whichParty))
+        return GetMonData(mon, MON_DATA_SPECIES);
+    return GetMonDisplaySpriteSpecies(mon);
+}
+
 static void LoadTradeMonPic(struct Pokemon *mon, u8 state)
 {
     u32 species, personality;
     u32 whichParty = state / 2;
-    species = GetMonData(mon, MON_DATA_SPECIES_OR_EGG);
+    u16 paletteTag = whichParty == TRADE_PLAYER ? PALTAG_PLAYER_MON : PALTAG_PARTNER_MON;
+    species = GetTradeMonVisualSpecies(mon, whichParty);
     switch (state % 2)
     {
     case 0:
@@ -2791,18 +2811,38 @@ static void LoadTradeMonPic(struct Pokemon *mon, u8 state)
 
         HandleLoadSpecialPokePic(TRUE, gMonSpritesGfxPtr->spritesGfx[whichParty * 2 + B_POSITION_OPPONENT_LEFT], species, personality);
 
-        LoadSpritePaletteWithTag(GetMonFrontSpritePal(mon), species);
+        LoadSpritePaletteWithTag(GetMonSpritePalFromSpeciesAndPersonalityIsEgg(species,
+            GetMonData(mon, MON_DATA_IS_SHINY), personality, GetMonData(mon, MON_DATA_IS_EGG)), paletteTag);
         sTradeAnim->monSpecies[whichParty] = species;
+        sTradeAnim->monCryIds[whichParty] = CanUseTradeMonProfile(whichParty) ? GetMonCryId(mon) : GetCryIdBySpecies(species);
+        sTradeAnim->monUsesFusionCry[whichParty] = CanUseTradeMonProfile(whichParty)
+            && GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL;
+        sTradeAnim->monCryModes[whichParty] = CRY_MODE_NORMAL;
+        if (!P_MODIFIED_MEGA_CRIES && gSpeciesInfo[species].isMegaEvolution
+         && !sTradeAnim->monUsesFusionCry[whichParty])
+            sTradeAnim->monCryModes[whichParty] = P_MODIFIED_MEGA_CRY_MODE;
         sTradeAnim->monPersonalities[whichParty] = personality;
         break;
     case 1:
         SetMultiuseSpriteTemplateToPokemon(species, whichParty * 2 + B_POSITION_OPPONENT_LEFT);
+        gMultiuseSpriteTemplate.paletteTag = paletteTag;
         sTradeAnim->monSpriteIds[whichParty] = CreateSprite(&gMultiuseSpriteTemplate, 120, 60, 6);
         gSprites[sTradeAnim->monSpriteIds[whichParty]].invisible = TRUE;
         gSprites[sTradeAnim->monSpriteIds[whichParty]].callback = SpriteCallbackDummy;
         break;
     }
 
+}
+
+static void ReleaseReceivedTradeMon(void)
+{
+    u8 spriteId = sTradeAnim->monSpriteIds[TRADE_PARTNER];
+    u8 paletteNum = gSprites[spriteId].oam.paletteNum;
+    u16 species = sTradeAnim->monSpecies[TRADE_PARTNER];
+    if (sTradeAnim->monUsesFusionCry[TRADE_PARTNER])
+        CreatePokeballSpriteToReleaseMonWithCry(spriteId, paletteNum, 120, 84, 2, 1, 20, PALETTES_BG | (0xF << 16), species, sTradeAnim->monCryIds[TRADE_PARTNER]);
+    else
+        CreatePokeballSpriteToReleaseMon(spriteId, paletteNum, 120, 84, 2, 1, 20, PALETTES_BG | (0xF << 16), species);
 }
 
 void CB2_LinkTrade(void)
@@ -3481,7 +3521,7 @@ static bool8 DoTradeAnim_Cable(void)
         DrawTextOnTradeWindow(0, gStringVar4, 0);
 
         if (sTradeAnim->monSpecies[TRADE_PLAYER] != SPECIES_EGG)
-            PlayCry_Normal(sTradeAnim->monSpecies[TRADE_PLAYER], 0);
+            PlayCryId_ByMode(sTradeAnim->monCryIds[TRADE_PLAYER], 0, sTradeAnim->monCryModes[TRADE_PLAYER]);
 
         sTradeAnim->state = STATE_BYE_BYE;
         sTradeAnim->timer = 0;
@@ -3829,7 +3869,7 @@ static bool8 DoTradeAnim_Cable(void)
         gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]].x2 = 0;
         gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]].y2 = 0;
         StartSpriteAnim(&gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]], 0);
-        CreatePokeballSpriteToReleaseMon(sTradeAnim->monSpriteIds[TRADE_PARTNER], gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]].oam.paletteNum, 120, 84, 2, 1, 20, PALETTES_BG | (0xF << 16), sTradeAnim->monSpecies[TRADE_PARTNER]);
+        ReleaseReceivedTradeMon();
         FreeSpriteOamMatrix(&gSprites[sTradeAnim->bouncingPokeballSpriteId]);
         DestroySprite(&gSprites[sTradeAnim->bouncingPokeballSpriteId]);
         sTradeAnim->state++;
@@ -3956,7 +3996,7 @@ static bool8 DoTradeAnim_Wireless(void)
         DrawTextOnTradeWindow(0, gStringVar4, 0);
 
         if (sTradeAnim->monSpecies[TRADE_PLAYER] != SPECIES_EGG)
-            PlayCry_Normal(sTradeAnim->monSpecies[TRADE_PLAYER], 0);
+            PlayCryId_ByMode(sTradeAnim->monCryIds[TRADE_PLAYER], 0, sTradeAnim->monCryModes[TRADE_PLAYER]);
 
         sTradeAnim->state = STATE_BYE_BYE;
         sTradeAnim->timer = 0;
@@ -4330,7 +4370,7 @@ static bool8 DoTradeAnim_Wireless(void)
         gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]].x2 = 0;
         gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]].y2 = 0;
         StartSpriteAnim(&gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]], 0);
-        CreatePokeballSpriteToReleaseMon(sTradeAnim->monSpriteIds[TRADE_PARTNER], gSprites[sTradeAnim->monSpriteIds[TRADE_PARTNER]].oam.paletteNum, 120, 84, 2, 1, 20, PALETTES_BG | (0xF << 16), sTradeAnim->monSpecies[TRADE_PARTNER]);
+        ReleaseReceivedTradeMon();
         FreeSpriteOamMatrix(&gSprites[sTradeAnim->bouncingPokeballSpriteId]);
         DestroySprite(&gSprites[sTradeAnim->bouncingPokeballSpriteId]);
         sTradeAnim->state++;

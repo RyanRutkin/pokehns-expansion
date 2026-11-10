@@ -181,6 +181,8 @@ struct NamingScreenData
     u8 templateNum;
     u8 *destBuffer;
     u16 monSpecies;
+    u16 monIconSpecies;
+    u8 monDisplayName[POKEMON_NAME_BUFFER_SIZE];
     u16 monGender;
     u32 monPersonality;
     bool8 isShiny;
@@ -429,6 +431,8 @@ void DoNamingScreen(u8 templateNum, u8 *destBuffer, u16 monSpecies, u16 monGende
     {
         sNamingScreen->templateNum = templateNum;
         sNamingScreen->monSpecies = monSpecies;
+        sNamingScreen->monIconSpecies = monSpecies;
+        StringCopy(sNamingScreen->monDisplayName, GetSpeciesName(monSpecies));
         sNamingScreen->monGender = monGender;
         sNamingScreen->monPersonality = monPersonality;
         sNamingScreen->isShiny = isShiny;
@@ -440,6 +444,18 @@ void DoNamingScreen(u8 templateNum, u8 *destBuffer, u16 monSpecies, u16 monGende
             StartTimer1();
 
         SetMainCallback2(CB2_LoadNamingScreen);
+    }
+}
+
+void DoNamingScreenForMon(u8 templateNum, u8 *destBuffer, struct BoxPokemon *mon, MainCallback returnCallback)
+{
+    DoNamingScreen(templateNum, destBuffer, GetBoxMonData(mon, MON_DATA_SPECIES), GetBoxMonGender(mon),
+        GetBoxMonData(mon, MON_DATA_PERSONALITY), GetBoxMonData(mon, MON_DATA_IS_SHINY), returnCallback);
+    if (sNamingScreen != NULL)
+    {
+        sNamingScreen->monIconSpecies = GetBoxMonData(mon, MON_DATA_IS_EGG)
+            ? SPECIES_EGG : GetBoxMonDisplaySpriteSpecies(mon);
+        StringCopy(sNamingScreen->monDisplayName, GetBoxMonDisplaySpeciesName(mon));
     }
 }
 
@@ -1450,7 +1466,7 @@ static void NamingScreen_CreateMonIcon(void)
     u8 spriteId;
 
     LoadMonIconPalettes();
-    spriteId = CreateMonIcon(sNamingScreen->monSpecies, SpriteCallbackDummy, 56, 40, 0, sNamingScreen->monPersonality);
+    spriteId = CreateMonIcon(sNamingScreen->monIconSpecies, SpriteCallbackDummy, 56, 40, 0, sNamingScreen->monPersonality);
     gSprites[spriteId].oam.priority = 3;
 }
 
@@ -1885,7 +1901,7 @@ static void DrawMonTextEntryBox(void)
 {
     u8 buffer[64];
 
-    u8 *end = StringCopy(buffer, GetSpeciesName(sNamingScreen->monSpecies));
+    u8 *end = StringCopy(buffer, sNamingScreen->monDisplayName);
     WrapFontIdToFit(buffer, end, FONT_NORMAL, 128 - 64);
     StringAppendN(end, sNamingScreen->template->title, 15);
     FillWindowPixelBuffer(sNamingScreen->windows[WIN_TEXT_ENTRY_BOX], PIXEL_FILL(1));

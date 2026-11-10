@@ -27,6 +27,7 @@ extern const struct PokeBallSprite gPokeBalls[];
 
 u8 DoPokeballSendOutAnimation(enum BattlerId battler, s16 pan, u8 kindOfThrow);
 void CreatePokeballSpriteToReleaseMon(u8 monSpriteId, u8 monPalNum, u8 x, u8 y, u8 oamPriority, u8 subpriority, u8 delay, u32 fadePalettes, u16 species);
+void CreatePokeballSpriteToReleaseMonWithCry(u8 monSpriteId, u8 monPalNum, u8 x, u8 y, u8 oamPriority, u8 subpriority, u8 delay, u32 fadePalettes, u16 species, enum PokemonCry cryId);
 u8 CreateTradePokeballSprite(u8 monSpriteId, u8 monPalNum, u8 x, u8 y, u8 oamPriority, u8 subPriority, u8 delay, u32 fadePalettes);
 void StartHealthboxSlideIn(enum BattlerId battler);
 void DoHitAnimHealthboxEffect(enum BattlerId battler);

@@ -1112,6 +1112,7 @@ static u8 LaunchBallFadeMonTaskForPokeball(bool8 unFadeLater, u8 spritePalNum, u
 
 // Sprite data for the Pokémon
 #define sSpecies data[7]
+#define sCryId   data[5]
 
 // Sprite data for the Poké Ball
 #define sMonSpriteId data[0]
@@ -1139,6 +1140,7 @@ void CreatePokeballSpriteToReleaseMon(u8 monSpriteId, u8 monPalNum, u8 x, u8 y, 
     gSprites[monSpriteId].x = x;
     gSprites[monSpriteId].y = y;
     gSprites[monSpriteId].sSpecies = species;
+    gSprites[monSpriteId].sCryId = -1;
 
     gSprites[spriteId].sDelay = delay;
     gSprites[spriteId].sMonPalNum = monPalNum;
@@ -1148,6 +1150,12 @@ void CreatePokeballSpriteToReleaseMon(u8 monSpriteId, u8 monPalNum, u8 x, u8 y, 
     gSprites[spriteId].callback = SpriteCB_PokeballReleaseMon;
 
     gSprites[monSpriteId].invisible = TRUE;
+}
+
+void CreatePokeballSpriteToReleaseMonWithCry(u8 monSpriteId, u8 monPalNum, u8 x, u8 y, u8 oamPriority, u8 subpriority, u8 delay, u32 fadePalettes, u16 species, enum PokemonCry cryId)
+{
+    CreatePokeballSpriteToReleaseMon(monSpriteId, monPalNum, x, y, oamPriority, subpriority, delay, fadePalettes, species);
+    gSprites[monSpriteId].sCryId = cryId;
 }
 
 static void SpriteCB_PokeballReleaseMon(struct Sprite *sprite)
@@ -1222,6 +1230,8 @@ static void SpriteCB_ReleasedMonFlyOut(struct Sprite *sprite)
     {
         if (gSprites[monSpriteId].sSpecies == SPECIES_EGG)
             DoMonFrontSpriteAnimation(&gSprites[monSpriteId], gSprites[monSpriteId].sSpecies, TRUE, 0);
+        else if (gSprites[monSpriteId].sCryId >= 0)
+            DoMonFrontSpriteAnimationWithCryId(&gSprites[monSpriteId], gSprites[monSpriteId].sSpecies, gSprites[monSpriteId].sCryId, FALSE, 0);
         else
             DoMonFrontSpriteAnimation(&gSprites[monSpriteId], gSprites[monSpriteId].sSpecies, FALSE, 0);
 
@@ -1230,6 +1240,7 @@ static void SpriteCB_ReleasedMonFlyOut(struct Sprite *sprite)
 }
 
 #undef sSpecies
+#undef sCryId
 #undef sFinalMonX
 #undef sFinalMonY
 #undef sTrigIdx

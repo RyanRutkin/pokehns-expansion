@@ -11,6 +11,8 @@
 #define PALTAG_LINK_MON  5551
 #define PALTAG_GBA       5555
 #define PALTAG_POKEBALL  5558
+#define PALTAG_PLAYER_MON 5559
+#define PALTAG_PARTNER_MON 5560
 
 // Exists unused in RS as well
 static const u32 sUnusedStructSizes[] =

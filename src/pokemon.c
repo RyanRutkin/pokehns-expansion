@@ -7274,9 +7274,14 @@ static const u8 *GetBerserkGeneDisplaySpeciesName(const struct BerserkGeneProfil
 
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
 {
+    return GetBoxMonDisplaySpeciesName(&mon->box);
+}
+
+const u8 *GetBoxMonDisplaySpeciesName(struct BoxPokemon *mon)
+{
     return GetBerserkGeneDisplaySpeciesName(
-        GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)),
-        GetMonData(mon, MON_DATA_SPECIES));
+        GetBerserkGeneProfile(GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)),
+        GetBoxMonData(mon, MON_DATA_SPECIES));
 }
 
 const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpecies)
@@ -10278,7 +10283,7 @@ void DoMonFrontSpriteAnimation(struct Sprite *sprite, u16 species, bool8 noCry, 
     DoMonFrontSpriteAnimationWithCry(sprite, species, species, noCry, panModeAnimFlag);
 }
 
-void DoMonFrontSpriteAnimationWithCry(struct Sprite *sprite, u16 species, u16 crySpecies, bool8 noCry, u8 panModeAnimFlag)
+static void DoMonFrontSpriteAnimationInternal(struct Sprite *sprite, u16 species, enum PokemonCry cryId, u8 cryMode, bool8 noCry, u8 panModeAnimFlag)
 {
     s8 pan;
     switch (panModeAnimFlag & (u8)~SKIP_FRONT_ANIM) // Exclude anim flag to get pan mode
@@ -10297,14 +10302,14 @@ void DoMonFrontSpriteAnimationWithCry(struct Sprite *sprite, u16 species, u16 cr
     {
         // No animation, only check if cry needs to be played
         if (!noCry)
-            PlayCry_Normal(crySpecies, pan);
+            PlayCryId_ByMode(cryId, pan, cryMode);
         sprite->callback = SpriteCallbackDummy;
     }
     else
     {
         if (!noCry)
         {
-            PlayCry_Normal(crySpecies, pan);
+            PlayCryId_ByMode(cryId, pan, cryMode);
             if (HasTwoFramesAnimation(species))
                 StartSpriteAnim(sprite, 1);
         }
@@ -10323,6 +10328,17 @@ void DoMonFrontSpriteAnimationWithCry(struct Sprite *sprite, u16 species, u16 cr
         }
         sprite->callback = SpriteCallbackDummy_2;
     }
+}
+
+void DoMonFrontSpriteAnimationWithCry(struct Sprite *sprite, u16 species, u16 crySpecies, bool8 noCry, u8 panModeAnimFlag)
+{
+    u8 mode = (!P_MODIFIED_MEGA_CRIES && gSpeciesInfo[crySpecies].isMegaEvolution) ? P_MODIFIED_MEGA_CRY_MODE : CRY_MODE_NORMAL;
+    DoMonFrontSpriteAnimationInternal(sprite, species, GetCryIdBySpecies(crySpecies), mode, noCry, panModeAnimFlag);
+}
+
+void DoMonFrontSpriteAnimationWithCryId(struct Sprite *sprite, u16 species, enum PokemonCry cryId, bool8 noCry, u8 panModeAnimFlag)
+{
+    DoMonFrontSpriteAnimationInternal(sprite, species, cryId, CRY_MODE_NORMAL, noCry, panModeAnimFlag);
 }
 
 void PokemonSummaryDoMonAnimation(struct Sprite *sprite, u16 species, bool8 oneFrame)
@@ -11537,7 +11553,7 @@ void ChangePokemonNicknameWithCallback(void (*callback)(void))
     struct BoxPokemon *boxMon = GetSelectedBoxMonFromPcOrParty();
     GetBoxMonData(boxMon, MON_DATA_NICKNAME, gStringVar3);
     GetBoxMonData(boxMon, MON_DATA_NICKNAME, gStringVar2);
-    DoNamingScreen(NAMING_SCREEN_NICKNAME, gStringVar2, GetBoxMonData(boxMon, MON_DATA_SPECIES), GetBoxMonGender(boxMon), GetBoxMonData(boxMon, MON_DATA_PERSONALITY), GetBoxMonData(boxMon, MON_DATA_IS_SHINY), callback);
+    DoNamingScreenForMon(NAMING_SCREEN_NICKNAME, gStringVar2, boxMon, callback);
 }
 
 u16 GetCatchProgress(const enum NationalDexOrder *pkmn, u16 len)

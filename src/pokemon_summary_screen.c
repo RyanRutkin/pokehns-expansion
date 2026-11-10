@@ -4750,10 +4750,11 @@ static void PlayMonCry(void)
     struct PokeSummary *summary = &sMonSummaryScreen->summary;
     if (!summary->isEgg)
     {
-        if (ShouldPlayNormalMonCry(&sMonSummaryScreen->currentMon) == TRUE)
-            PlayCry_ByMode(summary->species2, 0, CRY_MODE_NORMAL);
+        u8 mode = ShouldPlayNormalMonCry(&sMonSummaryScreen->currentMon) ? CRY_MODE_NORMAL : CRY_MODE_WEAK;
+        if (GetBerserkGeneProfile(GetMonData(&sMonSummaryScreen->currentMon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+            PlayCryId_ByMode(GetMonCryId(&sMonSummaryScreen->currentMon), 0, mode);
         else
-            PlayCry_ByMode(summary->species2, 0, CRY_MODE_WEAK);
+            PlayCry_ByMode(summary->species2, 0, mode);
     }
 }
 

@@ -657,8 +657,6 @@ static void Task_EggHatchPlayBGM(u8 taskId)
 static void CB2_EggHatch(void)
 {
     u16 species;
-    u8 gender;
-    u32 personality;
 
     switch (sEggHatchData->state)
     {
@@ -742,11 +740,8 @@ static void CB2_EggHatch(void)
         if (IsNuzlockeNicknamingActive())
         {
             GetMonNickname(&gPlayerParty[sEggHatchData->eggPartyId], gStringVar3);
-            species = GetMonData(&gPlayerParty[sEggHatchData->eggPartyId], MON_DATA_SPECIES);
-            gender = GetMonGender(&gPlayerParty[sEggHatchData->eggPartyId]);
-            personality = GetMonData(&gPlayerParty[sEggHatchData->eggPartyId], MON_DATA_PERSONALITY, 0);
-            bool8 isShiny = GetMonData(&gPlayerParty[sEggHatchData->eggPartyId], MON_DATA_IS_SHINY);
-            DoNamingScreen(NAMING_SCREEN_NICKNAME, gStringVar3, species, gender, personality, isShiny, EggHatchSetMonNickname);
+            DoNamingScreenForMon(NAMING_SCREEN_NICKNAME, gStringVar3,
+                &gPlayerParty[sEggHatchData->eggPartyId].box, EggHatchSetMonNickname);
         }
         else
         {
@@ -755,11 +750,8 @@ static void CB2_EggHatch(void)
             {
             case 0: // Yes
                 GetMonNickname(&gPlayerParty[sEggHatchData->eggPartyId], gStringVar3);
-                species = GetMonData(&gPlayerParty[sEggHatchData->eggPartyId], MON_DATA_SPECIES);
-                gender = GetMonGender(&gPlayerParty[sEggHatchData->eggPartyId]);
-                personality = GetMonData(&gPlayerParty[sEggHatchData->eggPartyId], MON_DATA_PERSONALITY, 0);
-                bool8 isShiny = GetMonData(&gPlayerParty[sEggHatchData->eggPartyId], MON_DATA_IS_SHINY);
-            DoNamingScreen(NAMING_SCREEN_NICKNAME, gStringVar3, species, gender, personality, isShiny, EggHatchSetMonNickname);
+                DoNamingScreenForMon(NAMING_SCREEN_NICKNAME, gStringVar3,
+                    &gPlayerParty[sEggHatchData->eggPartyId].box, EggHatchSetMonNickname);
                 break;
             case 1: // No
             case MENU_B_PRESSED:

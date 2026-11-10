@@ -11445,12 +11445,7 @@ static void Cmd_trygivecaughtmonnick(void)
             FreeAllWindowBuffers();
             MainCallback callback = CalculatePlayerPartyCount() == GetMaxPartySize() ? ReshowBlankBattleScreenAfterMenu : BattleMainCB2;
 
-            DoNamingScreen(NAMING_SCREEN_CAUGHT_MON, gBattleStruct->caughtMonNick,
-                           GetMonData(caughtMon, MON_DATA_SPECIES),
-                           GetMonGender(caughtMon),
-                           GetMonData(caughtMon, MON_DATA_PERSONALITY),
-                           GetMonData(caughtMon, MON_DATA_IS_SHINY),
-                           callback);
+            DoNamingScreenForMon(NAMING_SCREEN_CAUGHT_MON, gBattleStruct->caughtMonNick, &caughtMon->box, callback);
 
             gBattleCommunication[MULTIUSE_STATE]++;
         }
