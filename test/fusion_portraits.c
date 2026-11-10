@@ -10,6 +10,8 @@
 #include "main.h"
 #include "m4a.h"
 #include "menu.h"
+#include "item_menu.h"
+#include "pokeblock.h"
 #include "overworld.h"
 #include "palette.h"
 #include "pokedex.h"
@@ -70,6 +72,121 @@ static struct BerserkGeneProfile *SetPortraitProfile(struct Pokemon *mon, bool8 
 
 static void FieldPortraitVBlank(void)
 {
+}
+
+static void FeedingPortraitReturn(void)
+{
+}
+
+TEST("Fusion Pokeblock feeding displays donor portraits and snapshots independent cries")
+{
+    struct Pokemon savedMon = gPlayerParty[0], beforeMon;
+    struct Pokeblock savedBlock = gSaveBlock1Ptr->pokeblocks[0];
+    struct BerserkGeneProfile *profile = NULL;
+    struct BerserkGeneProfile beforeProfile;
+    MainCallback savedCallback = gMain.callback2, savedReturn = gMain.savedCallback;
+    IntrCallback savedVBlank = gMain.vblankCallback;
+    u16 savedItem = gSpecialVar_ItemId, frame, species;
+    u8 savedMonId = gPokeblockMonId, mode = 0, spriteId, i;
+    s16 savedGain = gPokeblockGain;
+    bool8 shiny = FALSE, egg = FALSE, sawCry = FALSE, finished = FALSE;
+    enum PokemonCry cryId;
+    const u16 *palette;
+
+    PARAMETRIZE { mode = 0; shiny = FALSE; }
+    PARAMETRIZE { mode = 0; shiny = TRUE; }
+    PARAMETRIZE { mode = 1; shiny = FALSE; }
+    PARAMETRIZE { mode = 2; shiny = TRUE; }
+    PARAMETRIZE { mode = 3; shiny = FALSE; }
+    PARAMETRIZE { mode = 2; shiny = TRUE; egg = TRUE; }
+
+    CreateMon(&gPlayerParty[0], SPECIES_WOBBUFFET, 30, 123456, OTID_STRUCT_PLAYER_ID);
+    SetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY, &shiny);
+    SetMonData(&gPlayerParty[0], MON_DATA_IS_EGG, &egg);
+    if (mode)
+    {
+        profile = SetPortraitProfile(&gPlayerParty[0], mode >= 2);
+        profile->cryId = mode == 3 ? CRY_NONE : GetCryIdBySpecies(SPECIES_PIKACHU);
+        beforeProfile = *profile;
+    }
+    beforeMon = gPlayerParty[0];
+    species = egg ? SPECIES_EGG : mode ? SPECIES_JOLTEON : SPECIES_WOBBUFFET;
+    cryId = egg ? GetCryIdBySpecies(SPECIES_EGG) : GetMonCryId(&gPlayerParty[0]);
+    gSaveBlock1Ptr->pokeblocks[0] = (struct Pokeblock){.color = PBLOCK_CLR_RED, .spicy = 20, .feel = 10};
+    gSpecialVar_ItemId = 0;
+    gPokeblockMonId = 0;
+    ResetTasks();
+    StopCryAndClearCrySongs();
+    gMain.savedCallback = FeedingPortraitReturn;
+    gMain.state = 0;
+    SetMainCallback2(PreparePokeblockFeedScene);
+    for (frame = 0; frame < 60 && gMain.callback2 == PreparePokeblockFeedScene; frame++)
+    {
+        gMain.callback2();
+        gPaletteFade.active = FALSE;
+    }
+    EXPECT_NE(gMain.callback2, PreparePokeblockFeedScene);
+    for (spriteId = 0; spriteId < MAX_SPRITES; spriteId++)
+        if (gSprites[spriteId].inUse && gSprites[spriteId].x == 48 && gSprites[spriteId].y == 80)
+            break;
+    EXPECT_LT(spriteId, MAX_SPRITES);
+    if (!egg)
+        EXPECT_EQ(memcmp(gMonSpritesGfxPtr->spritesGfx[B_POSITION_OPPONENT_LEFT],
+            mode ? sJolteonFront : sWobbuffetFront, MON_PIC_SIZE), 0);
+    palette = GetMonSpritePalFromSpeciesAndPersonality(species, shiny, 123456);
+    for (i = 0; i < 16; i++)
+        EXPECT_EQ(gPlttBufferUnfaded[OBJ_PLTT_ID(gSprites[spriteId].oam.paletteNum) + i], palette[i]);
+    if (profile != NULL)
+        profile->cryId = GetCryIdBySpecies(SPECIES_BULBASAUR);
+    for (frame = 0; frame < 1600; frame++)
+    {
+        gMain.newKeys = A_BUTTON;
+        gMain.heldKeys = A_BUTTON;
+        gMain.callback2();
+        gPaletteFade.active = FALSE;
+        if (!sawCry && gSprites[spriteId].x > 48 && gSprites[spriteId].data[0] == 0)
+        {
+            if (!gTestRunnerHeadless && P_CRIES_ENABLED)
+            {
+                if (cryId == CRY_NONE)
+                    EXPECT(gMPlay_PokemonCry == NULL || gMPlay_PokemonCry->songHeader->tone == NULL);
+                else
+                {
+                    EXPECT(gMPlay_PokemonCry != NULL);
+                    EXPECT_EQ(gMPlay_PokemonCry->songHeader->tone, &gCryTable[cryId - 1]);
+                    EXPECT_EQ(gPokemonCrySong.panValue, 64);
+                }
+            }
+            sawCry = TRUE;
+        }
+        m4aSoundMain();
+        if (gMain.callback2 == FeedingPortraitReturn)
+        {
+            finished = TRUE;
+            break;
+        }
+    }
+    EXPECT(sawCry);
+    EXPECT(finished);
+    EXPECT_EQ(gPokeblockGain, PokeblockGetGain(GetNature(&gPlayerParty[0]), &gSaveBlock1Ptr->pokeblocks[0]));
+    EXPECT_EQ(memcmp(&gPlayerParty[0], &beforeMon, sizeof(beforeMon)), 0);
+    if (profile != NULL)
+    {
+        profile->cryId = beforeProfile.cryId;
+        EXPECT_EQ(memcmp(profile, &beforeProfile, sizeof(beforeProfile)), 0);
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    }
+    gPlayerParty[0] = savedMon;
+    gSaveBlock1Ptr->pokeblocks[0] = savedBlock;
+    gSpecialVar_ItemId = savedItem;
+    gPokeblockMonId = savedMonId;
+    gPokeblockGain = savedGain;
+    gMain.savedCallback = savedReturn;
+    gMain.newKeys = gMain.heldKeys = 0;
+    StopCryAndClearCrySongs();
+    ResetTasks();
+    SetVBlankCallback(savedVBlank);
+    SetMainCallback2(savedCallback);
 }
 
 TEST("Fusion field move banners display donor portraits and snapshot independent cries indoors and outdoors")

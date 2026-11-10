@@ -16,6 +16,7 @@
 #include "party_menu.h"
 #include "pokeblock.h"
 #include "pokemon.h"
+#include "pokemon_storage_system.h"
 #include "sprite.h"
 #include "string_util.h"
 #include "strings.h"
@@ -657,14 +658,14 @@ static bool8 LoadMonAndSceneGfx(struct Pokemon *mon)
     {
     case 0:
         // Load mon gfx
-        species = GetMonData(mon, MON_DATA_SPECIES_OR_EGG);
+        species = GetMonData(mon, MON_DATA_IS_EGG) ? SPECIES_EGG : GetMonDisplaySpriteSpecies(mon);
         personality = GetMonData(mon, MON_DATA_PERSONALITY);
         HandleLoadSpecialPokePic(TRUE, gMonSpritesGfxPtr->spritesGfx[B_POSITION_OPPONENT_LEFT], species, personality);
         sPokeblockFeed->loadGfxState++;
         break;
     case 1:
         // Load mon palette
-        species = GetMonData(mon, MON_DATA_SPECIES_OR_EGG);
+        species = GetMonData(mon, MON_DATA_IS_EGG) ? SPECIES_EGG : GetMonDisplaySpriteSpecies(mon);
         personality = GetMonData(mon, MON_DATA_PERSONALITY);
         isShiny = GetMonData(mon, MON_DATA_IS_SHINY);
         LoadSpritePaletteWithTag(GetMonSpritePalFromSpeciesAndPersonality(species, isShiny, personality), species);
@@ -834,16 +835,21 @@ static void Task_FadeOutPokeblockFeed(u8 taskId)
 #define sSpeed   data[0]
 #define sAccel   data[1]
 #define sSpecies data[2]
+#define sCryId   data[3]
 
 static u8 CreateMonSprite(struct Pokemon *mon)
 {
-    u16 species = GetMonData(mon, MON_DATA_SPECIES_OR_EGG);
+    u16 species = GetMonData(mon, MON_DATA_IS_EGG) ? SPECIES_EGG : GetMonDisplaySpriteSpecies(mon);
     u8 spriteId = CreateSprite(&gMultiuseSpriteTemplate, MON_X, MON_Y, 2);
 
     sPokeblockFeed->species = species;
     sPokeblockFeed->monSpriteId_ = spriteId;
     sPokeblockFeed->nature = GetNature(mon);
-    gSprites[spriteId].sSpecies = species;
+    gSprites[spriteId].sSpecies = GetMonData(mon, MON_DATA_SPECIES_OR_EGG);
+    gSprites[spriteId].sCryId = -1;
+    if (!GetMonData(mon, MON_DATA_IS_EGG)
+        && GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+        gSprites[spriteId].sCryId = GetMonCryId(mon);
     gSprites[spriteId].callback = SpriteCallbackDummy;
 
     sPokeblockFeed->noMonFlip = TRUE;
@@ -875,7 +881,12 @@ static void SpriteCB_MonJumpForPokeblock(struct Sprite *sprite)
 
     // Play cry at jump peak
     if (sprite->sSpeed == 0)
-        PlayCry_Normal(sprite->sSpecies, 0);
+    {
+        if (sprite->sCryId >= 0)
+            PlayCryId_ByMode(sprite->sCryId, 0, CRY_MODE_NORMAL);
+        else
+            PlayCry_Normal(sprite->sSpecies, 0);
+    }
 
     if (sprite->sSpeed == 9)
         sprite->callback = SpriteCallbackDummy;
