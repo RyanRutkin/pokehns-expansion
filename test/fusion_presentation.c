@@ -212,6 +212,19 @@ TEST("Fusion cry-ID playback preserves species playback modes ducking and tone s
     }
     PlayCryId_NormalNoDucking(CRY_NONE, 25, 90, CRY_PRIORITY_NORMAL);
     EXPECT_EQ(memcmp(&gPokemonCrySong, &expectedSong, sizeof(expectedSong)), 0);
+    ResetTasks();
+    StopCryAndClearCrySongs();
+    gPokemonCryBGMDuckingCounter = 0;
+    PlayCry_DuckNoRestore(SPECIES_PIKACHU, 25, mode);
+    expectedSong = gPokemonCrySong;
+    expectedDucking = gPokemonCryBGMDuckingCounter;
+    StopCryAndClearCrySongs();
+    gPokemonCryBGMDuckingCounter = 0;
+    PlayCryId_DuckNoRestore(cryId, 25, mode);
+    EXPECT_EQ(memcmp(&gPokemonCrySong, &expectedSong, sizeof(expectedSong)), 0);
+    EXPECT_EQ(gPokemonCryBGMDuckingCounter, expectedDucking);
+    EXPECT_EQ(expectedDucking, mode == CRY_MODE_DOUBLES ? 0 : 2);
+    EXPECT(!FuncIsActiveTask(Task_DuckBGMForPokemonCry));
     StopCryAndClearCrySongs();
     ResetTasks();
     gPokemonCryBGMDuckingCounter = savedDucking;

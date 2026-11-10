@@ -3,6 +3,7 @@
 #include "battle_anim.h"
 #include "contest.h"
 #include "m4a.h"
+#include "pokemon_storage_system.h"
 #include "sound.h"
 #include "task.h"
 #include "constants/battle_anim.h"
@@ -131,11 +132,58 @@ static void SoundTask_LoopSEAdjustPanning_Step(u8 taskId)
     }
 }
 
+#define tCrySpecies data[1]
+#define tCryPan     data[2]
+#define tCryId      data[3] // -1 keeps species playback, including configured Mega modes.
+
+static u16 GetAnimBattlerCry(u8 taskId, enum BattlerId battler)
+{
+    struct Pokemon *mon;
+    u16 species;
+
+    gTasks[taskId].tCryId = -1;
+    if (IsContest())
+        return gContestResources->moveAnim->species;
+
+    mon = GetIllusionMonPtr(battler);
+    if (mon != NULL)
+        species = GetMonData(mon, MON_DATA_SPECIES);
+    else
+    {
+        mon = GetBattlerMon(battler);
+        species = gAnimBattlerSpecies[battler];
+    }
+
+    if (species == GetMonData(mon, MON_DATA_SPECIES)
+        && GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+        gTasks[taskId].tCryId = GetMonCryId(mon);
+    return species;
+}
+
+static void PlayAnimCry(u8 taskId, u8 mode, bool32 restoreBGM)
+{
+    if (gTasks[taskId].tCryId >= 0)
+    {
+        if (restoreBGM)
+            PlayCryId_ByMode(gTasks[taskId].tCryId, gTasks[taskId].tCryPan, mode);
+        else
+            PlayCryId_DuckNoRestore(gTasks[taskId].tCryId, gTasks[taskId].tCryPan, mode);
+    }
+    else
+    {
+        if (restoreBGM)
+            PlayCry_ByMode(gTasks[taskId].tCrySpecies, gTasks[taskId].tCryPan, mode);
+        else
+            PlayCry_DuckNoRestore(gTasks[taskId].tCrySpecies, gTasks[taskId].tCryPan, mode);
+    }
+}
+
 void SoundTask_PlayCryHighPitch(u8 taskId)
 {
     u16 species = 0;
     s8 pan = BattleAnimAdjustPanning(SOUND_PAN_ATTACKER);
     enum AnimBattler animBattler = gBattleAnimArgs[0];
+    gTasks[taskId].tCryId = -1;
     if (IsContest())
     {
         if (animBattler == ANIM_ATTACKER)
@@ -175,11 +223,13 @@ void SoundTask_PlayCryHighPitch(u8 taskId)
             return;
         }
 
-        species = (GetIllusionMonSpecies(battler) != SPECIES_NONE) ? GetIllusionMonSpecies(battler) : gAnimBattlerSpecies[battler];
+        species = GetAnimBattlerCry(taskId, battler);
     }
 
+    gTasks[taskId].tCrySpecies = species;
+    gTasks[taskId].tCryPan = pan;
     if (species != SPECIES_NONE)
-        PlayCry_ByMode(species, pan, CRY_MODE_HIGH_PITCH);
+        PlayAnimCry(taskId, CRY_MODE_HIGH_PITCH, TRUE);
 
     DestroyAnimVisualTask(taskId);
 }
@@ -189,6 +239,7 @@ void SoundTask_PlayDoubleCry(u8 taskId)
     u16 species = 0;
     s8 pan = BattleAnimAdjustPanning(SOUND_PAN_ATTACKER);
     enum AnimBattler animBattler = gBattleAnimArgs[0];
+    gTasks[taskId].tCryId = -1;
     if (IsContest())
     {
         if (animBattler == ANIM_ATTACKER)
@@ -228,19 +279,19 @@ void SoundTask_PlayDoubleCry(u8 taskId)
             return;
         }
 
-        species = (GetIllusionMonSpecies(battler) != SPECIES_NONE) ? GetIllusionMonSpecies(battler) : gAnimBattlerSpecies[battler];
+        species = GetAnimBattlerCry(taskId, battler);
     }
 
     gTasks[taskId].data[0] = gBattleAnimArgs[1];
-    gTasks[taskId].data[1] = species;
-    gTasks[taskId].data[2] = pan;
+    gTasks[taskId].tCrySpecies = species;
+    gTasks[taskId].tCryPan = pan;
 
     if (species != SPECIES_NONE)
     {
         if (gBattleAnimArgs[1] == DOUBLE_CRY_GROWL)
-            PlayCry_ByMode(species, pan, CRY_MODE_GROWL_1);
+            PlayAnimCry(taskId, CRY_MODE_GROWL_1, TRUE);
         else // DOUBLE_CRY_ROAR
-            PlayCry_ByMode(species, pan, CRY_MODE_ROAR_1);
+            PlayAnimCry(taskId, CRY_MODE_ROAR_1, TRUE);
 
         gTasks[taskId].func = SoundTask_PlayDoubleCry_Step;
     }
@@ -252,9 +303,6 @@ void SoundTask_PlayDoubleCry(u8 taskId)
 
 static void SoundTask_PlayDoubleCry_Step(u8 taskId)
 {
-    u16 species = gTasks[taskId].data[1];
-    s8 pan = gTasks[taskId].data[2];
-
     if (gTasks[taskId].data[9] < 2)
     {
         gTasks[taskId].data[9]++;
@@ -265,7 +313,7 @@ static void SoundTask_PlayDoubleCry_Step(u8 taskId)
         {
             if (!IsCryPlaying())
             {
-                PlayCry_ByMode(species, pan, CRY_MODE_GROWL_2);
+                PlayAnimCry(taskId, CRY_MODE_GROWL_2, TRUE);
                 DestroyAnimVisualTask(taskId);
             }
         }
@@ -273,7 +321,7 @@ static void SoundTask_PlayDoubleCry_Step(u8 taskId)
         {
             if (!IsCryPlaying())
             {
-                PlayCry_ByMode(species, pan, CRY_MODE_ROAR_2);
+                PlayAnimCry(taskId, CRY_MODE_ROAR_2, TRUE);
                 DestroyAnimVisualTask(taskId);
             }
         }
@@ -295,13 +343,12 @@ void SoundTask_WaitForCry(u8 taskId)
 
 void SoundTask_PlayNormalCry(u8 taskId)
 {
-    u16 species = (GetIllusionMonSpecies(gBattleAnimAttacker) != SPECIES_NONE) ? GetIllusionMonSpecies(gBattleAnimAttacker) : gAnimBattlerSpecies[gBattleAnimAttacker];
-    PlayCry_ByMode(species, BattleAnimAdjustPanning(SOUND_PAN_ATTACKER), CRY_MODE_NORMAL);
+    gTasks[taskId].tCrySpecies = GetAnimBattlerCry(taskId, gBattleAnimAttacker);
+    gTasks[taskId].tCryPan = BattleAnimAdjustPanning(SOUND_PAN_ATTACKER);
+    PlayAnimCry(taskId, CRY_MODE_NORMAL, TRUE);
     gTasks[taskId].func = SoundTask_WaitForCry;
 }
 
-#define tSpecies data[1]
-#define tPan     data[2]
 #define tState   data[9]
 #define tLastCry data[10] // If it's not the last cry, don't try to restore the BGM, because another is coming
 
@@ -313,13 +360,10 @@ void SoundTask_PlayCryWithEcho(u8 taskId)
     gTasks[taskId].tLastCry = gBattleAnimArgs[0];
     pan = BattleAnimAdjustPanning(SOUND_PAN_ATTACKER);
 
-    if (IsContest())
-        species = gContestResources->moveAnim->species;
-    else
-        species = (GetIllusionMonSpecies(gBattleAnimAttacker) != SPECIES_NONE) ? GetIllusionMonSpecies(gBattleAnimAttacker) : gAnimBattlerSpecies[gBattleAnimAttacker];
+    species = GetAnimBattlerCry(taskId, gBattleAnimAttacker);
 
-    gTasks[taskId].tSpecies = species;
-    gTasks[taskId].tPan = pan;
+    gTasks[taskId].tCrySpecies = species;
+    gTasks[taskId].tCryPan = pan;
 
     if (species != SPECIES_NONE)
         gTasks[taskId].func = SoundTask_PlayCryWithEcho_Step;
@@ -329,21 +373,19 @@ void SoundTask_PlayCryWithEcho(u8 taskId)
 
 void SoundTask_PlayDynamaxCry(u8 taskId)
 {
-    u16 species = (GetIllusionMonSpecies(gBattleAnimAttacker) != SPECIES_NONE) ? GetIllusionMonSpecies(gBattleAnimAttacker) : gAnimBattlerSpecies[gBattleAnimAttacker];
-    PlayCry_ByMode(species, BattleAnimAdjustPanning(SOUND_PAN_ATTACKER), CRY_MODE_DYNAMAX);
+    gTasks[taskId].tCrySpecies = GetAnimBattlerCry(taskId, gBattleAnimAttacker);
+    gTasks[taskId].tCryPan = BattleAnimAdjustPanning(SOUND_PAN_ATTACKER);
+    PlayAnimCry(taskId, CRY_MODE_DYNAMAX, TRUE);
     gTasks[taskId].func = SoundTask_WaitForCry;
 }
 
 static void SoundTask_PlayCryWithEcho_Step(u8 taskId)
 {
-    u16 species = gTasks[taskId].tSpecies;
-    s8 pan = gTasks[taskId].tPan;
-
     // Note the cases are not in order of execution
     switch (gTasks[taskId].tState)
     {
     case 2:
-        PlayCry_DuckNoRestore(species, pan, CRY_MODE_ECHO_START);
+        PlayAnimCry(taskId, CRY_MODE_ECHO_START, FALSE);
         gTasks[taskId].tState++;
         break;
     case 1:
@@ -360,17 +402,18 @@ static void SoundTask_PlayCryWithEcho_Step(u8 taskId)
         break;
     default:
         if (!gTasks[taskId].tLastCry)
-            PlayCry_DuckNoRestore(species, pan, CRY_MODE_ECHO_END);
+            PlayAnimCry(taskId, CRY_MODE_ECHO_END, FALSE);
         else
-            PlayCry_ByMode(species, pan, CRY_MODE_ECHO_END);
+            PlayAnimCry(taskId, CRY_MODE_ECHO_END, TRUE);
 
         DestroyAnimVisualTask(taskId);
         break;
     }
 }
 
-#undef tSpecies
-#undef tPan
+#undef tCrySpecies
+#undef tCryPan
+#undef tCryId
 #undef tState
 #undef tLastCry
 

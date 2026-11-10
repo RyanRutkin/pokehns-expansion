@@ -462,6 +462,15 @@ void PlayCry_DuckNoRestore(u16 species, s8 pan, u8 mode)
     }
 }
 
+void PlayCryId_DuckNoRestore(enum PokemonCry cryId, s8 pan, u8 mode)
+{
+    if (mode != CRY_MODE_DOUBLES)
+        m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 85);
+    PlayCryIdInternal(cryId, pan, CRY_VOLUME, CRY_PRIORITY_NORMAL, mode);
+    if (mode != CRY_MODE_DOUBLES)
+        gPokemonCryBGMDuckingCounter = 2;
+}
+
 void PlayCry_Script(u16 species, u8 mode)
 {
     m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 85);

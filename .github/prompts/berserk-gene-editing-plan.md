@@ -553,6 +553,41 @@ Then finish the owned-mon cry/UI audit and summary-scene regression. No manual l
 live link validation, or external-storage migration has been performed. Milestone order
 and count are unchanged: four current-implementation milestones remain (2-5).
 
+## Milestone 2 checkpoint: move-animation cries
+
+Implemented:
+- High-pitch, normal, Dynamax, two-part Growl/Roar, and echo animation tasks use the saved
+  independent cry, including silence, without substituting the visual donor's cry.
+- Illusion follows the model's profile until reveal. Transform retains the original
+  animation cry source rather than copying the target's or donor's cry.
+- Explicit animation-species snapshots that differ from the actual mon remain species
+  references. Ordinary/Mega playback retains its configured species-mode behavior.
+- Delayed tasks capture the cry identity once. Profile changes or animation-species changes
+  after launch do not change the second Growl/Roar segment or either echo segment.
+- Added cry-ID duck-without-restore playback for echoes. Intermediate echoes do not acquire
+  a BGM restoration task; final echoes restore normally. Existing sound modes, panning,
+  target visibility guards, and species-based contest playback remain intact.
+- No save-layout, profile-layout, EWRAM, or IWRAM growth.
+
+Verification:
+- Three new fixtures in `test/battle/fusion_cries.c` cover 29 parameter cases and invoke
+  multiple real animation-task paths per case. Coverage includes both sides, hidden donors,
+  independent/silent cries, Illusion/reveal, actual Transform, ordinary/Mega fallbacks,
+  species snapshots, all four battler selectors, invisible targets, contests, delayed cry
+  snapshots, exact audio song parameters/tones, and BGM restoration task ownership.
+- Extended the existing 14-mode sound regression to compare species and cry-ID
+  duck-without-restore playback, including the doubles exception.
+- Focused new fixtures passed headless and through the unpatched/non-headless runner.
+- Full Fusion suite passed headless and non-headless: **54 passed / 3 existing move TODOs**.
+- Production build passed: EWRAM **260,116 / 262,144**, IWRAM **27,644 / 32,768**,
+  ROM **31,700,996 / 33,554,432**.
+
+Milestone 2 remains **in progress**. Next: finish the remaining owned-mon cry/UI consumers
+(including party/field and applicable contest/Pokeblock/Hall of Fame paths) and full-summary
+scene regression, distinguishing owned-mon presentation from species-only references.
+Manual audio/visual and live-link validation remain outstanding. Four implementation
+milestones remain (2-5); order/count are unchanged and external-storage migration is deferred.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -563,7 +598,7 @@ validation has been completed.
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
-| 2. Remaining display/cry consumers | In progress: naming/trade, hatch/evolution, battle entrance/release checkpoints verified | These consumers and summary cry routing are wired. Finish move-animation cries, remaining per-mon consumer audit, and summary-scene regression; see checkpoints above. |
+| 2. Remaining display/cry consumers | In progress: naming/trade, hatch/evolution, battle entrance/release, move-animation cries wired | Finish remaining per-mon consumer audit and summary-scene regression; see checkpoints above. |
 | 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |
