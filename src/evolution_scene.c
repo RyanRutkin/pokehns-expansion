@@ -47,6 +47,10 @@ struct EvoInfo
     u8 evoTaskId;
     u8 delayTimer;
     u16 savedPalette[48];
+    u16 preEvoSpriteSpecies;
+    u16 postEvoSpriteSpecies;
+    bool8 hasPreparedProfile;
+    struct BerserkGeneProfile preparedProfile;
 };
 
 static EWRAM_DATA struct EvoInfo *sEvoStructPtr = NULL;
@@ -64,12 +68,30 @@ static void CB2_TradeEvolutionSceneUpdate(void);
 static void EvoDummyFunc(void);
 static void VBlankCB_EvolutionScene(void);
 static void VBlankCB_TradeEvolutionScene(void);
-static void EvoScene_DoMonAnimAndCry(u8 monSpriteId, u16 speciesId);
+static void EvoScene_DoMonAnimAndCry(u8 monSpriteId, u16 speciesId, u16 crySpecies);
 static bool32 EvoScene_IsMonAnimFinished(u8 monSpriteId);
 static void StartBgAnimation(bool8 isLink);
 static void StopBgAnimation(void);
 static void Task_AnimateBg(u8 taskId);
 static void RestoreBgAfterAnim(void);
+
+static void PrepareEvolutionAppearance(struct Pokemon *mon, u16 targetSpecies)
+{
+    sEvoStructPtr->preEvoSpriteSpecies = GetMonDisplaySpriteSpecies(mon);
+    sEvoStructPtr->hasPreparedProfile = PrepareBerserkGeneProfileEvolution(mon, targetSpecies,
+        &sEvoStructPtr->preparedProfile);
+    sEvoStructPtr->postEvoSpriteSpecies = sEvoStructPtr->hasPreparedProfile
+        ? GetBerserkGeneSpriteSpecies(&sEvoStructPtr->preparedProfile, targetSpecies) : targetSpecies;
+}
+
+static void CommitEvolutionAppearance(struct Pokemon *mon)
+{
+    if (sEvoStructPtr->hasPreparedProfile)
+    {
+        CommitBerserkGeneProfileEvolution(mon, &sEvoStructPtr->preparedProfile);
+        sEvoStructPtr->hasPreparedProfile = FALSE;
+    }
+}
 
 static const u16 sUnusedPal1[] = INCBIN_U16("graphics/evolution_scene/unused_1.gbapal");
 static const u32 sBgAnim_Gfx[] = INCBIN_U32("graphics/evolution_scene/bg.4bpp.smol");
@@ -253,6 +275,7 @@ void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u
     gReservedSpritePaletteCount = 4;
 
     sEvoStructPtr = AllocZeroed(sizeof(struct EvoInfo));
+    PrepareEvolutionAppearance(mon, postEvoSpecies);
     AllocateMonSpritesGfx();
 
     GetMonData(mon, MON_DATA_NICKNAME, name);
@@ -264,12 +287,12 @@ void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u
     isShiny = GetMonData(mon, MON_DATA_IS_SHINY);
     personality = GetMonData(mon, MON_DATA_PERSONALITY);
     LoadSpecialPokePic(gMonSpritesGfxPtr->spritesGfx[B_POSITION_OPPONENT_LEFT],
-                        currSpecies,
+                        sEvoStructPtr->preEvoSpriteSpecies,
                         personality,
                         TRUE);
-    LoadPalette(GetMonSpritePalFromSpeciesAndPersonality(currSpecies, isShiny, personality), OBJ_PLTT_ID(1), PLTT_SIZE_4BPP);
+    LoadPalette(GetMonSpritePalFromSpeciesAndPersonality(sEvoStructPtr->preEvoSpriteSpecies, isShiny, personality), OBJ_PLTT_ID(1), PLTT_SIZE_4BPP);
 
-    SetMultiuseSpriteTemplateToPokemon(currSpecies, B_POSITION_OPPONENT_LEFT);
+    SetMultiuseSpriteTemplateToPokemon(sEvoStructPtr->preEvoSpriteSpecies, B_POSITION_OPPONENT_LEFT);
     gMultiuseSpriteTemplate.affineAnims = gDummySpriteAffineAnimTable;
     sEvoStructPtr->preEvoSpriteId = id = CreateSprite(&gMultiuseSpriteTemplate, 120, 64, 30);
 
@@ -279,12 +302,12 @@ void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u
 
     // postEvo sprite
     LoadSpecialPokePic(gMonSpritesGfxPtr->spritesGfx[B_POSITION_OPPONENT_RIGHT],
-                        postEvoSpecies,
+                        sEvoStructPtr->postEvoSpriteSpecies,
                         personality,
                         TRUE);
-    LoadPalette(GetMonSpritePalFromSpeciesAndPersonality(postEvoSpecies, isShiny, personality), OBJ_PLTT_ID(2), PLTT_SIZE_4BPP);
+    LoadPalette(GetMonSpritePalFromSpeciesAndPersonality(sEvoStructPtr->postEvoSpriteSpecies, isShiny, personality), OBJ_PLTT_ID(2), PLTT_SIZE_4BPP);
 
-    SetMultiuseSpriteTemplateToPokemon(postEvoSpecies, B_POSITION_OPPONENT_RIGHT);
+    SetMultiuseSpriteTemplateToPokemon(sEvoStructPtr->postEvoSpriteSpecies, B_POSITION_OPPONENT_RIGHT);
     gMultiuseSpriteTemplate.affineAnims = gDummySpriteAffineAnimTable;
     sEvoStructPtr->postEvoSpriteId = id = CreateSprite(&gMultiuseSpriteTemplate, 120, 64, 30);
     gSprites[id].callback = SpriteCallbackDummy_2;
@@ -320,7 +343,7 @@ static void CB2_EvolutionSceneLoadGraphics(void)
     struct Pokemon *mon = &gPlayerParty[gTasks[sEvoStructPtr->evoTaskId].tPartyId];
     bool8 isShiny;
 
-    postEvoSpecies = gTasks[sEvoStructPtr->evoTaskId].tPostEvoSpecies;
+    postEvoSpecies = sEvoStructPtr->postEvoSpriteSpecies;
     isShiny = GetMonData(mon, MON_DATA_IS_SHINY);
     personality = GetMonData(mon, MON_DATA_PERSONALITY);
 
@@ -389,7 +412,7 @@ static void CB2_TradeEvolutionSceneLoadGraphics(void)
         mon = &gEnemyParty[TRADEMON_FROM_PC];
     else
         mon = &gPlayerParty[gTasks[sEvoStructPtr->evoTaskId].tPartyId];
-    u16 postEvoSpecies = gTasks[sEvoStructPtr->evoTaskId].tPostEvoSpecies;
+    u16 postEvoSpecies = sEvoStructPtr->postEvoSpriteSpecies;
 
     switch (gMain.state)
     {
@@ -441,7 +464,7 @@ static void CB2_TradeEvolutionSceneLoadGraphics(void)
         {
             u8 id;
 
-            SetMultiuseSpriteTemplateToPokemon(postEvoSpecies, B_POSITION_OPPONENT_LEFT);
+            SetMultiuseSpriteTemplateToPokemon(postEvoSpecies, B_POSITION_OPPONENT_RIGHT);
             gMultiuseSpriteTemplate.affineAnims = gDummySpriteAffineAnimTable;
             sEvoStructPtr->postEvoSpriteId = id = CreateSprite(&gMultiuseSpriteTemplate, 120, 64, 30);
 
@@ -491,16 +514,26 @@ void TradeEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, u8 preEvoSprit
     isShiny = GetMonData(mon, MON_DATA_IS_SHINY);
 
     sEvoStructPtr = AllocZeroed(sizeof(struct EvoInfo));
+    PrepareEvolutionAppearance(mon, postEvoSpecies);
     sEvoStructPtr->preEvoSpriteId = preEvoSpriteId;
 
+    // The incoming trade sprite owns the right-side buffer; retain its id and palette slot.
+    LoadSpecialPokePic(gMonSpritesGfxPtr->spritesGfx[B_POSITION_OPPONENT_RIGHT],
+                        sEvoStructPtr->preEvoSpriteSpecies, personality, TRUE);
+    LoadPalette(GetMonSpritePalFromSpeciesAndPersonality(sEvoStructPtr->preEvoSpriteSpecies, isShiny, personality),
+        OBJ_PLTT_ID(gSprites[preEvoSpriteId].oam.paletteNum), PLTT_SIZE_4BPP);
+    SetMultiuseSpriteTemplateToPokemon(sEvoStructPtr->preEvoSpriteSpecies, B_POSITION_OPPONENT_RIGHT);
+    gSprites[preEvoSpriteId].anims = gMultiuseSpriteTemplate.anims;
+    StartSpriteAnim(&gSprites[preEvoSpriteId], 0);
+
     LoadSpecialPokePic(gMonSpritesGfxPtr->spritesGfx[B_POSITION_OPPONENT_LEFT],
-                        postEvoSpecies,
+                        sEvoStructPtr->postEvoSpriteSpecies,
                         personality,
                         TRUE);
 
-    LoadPalette(GetMonSpritePalFromSpeciesAndPersonality(postEvoSpecies, isShiny, personality), OBJ_PLTT_ID(2), PLTT_SIZE_4BPP);
+    LoadPalette(GetMonSpritePalFromSpeciesAndPersonality(sEvoStructPtr->postEvoSpriteSpecies, isShiny, personality), OBJ_PLTT_ID(2), PLTT_SIZE_4BPP);
 
-    SetMultiuseSpriteTemplateToPokemon(postEvoSpecies, B_POSITION_OPPONENT_LEFT);
+    SetMultiuseSpriteTemplateToPokemon(sEvoStructPtr->postEvoSpriteSpecies, B_POSITION_OPPONENT_LEFT);
     gMultiuseSpriteTemplate.affineAnims = gDummySpriteAffineAnimTable;
     sEvoStructPtr->postEvoSpriteId = id = CreateSprite(&gMultiuseSpriteTemplate, 120, 64, 30);
 
@@ -691,7 +724,7 @@ static void Task_EvolutionScene(u8 taskId)
     case EVOSTATE_INTRO_MON_ANIM:
         if (!IsTextPrinterActiveOnWindow(0))
         {
-            EvoScene_DoMonAnimAndCry(sEvoStructPtr->preEvoSpriteId, gTasks[taskId].tPreEvoSpecies);
+            EvoScene_DoMonAnimAndCry(sEvoStructPtr->preEvoSpriteId, sEvoStructPtr->preEvoSpriteSpecies, gTasks[taskId].tPreEvoSpecies);
             gTasks[taskId].tState++;
         }
         break;
@@ -773,7 +806,7 @@ static void Task_EvolutionScene(u8 taskId)
     case EVOSTATE_EVO_MON_ANIM:
         if (!gPaletteFade.active)
         {
-            EvoScene_DoMonAnimAndCry(sEvoStructPtr->postEvoSpriteId, gTasks[taskId].tPostEvoSpecies);
+            EvoScene_DoMonAnimAndCry(sEvoStructPtr->postEvoSpriteId, sEvoStructPtr->postEvoSpriteSpecies, gTasks[taskId].tPostEvoSpecies);
             gTasks[taskId].tState++;
         }
         break;
@@ -804,7 +837,7 @@ static void Task_EvolutionScene(u8 taskId)
 
             SetMonData(mon, MON_DATA_SPECIES, (void *)(&gTasks[taskId].tPostEvoSpecies));
             SetMonData(mon, MON_DATA_EVOLUTION_TRACKER, &zero);
-            UpdateBerserkGeneProfileAfterEvolution(mon, gTasks[taskId].tPostEvoSpecies);
+            CommitEvolutionAppearance(mon);
             CalculateMonStats(mon);
 
             EvolutionRenameMon(mon, gTasks[taskId].tPreEvoSpecies, gTasks[taskId].tPostEvoSpecies);
@@ -877,7 +910,7 @@ static void Task_EvolutionScene(u8 taskId)
     case EVOSTATE_CANCEL_MON_ANIM:
         if (!gPaletteFade.active)
         {
-            EvoScene_DoMonAnimAndCry(sEvoStructPtr->preEvoSpriteId, gTasks[taskId].tPreEvoSpecies);
+            EvoScene_DoMonAnimAndCry(sEvoStructPtr->preEvoSpriteId, sEvoStructPtr->preEvoSpriteSpecies, gTasks[taskId].tPreEvoSpecies);
             gTasks[taskId].tState++;
         }
         break;
@@ -1218,7 +1251,7 @@ static void Task_TradeEvolutionScene(u8 taskId)
         {
             // Restore bg, do mon anim/cry
             Free(sBgAnimPal);
-            EvoScene_DoMonAnimAndCry(sEvoStructPtr->postEvoSpriteId, gTasks[taskId].tPostEvoSpecies);
+            EvoScene_DoMonAnimAndCry(sEvoStructPtr->postEvoSpriteId, sEvoStructPtr->postEvoSpriteSpecies, gTasks[taskId].tPostEvoSpecies);
             memcpy(&gPlttBufferUnfaded[BG_PLTT_ID(2)], sEvoStructPtr->savedPalette, sizeof(sEvoStructPtr->savedPalette));
             gTasks[taskId].tState++;
         }
@@ -1233,7 +1266,7 @@ static void Task_TradeEvolutionScene(u8 taskId)
             gTasks[taskId].tState++;
             SetMonData(mon, MON_DATA_SPECIES, (&gTasks[taskId].tPostEvoSpecies));
             SetMonData(mon, MON_DATA_EVOLUTION_TRACKER, &zero);
-            UpdateBerserkGeneProfileAfterEvolution(mon, gTasks[taskId].tPostEvoSpecies);
+            CommitEvolutionAppearance(mon);
             CalculateMonStats(mon);
             EvolutionRenameMon(mon, gTasks[taskId].tPreEvoSpecies, gTasks[taskId].tPostEvoSpecies);
             GetSetPokedexFlag(SpeciesToNationalPokedexNum(gTasks[taskId].tPostEvoSpecies), FLAG_SET_SEEN);
@@ -1289,7 +1322,7 @@ static void Task_TradeEvolutionScene(u8 taskId)
     case T_EVOSTATE_CANCEL_MON_ANIM:
         if (!gPaletteFade.active)
         {
-            EvoScene_DoMonAnimAndCry(sEvoStructPtr->preEvoSpriteId, gTasks[taskId].tPreEvoSpecies);
+            EvoScene_DoMonAnimAndCry(sEvoStructPtr->preEvoSpriteId, sEvoStructPtr->preEvoSpriteSpecies, gTasks[taskId].tPreEvoSpecies);
             gTasks[taskId].tState++;
         }
         break;
@@ -1739,9 +1772,10 @@ static void RestoreBgAfterAnim(void)
     Free(sBgAnimPal);
 }
 
-static void EvoScene_DoMonAnimAndCry(u8 monSpriteId, u16 speciesId)
+static void EvoScene_DoMonAnimAndCry(u8 monSpriteId, u16 speciesId, u16 crySpecies)
 {
-    DoMonFrontSpriteAnimation(&gSprites[monSpriteId], speciesId, FALSE, 0);
+    DoMonFrontSpriteAnimation(&gSprites[monSpriteId], speciesId, TRUE, 0);
+    PlayCry_Normal(crySpecies, -25);
 }
 
 static bool32 EvoScene_IsMonAnimFinished(u8 monSpriteId)

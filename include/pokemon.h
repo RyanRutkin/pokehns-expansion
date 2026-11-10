@@ -938,6 +938,10 @@ const u16 *GetSpeciesEggMoves(u16 species);
 const struct Evolution *GetSpeciesEvolutions(u16 species);
 const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount);
 void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies);
+// Preparation rolls traits on a copy; discard it to cancel. Commit consumes no RNG.
+bool8 PrepareBerserkGeneProfileEvolution(struct Pokemon *mon, u16 targetSpecies, struct BerserkGeneProfile *prepared);
+void CommitBerserkGeneProfileEvolution(struct Pokemon *mon, const struct BerserkGeneProfile *prepared);
+u16 GetBerserkGeneSpriteSpecies(const struct BerserkGeneProfile *profile, u16 fallbackSpecies);
 const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon);
 const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpecies);
 u16 GetMonDisplaySpriteSpecies(struct Pokemon *mon);

@@ -299,11 +299,47 @@ Validation:
   ROM 31,697,332/33,554,432 bytes.
 - No manual emulator inspection or link-battle verification was performed.
 
-Next: evolution-animation donor handling, followed by hatch/owned-Pokedex portrait plumbing/audit.
-Evolution scenes
-must prepare the final donor exactly once without double-rolling or changing cancellation
-semantics; current read-only name previews intentionally do not roll or promise a future
-sprite/color/cry donor. Battle/PC rendering is now wired, but feature-wide rendering is not complete.
+### Evolution-animation visual-donor checkpoint
+
+- Evolution now prepares a complete transient profile, including the final appearance rolls,
+  before loading its sprites. Preparation never writes the live Pokemon, profile, nickname, or
+  shared active-choice projection. Phase 2 stat blending projects choices from the supplied
+  profile instead of accessing the live mon's shared projection.
+- Normal and trade scenes use separate pre/post visual species for graphics, matching shiny/
+  normal palettes, templates, and front animations. Their task species remain nominal for
+  species assignment, evolution text, moves, Pokedex registration, and Shedinja handling.
+  The incoming trade sprite is refreshed in its existing right-side buffer and palette slot;
+  move-summary return callbacks reload the retained post-evolution donor without preparing again.
+  The trade return callback's sprite template now matches the right-side buffer it loads.
+- At the existing successful-evolution state, commit copies that exact prepared profile and
+  updates a matching default fused nickname, without consuming RNG. Custom nicknames, the
+  birth-fixed growth curve, raw EXP, and the 96-byte saved profile layout remain unchanged.
+- Cancellation discards the heap-owned preparation with the scene; it never commits the
+  profile. The existing cancellation window/control flow is unchanged. Preparation does consume
+  RNG even if the player subsequently cancels; global RNG is deliberately not rewound, since
+  animation/unrelated RNG may already have advanced. A later evolution attempt prepares afresh.
+- Visual animation species and cry species are explicitly separate. Cry playback retains its
+  previous nominal-species choices; this slice does not complete the independent cry-trait
+  playback audit. Read-only name previews remain RNG-free and do not prepare appearance.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 34 passed; three unrelated Fusion Flare/Bolt
+  TODOs. Two new tests cover seven parameter cases: both evolution phases, default/custom
+  nicknames, preparation/discard isolation, unchanged cached choices, RNG advancement only at
+  preparation, exact prepared/committed profile and donor parity, fixed growth/EXP, ordinary
+  mons, unmatched targets, and legacy completed profiles.
+- `make -k check BUILD=hns -j24 TESTS="*pseudo-fusion"`: one passed, covering Phase 2
+  counterpart averaging with the pure-profile stat projection.
+- `make -k check BUILD=hns -j24 TESTS="(Daycare) Rebreeding"`: one passed / six parameter cases.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
+  ROM 31,697,812/33,554,432 bytes.
+- `git diff --check`: passed.
+- The automated assertions exercise the shared transaction API, not the full scene state
+  machines. Manual emulator checks of normal/trade animation, B-button cancellation, and
+  move-summary return remain outstanding, as does live link/profile-transfer verification.
+
+Next: hatch/owned-Pokedex portrait donor plumbing/audit. Battle/PC/evolution rendering is now
+wired, but feature-wide rendering is not complete.
 The target-species-only ambiguity described below remains shared by preview and live evolution;
 this slice does not distinguish same-target nodes with different conditions or descendants.
 Previously saved default nicknames are not automatically migrated when their newly reconstructed

@@ -437,6 +437,133 @@ TEST("Fusion evolution name previews retain normal and completed-profile behavio
     ClearBoxMonBerserkGeneProfile(&mon.box);
 }
 
+TEST("Fusion evolution preparation isolates cancellation and commits the exact appearance once")
+{
+    struct Pokemon mon, savedMon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile savedProfile, prepared;
+    struct FusionPotentialEvolution savedOptions[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    const struct FusionPotentialEvolution *options;
+    u16 profileId, targetSpecies, donor, previousDonor;
+    u32 experience;
+    u8 optionCount, phase = 0, customNickname = 0;
+    u8 nickname[POKEMON_NAME_BUFFER_SIZE];
+    u8 expectedName[POKEMON_NAME_BUFFER_SIZE];
+    u8 language = GAME_LANGUAGE;
+    rng_value_t beforePrepare, afterPrepare;
+
+    PARAMETRIZE { phase = 0; customNickname = 0; }
+    PARAMETRIZE { phase = 0; customNickname = 1; }
+    PARAMETRIZE { phase = 1; customNickname = 0; }
+    PARAMETRIZE { phase = 1; customNickname = 1; }
+
+    CreateMon(&mon, SPECIES_DRATINI, 25, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_DRATINI;
+    profile->parentSpeciesB = SPECIES_EEVEE;
+    profile->growthRate = GROWTH_SLOW;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_DRAGONAIR, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_DRAGONITE, 50, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_UMBREON, 50, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutions[4] = (struct FusionPotentialEvolution){SPECIES_VAPOREON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+    profile->potentialEvolutions[5] = (struct FusionPotentialEvolution){SPECIES_GLACEON, 50, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutionCount = 6;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    SetMonData(&mon, MON_DATA_LANGUAGE, &language);
+    if (phase)
+    {
+        UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_DRAGONAIR);
+        targetSpecies = SPECIES_DRAGONAIR;
+        SetMonData(&mon, MON_DATA_SPECIES, &targetSpecies);
+    }
+    targetSpecies = phase ? SPECIES_DRAGONITE : SPECIES_DRAGONAIR;
+    SetMonData(&mon, MON_DATA_NICKNAME, customNickname ? COMPOUND_STRING("BUDDY") : GetMonDisplaySpeciesName(&mon));
+    StringCopy(expectedName, GetMonEvolutionDisplaySpeciesName(&mon, targetSpecies));
+    previousDonor = GetMonDisplaySpriteSpecies(&mon);
+    experience = GetMonData(&mon, MON_DATA_EXP);
+    options = GetMonPotentialEvolutions(&mon, &optionCount);
+    memcpy(savedOptions, options, optionCount * sizeof(*options));
+    savedMon = mon;
+    savedProfile = *profile;
+    beforePrepare = gRngValue;
+
+    EXPECT(PrepareBerserkGeneProfileEvolution(&mon, targetSpecies, &prepared));
+    afterPrepare = gRngValue;
+    EXPECT_NE(memcmp(&beforePrepare, &afterPrepare, sizeof(beforePrepare)), 0);
+    EXPECT_EQ(memcmp(&mon, &savedMon, sizeof(mon)), 0);
+    EXPECT_EQ(memcmp(profile, &savedProfile, sizeof(savedProfile)), 0);
+    EXPECT_EQ(memcmp(options, savedOptions, optionCount * sizeof(*options)), 0);
+    EXPECT_EQ(prepared.growthRate, GROWTH_SLOW);
+    donor = GetBerserkGeneSpriteSpecies(&prepared, targetSpecies);
+    EXPECT_NE(donor, previousDonor);
+    EXPECT(donor == targetSpecies || donor == (phase ? SPECIES_UMBREON : SPECIES_JOLTEON)
+        || donor == (phase ? SPECIES_GLACEON : SPECIES_VAPOREON));
+
+    // Discarding a cancelled preparation requires no rollback, even after unrelated RNG use.
+    Random();
+    EXPECT_EQ(memcmp(&mon, &savedMon, sizeof(mon)), 0);
+    EXPECT_EQ(memcmp(profile, &savedProfile, sizeof(savedProfile)), 0);
+    EXPECT_EQ(memcmp(options, savedOptions, optionCount * sizeof(*options)), 0);
+    afterPrepare = gRngValue;
+    SetMonData(&mon, MON_DATA_SPECIES, &targetSpecies);
+    CommitBerserkGeneProfileEvolution(&mon, &prepared);
+    EXPECT_EQ(memcmp(&gRngValue, &afterPrepare, sizeof(afterPrepare)), 0);
+    EXPECT_EQ(memcmp(profile, &prepared, sizeof(prepared)), 0);
+    EXPECT_EQ(GetMonDisplaySpriteSpecies(&mon), donor);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_SPECIES), targetSpecies);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_EXP), experience);
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon), expectedName), 0);
+    GetMonData(&mon, MON_DATA_NICKNAME, nickname);
+    EXPECT_EQ(StringCompare(nickname, customNickname ? COMPOUND_STRING("BUDDY") : expectedName), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
+TEST("Fusion evolution preparation preserves ordinary invalid-target and legacy-completed behavior")
+{
+    struct Pokemon mon, savedMon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile savedProfile, prepared;
+    u16 profileId;
+    u16 targetSpecies = SPECIES_DRAGONAIR;
+    u8 kind = 0;
+    rng_value_t savedRng;
+
+    PARAMETRIZE { kind = 0; }
+    PARAMETRIZE { kind = 1; }
+    PARAMETRIZE { kind = 2; }
+
+    CreateMon(&mon, SPECIES_DRATINI, 25, 0, OTID_STRUCT_PLAYER_ID);
+    if (kind)
+    {
+        profileId = AllocBerserkGeneProfile();
+        profile = GetBerserkGeneProfile(profileId);
+        EXPECT(profile != NULL);
+        profile->parentSpeciesA = SPECIES_DRATINI;
+        profile->parentSpeciesB = SPECIES_EEVEE;
+        profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_DRAGONAIR, 20, EVO_LEVEL, 0};
+        profile->potentialEvolutionCount = 1;
+        if (kind == 2)
+            profile->evolutionFlags = BERSERK_GENE_PHASE_COMPLETE << BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+        else
+            targetSpecies = SPECIES_PIKACHU;
+        SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+        savedProfile = *profile;
+    }
+    savedMon = mon;
+    savedRng = gRngValue;
+    EXPECT(!PrepareBerserkGeneProfileEvolution(&mon, targetSpecies, &prepared));
+    EXPECT_EQ(memcmp(&mon, &savedMon, sizeof(mon)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &savedRng, sizeof(savedRng)), 0);
+    if (kind)
+    {
+        EXPECT_EQ(memcmp(profile, &savedProfile, sizeof(savedProfile)), 0);
+        ClearBoxMonBerserkGeneProfile(&mon.box);
+    }
+}
+
 TEST("Fusion names combine natural sibling chunks through both evolution phases")
 {
     struct Pokemon mon;
