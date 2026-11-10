@@ -6609,8 +6609,7 @@ static void Task_TryItemUseFusionChange(u8 taskId)
         gTasks[taskId].tState++;
         break;
     case 4:
-        targetSpecies = gTasks[taskId].tTargetSpecies;
-        PlayCry_Normal(targetSpecies, 0);
+        PlayMonCry_ByMode(mon, 0, CRY_MODE_NORMAL);
         gTasks[taskId].tState++;
         break;
     case 5:
@@ -6816,7 +6815,8 @@ static void Task_TryItemUseFormChange(u8 taskId)
         if (gTasks[taskId].tAnimWait == 0)
         {
             FreeAndDestroyMonIconSprite(icon);
-            CreatePartyMonIconSpriteParameterized(gTasks[taskId].tTargetSpecies, GetMonData(mon, MON_DATA_PERSONALITY), FALSE, &sPartyMenuBoxes[gPartyMenu.slotId], 1);
+            CreatePartyMonIconSprite(mon, &sPartyMenuBoxes[gPartyMenu.slotId], gPartyMenu.slotId);
+            icon = &gSprites[sPartyMenuBoxes[gPartyMenu.slotId].monSpriteId];
             icon->oam.mosaic = TRUE;
             icon->data[0] = 10;
             icon->data[1] = 1;
@@ -6828,7 +6828,7 @@ static void Task_TryItemUseFormChange(u8 taskId)
             gTasks[taskId].tState++;
         break;
     case 2:
-        PlayCry_Normal(gTasks[taskId].tTargetSpecies, 0);
+        PlayMonCry_ByMode(mon, 0, CRY_MODE_NORMAL);
         gTasks[taskId].tState++;
         break;
     case 3:
@@ -7041,10 +7041,12 @@ void TryItemHoldFormChange(struct Pokemon *mon, s8 slotId)
 {
     if (TryFormChange(mon, FORM_CHANGE_ITEM_HOLD))
     {
-        u32 species = GetMonData(mon, MON_DATA_SPECIES);
-        PlayCry_NormalNoDucking(species, 0, CRY_VOLUME_RS, CRY_VOLUME_RS);
+        if (GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+            PlayCryId_NormalNoDucking(GetMonCryId(mon), 0, CRY_VOLUME_RS, CRY_VOLUME_RS);
+        else
+            PlayCry_NormalNoDucking(GetMonData(mon, MON_DATA_SPECIES), 0, CRY_VOLUME_RS, CRY_VOLUME_RS);
         FreeAndDestroyMonIconSprite(&gSprites[sPartyMenuBoxes[slotId].monSpriteId]);
-        CreatePartyMonIconSpriteParameterized(species, GetMonData(mon, MON_DATA_PERSONALITY), FALSE, &sPartyMenuBoxes[slotId], 1);
+        CreatePartyMonIconSprite(mon, &sPartyMenuBoxes[slotId], slotId);
         UpdatePartyMonHeldItemSprite(mon, &sPartyMenuBoxes[slotId]);
     }
 }

@@ -623,6 +623,41 @@ The field banner checkpoint does not complete that broader audit. Four implement
 milestones remain (2-5), in the same order; external profile-storage migration stays
 separate and deferred. No manual visual/listening or live link validation was performed.
 
+## Milestone 2 checkpoint: party form-change cries and icons
+
+Implemented and verified:
+- Item-use and built-in fusion-form changes play the selected mon's saved independent cry,
+  including silence. Ordinary mons retain species-based playback and configured modes.
+- Held-item form changes use the saved cry without ducking BGM, preserving existing volume
+  and priority arguments. Ordinary held-item changes retain their original species entry.
+- Item-use and held-item icon replacements reuse the existing mon-aware party icon helper,
+  retaining saved donors (including hidden siblings), personality, egg handling and HP-bar
+  setup instead of replacing the icon with the nominal target species.
+- The mosaic callback is attached to the newly created icon rather than assuming the
+  replacement always reuses the destroyed icon's sprite slot.
+- Built-in fusion-form refresh already used mon-aware icons. Its cry now resolves the mon
+  after party compaction, including when the primary occupied a later slot than the partner.
+- No gameplay form targets, saved fusion traits, moves, profile layouts, or save layouts
+  were changed by this presentation checkpoint.
+
+Verification:
+- Real party-menu fixture exercises 14 cases through item-use Tornadus, held-item Giratina,
+  and built-in Kyurem/Reshiram fusion changes. It covers ordinary mons, direct/hidden donors,
+  independent cries, silence, both fusion party orders, icon tile identity, exact cry song
+  parameters/tones, no-ducking behavior, unchanged profiles, and normal menu cleanup.
+- `make -k check BUILD=hns -j24 TESTS="Fusion party item"`: passed; the same selector through
+  the unpatched/non-headless runner also passed.
+- `make -k check BUILD=hns -j24 TESTS=Fusion`: **56 passed / 3 existing move TODOs**.
+- `tools/mgba-rom-test-hydra/mgba-rom-test-hydra tools/mgba/mgba-rom-test arm-none-eabi-objcopy pokehns-test.elf`
+  with the full Fusion selector: **56 passed / 3 existing move TODOs**.
+- `make -k hns -j24`: passed; EWRAM **260,116 / 262,144**, IWRAM **27,644 / 32,768**,
+  ROM **31,700,980 / 33,554,432**. `git diff --check`: passed.
+
+Milestone 2 remains **in progress**. Next: applicable Pokeblock/contest/Hall of Fame
+owned-mon consumers and the full-summary scene regression. Four implementation milestones
+remain (2-5), in the same order. External profile-storage migration remains separate and
+deferred. No manual visual/listening or live link validation was performed.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -633,7 +668,7 @@ validation has been completed.
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
-| 2. Remaining display/cry consumers | In progress: naming/trade, hatch/evolution, battle entrance/release, move-animation and field-banner checkpoints verified | Finish party form-change and applicable Pokeblock/contest/Hall of Fame consumers, plus summary-scene regression; see checkpoints above. |
+| 2. Remaining display/cry consumers | In progress: prior checkpoints and party form-change cries/icons verified | Finish applicable Pokeblock/contest/Hall of Fame consumers and summary-scene regression; see checkpoints above. |
 | 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |

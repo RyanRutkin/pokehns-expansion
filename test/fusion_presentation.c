@@ -5,6 +5,7 @@
 #include "evolution_scene.h"
 #include "field_control_avatar.h"
 #include "gba/m4a_internal.h"
+#include "item_menu.h"
 #include "link.h"
 #include "m4a.h"
 #include "main.h"
@@ -12,6 +13,7 @@
 #include "naming_screen.h"
 #include "overworld.h"
 #include "palette.h"
+#include "party_menu.h"
 #include "pokemon.h"
 #include "pokemon_icon.h"
 #include "pokemon_storage_system.h"
@@ -30,6 +32,7 @@ extern struct ToneData gCryTable_Reverse[];
 extern struct MusicPlayerInfo *gMPlay_PokemonCry;
 extern u8 gPokemonCryBGMDuckingCounter;
 void DoInGameTradeScene(void);
+void TryItemHoldFormChange(struct Pokemon *mon, s8 slotId);
 
 #if P_GBA_STYLE_SPECIES_GFX
 static const u32 sJolteonFront[] = INCBIN_U32("graphics/pokemon/jolteon/anim_front_gba.4bpp");
@@ -63,6 +66,199 @@ static struct BerserkGeneProfile *SetPresentationProfile(struct Pokemon *mon, bo
     }
     SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     return profile;
+}
+
+static void PartyFormReturnTask(u8 taskId)
+{
+    gTasks[taskId].func = Task_HandleChooseMonInput;
+}
+
+TEST("Fusion party item and held form changes retain donor icons and independent cries")
+{
+    struct Pokemon *savedParty = Alloc(sizeof(gPlayerParty));
+    struct Pokemon savedFusion;
+    struct PartyMenu savedMenu = gPartyMenu;
+    struct BerserkGeneProfile *profile = NULL;
+    struct BerserkGeneProfile savedProfile;
+    struct PokemonCrySong expectedSong;
+    MainCallback savedCallback = gMain.callback2;
+    IntrCallback savedVBlank = gMain.vblankCallback;
+    u8 savedCount = gPlayerPartyCount, mode = 0, i, taskId = TASK_NONE;
+    u8 savedDucking = gPokemonCryBGMDuckingCounter;
+    bool8 held = FALSE, savedInBattle = gMain.inBattle;
+    bool8 nativeFusion = FALSE, reverse = FALSE;
+    u8 fusionStorage = 0;
+    bool8 savedUseExit = gPartyMenuUseExitCallback;
+    u16 savedItem = gSpecialVar_ItemId, frame, expectedSpecies;
+    u32 item = ITEM_GRISEOUS_CORE;
+    enum PokemonCry cryId;
+    bool8 sawCry = FALSE, returned = FALSE;
+
+    PARAMETRIZE { mode = 0; held = FALSE; }
+    PARAMETRIZE { mode = 1; held = FALSE; }
+    PARAMETRIZE { mode = 2; held = FALSE; }
+    PARAMETRIZE { mode = 3; held = FALSE; }
+    PARAMETRIZE { mode = 0; held = TRUE; }
+    PARAMETRIZE { mode = 1; held = TRUE; }
+    PARAMETRIZE { mode = 2; held = TRUE; }
+    PARAMETRIZE { mode = 3; held = TRUE; }
+    PARAMETRIZE { mode = 0; nativeFusion = TRUE; reverse = FALSE; }
+    PARAMETRIZE { mode = 2; nativeFusion = TRUE; reverse = FALSE; }
+    PARAMETRIZE { mode = 3; nativeFusion = TRUE; reverse = FALSE; }
+    PARAMETRIZE { mode = 0; nativeFusion = TRUE; reverse = TRUE; }
+    PARAMETRIZE { mode = 2; nativeFusion = TRUE; reverse = TRUE; }
+    PARAMETRIZE { mode = 3; nativeFusion = TRUE; reverse = TRUE; }
+
+    EXPECT(savedParty != NULL);
+    memcpy(savedParty, gPlayerParty, sizeof(gPlayerParty));
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[reverse], nativeFusion ? SPECIES_KYUREM : held ? SPECIES_GIRATINA_ALTERED : SPECIES_TORNADUS_INCARNATE,
+        30, 123456, OTID_STRUCT_PLAYER_ID);
+    gPlayerPartyCount = nativeFusion ? 2 : 1;
+    if (nativeFusion)
+    {
+        const struct Fusion *fusion = gFusionTablePointers[SPECIES_KYUREM];
+        u8 entry;
+
+        CreateMon(&gPlayerParty[!reverse], SPECIES_RESHIRAM, 30, 0, OTID_STRUCT_PLAYER_ID);
+        for (entry = 0; fusion[entry].fusionStorageIndex != FUSION_TERMINATOR; entry++)
+            if (fusion[entry].targetSpecies2 == SPECIES_RESHIRAM)
+                break;
+        EXPECT_NE(fusion[entry].fusionStorageIndex, FUSION_TERMINATOR);
+        fusionStorage = fusion[entry].fusionStorageIndex;
+        savedFusion = gPokemonStoragePtr->fusions[fusionStorage];
+        ZeroMonData(&gPokemonStoragePtr->fusions[fusionStorage]);
+    }
+    if (mode)
+    {
+        profile = SetPresentationProfile(&gPlayerParty[reverse], mode >= 2);
+        if (mode == 3)
+            profile->cryId = CRY_NONE;
+        savedProfile = *profile;
+    }
+    ResetTasks();
+    StopCryAndClearCrySongs();
+    gMain.inBattle = FALSE;
+    CB2_PartyMenuFromStartMenu();
+    for (frame = 0; frame < 120; frame++)
+    {
+        gMain.callback2();
+        gPaletteFade.active = FALSE;
+    }
+    gPartyMenu.exitCallback = PresentationReturnCallback;
+    expectedSpecies = nativeFusion ? SPECIES_KYUREM_WHITE : held ? SPECIES_GIRATINA_ORIGIN : SPECIES_TORNADUS_THERIAN;
+    cryId = mode ? profile->cryId : GetCryIdBySpecies(expectedSpecies);
+    if (held)
+    {
+        if (mode)
+            PlayCryId_NormalNoDucking(cryId, 0, CRY_VOLUME_RS, CRY_VOLUME_RS);
+        else
+            PlayCry_NormalNoDucking(expectedSpecies, 0, CRY_VOLUME_RS, CRY_VOLUME_RS);
+    }
+    else
+    {
+        if (mode)
+            PlayCryId_ByMode(cryId, 0, CRY_MODE_NORMAL);
+        else
+            PlayCry_ByMode(expectedSpecies, 0, CRY_MODE_NORMAL);
+    }
+    expectedSong = gPokemonCrySong;
+    StopCryAndClearCrySongs();
+    for (i = 0; i < 3; i++)
+        RunTasks();
+    if (held)
+    {
+        SetMonData(&gPlayerParty[0], MON_DATA_HELD_ITEM, &item);
+        gPokemonCryBGMDuckingCounter = 7;
+        TryItemHoldFormChange(&gPlayerParty[0], 0);
+    }
+    else
+    {
+        taskId = FindTaskIdByFunc(Task_HandleChooseMonInput);
+        EXPECT_NE(taskId, TASK_NONE);
+        if (nativeFusion)
+        {
+            gSpecialVar_ItemId = ITEM_DNA_SPLICERS;
+            gPartyMenu.slotId = reverse;
+            ItemUseCB_Fusion(taskId, PartyFormReturnTask);
+            gPartyMenu.slotId = !reverse;
+            ItemUseCB_Fusion(taskId, PartyFormReturnTask);
+            gMain.callback2();
+        }
+        else
+        {
+            gSpecialVar_ItemId = ITEM_REVEAL_GLASS;
+            ItemUseCB_FormChange(taskId, PartyFormReturnTask);
+        }
+    }
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), expectedSpecies);
+    for (frame = 0; frame < 240; frame++)
+    {
+        if (held || gTasks[taskId].data[0] == (nativeFusion ? 5 : 3))
+        {
+            EXPECT_EQ(memcmp(&gPokemonCrySong, &expectedSong, sizeof(expectedSong)), 0);
+            if (!gTestRunnerHeadless && P_CRIES_ENABLED)
+            {
+                if (cryId == CRY_NONE)
+                    EXPECT(gMPlay_PokemonCry == NULL || gMPlay_PokemonCry->songHeader->tone == NULL);
+                else
+                    EXPECT_EQ(gMPlay_PokemonCry->songHeader->tone, &gCryTable[cryId - 1]);
+            }
+            if (held)
+                EXPECT_EQ(gPokemonCryBGMDuckingCounter, 7);
+            sawCry = TRUE;
+            break;
+        }
+        gMain.callback2();
+        gPaletteFade.active = FALSE;
+        m4aSoundMain();
+    }
+    EXPECT(sawCry);
+    for (i = 0; i < MAX_SPRITES; i++)
+        if (gSprites[i].inUse && (const void *)gSprites[i].images ==
+            (const void *)GetMonIconTiles(mode ? SPECIES_JOLTEON : expectedSpecies, 123456))
+            break;
+    EXPECT_LT(i, MAX_SPRITES);
+    for (frame = 0; frame < 180; frame++)
+    {
+        gMain.newKeys = A_BUTTON;
+        gMain.callback2();
+        gPaletteFade.active = FALSE;
+        m4aSoundMain();
+        if (held || gTasks[taskId].func == Task_HandleChooseMonInput)
+            break;
+    }
+    if (profile != NULL)
+        EXPECT_EQ(memcmp(profile, &savedProfile, sizeof(savedProfile)), 0);
+    StopCryAndClearCrySongs();
+    for (frame = 0; frame < 120; frame++)
+    {
+        gMain.newKeys = B_BUTTON;
+        gMain.callback2();
+        gPaletteFade.active = FALSE;
+        m4aSoundMain();
+        if (gMain.callback2 == PresentationReturnCallback)
+        {
+            returned = TRUE;
+            break;
+        }
+    }
+    EXPECT(returned);
+    if (profile != NULL)
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    memcpy(gPlayerParty, savedParty, sizeof(gPlayerParty));
+    if (nativeFusion)
+        gPokemonStoragePtr->fusions[fusionStorage] = savedFusion;
+    Free(savedParty);
+    gPlayerPartyCount = savedCount;
+    gPartyMenu = savedMenu;
+    gPartyMenuUseExitCallback = savedUseExit;
+    gSpecialVar_ItemId = savedItem;
+    gMain.inBattle = savedInBattle;
+    gMain.newKeys = 0;
+    gPokemonCryBGMDuckingCounter = savedDucking;
+    SetVBlankCallback(savedVBlank);
+    SetMainCallback2(savedCallback);
 }
 
 TEST("Fusion naming screens render the fused title and donor icon without changing the mon")
