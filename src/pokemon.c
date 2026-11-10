@@ -10238,6 +10238,11 @@ void BattleAnimateFrontSprite(struct Sprite *sprite, u16 species, bool8 noCry, u
 
 void DoMonFrontSpriteAnimation(struct Sprite *sprite, u16 species, bool8 noCry, u8 panModeAnimFlag)
 {
+    DoMonFrontSpriteAnimationWithCry(sprite, species, species, noCry, panModeAnimFlag);
+}
+
+void DoMonFrontSpriteAnimationWithCry(struct Sprite *sprite, u16 species, u16 crySpecies, bool8 noCry, u8 panModeAnimFlag)
+{
     s8 pan;
     switch (panModeAnimFlag & (u8)~SKIP_FRONT_ANIM) // Exclude anim flag to get pan mode
     {
@@ -10255,14 +10260,14 @@ void DoMonFrontSpriteAnimation(struct Sprite *sprite, u16 species, bool8 noCry, 
     {
         // No animation, only check if cry needs to be played
         if (!noCry)
-            PlayCry_Normal(species, pan);
+            PlayCry_Normal(crySpecies, pan);
         sprite->callback = SpriteCallbackDummy;
     }
     else
     {
         if (!noCry)
         {
-            PlayCry_Normal(species, pan);
+            PlayCry_Normal(crySpecies, pan);
             if (HasTwoFramesAnimation(species))
                 StartSpriteAnim(sprite, 1);
         }

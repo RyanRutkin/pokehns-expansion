@@ -1,6 +1,6 @@
 # Berserk Gene Editing — Implementation Plan (finalized)
 
-Status: IMPLEMENTATION IN PROGRESS; latest resume checkpoint is 2026-11-09 below.
+Status: IMPLEMENTATION IN PROGRESS; latest checkpoint is the 2026-11-10 hatch/portrait checkpoint below.
 This file consolidates `berserk-gene-editing-prompt-1.md` and `beserk-gene-editing-prompt-1-answers.md`
 plus the resulting plan and decisions. Resume implementation from here when prompted.
 
@@ -338,8 +338,57 @@ Validation:
   machines. Manual emulator checks of normal/trade animation, B-button cancellation, and
   move-summary return remain outstanding, as does live link/profile-transfer verification.
 
-Next: hatch/owned-Pokedex portrait donor plumbing/audit. Battle/PC/evolution rendering is now
-wired, but feature-wide rendering is not complete.
+### Hatch and owned-Pokedex portrait checkpoint (2026-11-10)
+
+- Fixed a prerequisite hatch lifecycle bug: `CreateHatchedMon` rebuilt the Pokemon without
+  restoring its fusion profile ID. Valid profiles now survive both script-driven and animated
+  hatching, and hatch-level EXP is initialized on the existing, birth-selected growth curve.
+  The profile itself is neither rewritten nor rerolled. Moves, IVs, personality, shininess, and
+  the existing nominal-species Pokedex registration remain intact.
+- Hatch reveal graphics, normal/shiny palettes, template animations, and front animation species
+  now use the saved donor, including hidden siblings. Egg shell graphics/palettes still use the
+  nominal species, and hatch cry playback retains the nominal species rather than accidentally
+  following the sprite donor. Default hatch nicknames continue using the fused display name.
+- Added `DoMonFrontSpriteAnimationWithCry` to select visual and cry species separately while
+  retaining the original frame/delay/panning/skip behavior. The original entry point delegates
+  with identical visual/cry species, preserving existing consumers. Evolution scenes also use
+  this helper: the previous `noCry=TRUE` workaround inadvertently suppressed second-frame
+  animation; this shared-path correction restores it without changing their cry choices.
+- Owned-mon HGSS Pokedex info/cry portraits and size silhouettes share the donor-aware portrait
+  factory, retaining the actual mon's personality and shininess. The owned entry also remembers
+  its nominal form, so an alternate-form fusion does not lose donor rendering during dex-number
+  conversion. Only a matching owned-mon entry uses its donor; species-only catalogs and browsing
+  other forms retain representative species graphics/personality and non-shiny palettes.
+  Measurements, silhouette scaling, types, names, and dex identity remain their existing
+  gameplay/profile values, not the sprite donor's values.
+- No saved layout or persistent buffer increased.
+
+Validation:
+- `make -k check BUILD=hns -j24 TESTS="test/fusion_portraits.c"`: three passed / 20 parameter cases.
+  Tests cover ordinary, displayed-parent, and hidden-sibling donors with normal/shiny palettes;
+  retained profile/growth/EXP/moves/IVs/personality/nickname after hatching; a complete hatch scene
+  through the no-nickname return; actual loaded front pixels, template animation, and all 16
+  palette colors; actual owned-Pokedex info loading/exit, alternate-form nominal species, and
+  unchanged species-only entries. Live mon/profile snapshots are checked for unintended writes.
+  The isolated hatch fixture releases detached background allocations instead of entering the
+  field return callback; this is not a full overworld/resource-lifecycle audit.
+- With that selector still patched into the non-headless test ELF:
+  `tools/mgba-rom-test-hydra/mgba-rom-test-hydra tools/mgba/mgba-rom-test arm-none-eabi-objcopy pokehns-test.elf`:
+  three passed / the same 20 parameter cases, with non-headless front animations enabled.
+  This additionally checks second-frame playback when `HasTwoFramesAnimation` permits it;
+  ordinary `make check` always patches headless mode and disables that behavior.
+- `make -k check BUILD=hns -j24 TESTS="Fusion"`: 37 passed; three unrelated Fusion Flare/Bolt TODOs.
+- `make -k check BUILD=hns -j24 TESTS="(Daycare) Rebreeding"`: one passed / six parameter cases.
+- `make -k hns -j24`: passed; EWRAM 260,116/262,144 bytes, IWRAM 27,644/32,768 bytes,
+  ROM 31,698,084/33,554,432 bytes.
+- `git diff --check`: passed.
+- No manual visual inspection or live link verification was performed. Cry/size subpage
+  navigation was audited through the shared factory but not exercised in the new UI fixture.
+
+Next: same-target evolution-node attribution. Battle/PC/evolution/hatch/owned-Pokedex portrait
+rendering is wired, but feature-wide rendering/cry auditing is not complete. In particular,
+naming-screen icons/titles and the surrounding trade presentation still need a separate consumer
+audit; this checkpoint does not change those species-only interfaces.
 The target-species-only ambiguity described below remains shared by preview and live evolution;
 this slice does not distinguish same-target nodes with different conditions or descendants.
 Previously saved default nicknames are not automatically migrated when their newly reconstructed

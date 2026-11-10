@@ -310,6 +310,7 @@ static const s16 sEggShardVelocities[][2] =
 static void CreateHatchedMon(struct Pokemon *egg, struct Pokemon *temp)
 {
     u16 species;
+    u16 profileId;
     u32 personality, pokerus;
     enum PokeBall ball;
     u8 i, friendship, language, gameMet, markings, isModernFatefulEncounter;
@@ -318,6 +319,7 @@ static void CreateHatchedMon(struct Pokemon *egg, struct Pokemon *temp)
     u32 ivs[NUM_STATS];
 
     species = GetMonData(egg, MON_DATA_SPECIES);
+    profileId = GetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID);
 
     #if RANDOMIZER_AVAILABLE == TRUE
     if (RandomizerFeatureEnabled(RANDOMIZE_EGG_MON))
@@ -342,6 +344,14 @@ static void CreateHatchedMon(struct Pokemon *egg, struct Pokemon *temp)
     ball = GetMonData(egg, MON_DATA_POKEBALL);
 
     CreateMonWithIVs(temp, species, EGG_HATCH_LEVEL, personality, OTID_STRUCT_PLAYER_ID, USE_RANDOM_IVS);
+    if (GetBerserkGeneProfile(profileId) != NULL)
+    {
+        u32 experience;
+
+        SetMonData(temp, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+        experience = gExperienceTables[GetMonGrowthRate(temp)][EGG_HATCH_LEVEL];
+        SetMonData(temp, MON_DATA_EXP, &experience);
+    }
     SetMonData(temp, MON_DATA_IS_SHINY, &isShiny);
 
     for (i = 0; i < MAX_MON_MOVES; i++)
@@ -443,7 +453,7 @@ static u8 EggHatchCreateMonSprite(u8 useAlt, u8 state, u8 partyId, u16 *speciesL
         mon = &gPlayerParty[partyId];
         position = B_POSITION_OPPONENT_RIGHT;
     }
-    species = GetMonData(mon, MON_DATA_SPECIES);
+    species = GetMonDisplaySpriteSpecies(mon);
     switch (state)
     {
     case 0:
@@ -453,7 +463,8 @@ static u8 EggHatchCreateMonSprite(u8 useAlt, u8 state, u8 partyId, u16 *speciesL
             HandleLoadSpecialPokePicIsEgg(TRUE,
                                      gMonSpritesGfxPtr->spritesGfx[(useAlt * 2) + B_POSITION_OPPONENT_LEFT],
                                      species, pid, FALSE);
-            LoadSpritePaletteWithTag(GetMonFrontSpritePal(mon), species);
+            LoadSpritePaletteWithTag(GetMonSpritePalFromSpeciesAndPersonality(species,
+                GetMonData(mon, MON_DATA_IS_SHINY), pid), species);
             *speciesLoc = species;
         }
         break;
@@ -680,7 +691,7 @@ static void CB2_EggHatch(void)
         if (gSprites[sEggHatchData->eggSpriteId].callback == SpriteCallbackDummy)
         {
             species = GetMonData(&gPlayerParty[sEggHatchData->eggPartyId], MON_DATA_SPECIES);
-            DoMonFrontSpriteAnimation(&gSprites[sEggHatchData->monSpriteId], species, FALSE, 1);
+            DoMonFrontSpriteAnimationWithCry(&gSprites[sEggHatchData->monSpriteId], sEggHatchData->species, species, FALSE, 1);
             sEggHatchData->state++;
         }
         break;
