@@ -6,6 +6,7 @@
 #include "battle_setup.h"
 #include "battle_tower.h"
 #include "bike.h"
+#include "debug.h"
 #include "event_data.h"
 #include "event_object_movement.h"
 #include "event_scripts.h"
@@ -24,6 +25,7 @@
 #include "metatile_behavior.h"
 #include "overworld.h"
 #include "party_menu.h"
+#include "pokemon_storage_system.h"
 #include "script.h"
 #include "script_movement.h"
 #include "script_pokemon_util.h"
@@ -1704,6 +1706,32 @@ void PrepareForFollowerNPCBattle(void)
 
 void RestorePartyAfterFollowerNPCBattle(void)
 {
+    if (gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror
+     && gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief
+     && (gBattleTypeFlags & (BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE))
+     && !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED | BATTLE_TYPE_FRONTIER))
+     && (!DEBUG_OVERWORLD_MENU || !gIsDebugBattle)
+     && (B_FLAG_SKY_BATTLE == 0 || !FlagGet(B_FLAG_SKY_BATTLE)))
+    {
+        u32 i, j;
+        for (i = 0; i < MAX_FRONTIER_PARTY_SIZE; i++)
+        {
+            u16 monId = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
+            u16 profileId;
+
+            if (monId >= PARTY_SIZE)
+                continue;
+            profileId = GetMonData(GetSavedPlayerPartyMon(monId), MON_DATA_BERSERK_GENE_PROFILE_ID);
+            if (profileId == 0)
+                continue;
+            for (j = 0; j < PARTY_SIZE; j++)
+                if (GetMonData(&gPlayerParty[j], MON_DATA_BERSERK_GENE_PROFILE_ID) == profileId)
+                    break;
+            if (j == PARTY_SIZE)
+                ClearBoxMonBerserkGeneProfile(&GetSavedPlayerPartyMon(monId)->box);
+        }
+    }
+
     VarSet(VAR_0x8004, FRONTIER_UTIL_FUNC_SAVE_PARTY);
     CallFrontierUtilFunc();
     LoadPlayerParty();

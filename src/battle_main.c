@@ -89,6 +89,7 @@ extern const struct BgTemplate gBattleBgTemplates[];
 extern const struct WindowTemplate *const gBattleWindowTemplates[];
 
 static void CB2_InitBattleInternal(void);
+static void ApplyMirrorBattleParty(void);
 static void CB2_PreInitMultiBattle(void);
 static void CB2_PreInitIngamePlayerPartnerBattle(void);
 static void CB2_HandleStartMultiPartnerBattle(void);
@@ -665,17 +666,7 @@ static void CB2_InitBattleInternal(void)
             SetWildMonHeldItem();
             CalculateEnemyPartyCount();
 
-            if (gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror
-             && (gBattleTypeFlags & (BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE)))
-            {
-                if (!gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief)
-                {
-                    for (i = 0; i < PARTY_SIZE; i++)
-                        gPlayerPartyBackup[i] = gPlayerParty[i];
-                }
-                for (i = 0; i < PARTY_SIZE; i++)
-                    gPlayerParty[i] = gEnemyParty[i];
-            }
+            ApplyMirrorBattleParty();
         }
     }
 
@@ -705,6 +696,33 @@ static void CB2_InitBattleInternal(void)
 
     gBattleCommunication[MULTIUSE_STATE] = 0;
 }
+
+static void ApplyMirrorBattleParty(void)
+{
+    u32 i;
+
+    if (!gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror
+     || !(gBattleTypeFlags & (BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE)))
+        return;
+
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        if (!gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief)
+            gPlayerPartyBackup[i] = gPlayerParty[i];
+        else if (!(gBattleTypeFlags & (BATTLE_TYPE_FRONTIER | BATTLE_TYPE_INGAME_PARTNER))
+              && (B_FLAG_SKY_BATTLE == 0 || !FlagGet(B_FLAG_SKY_BATTLE)))
+            ClearBoxMonBerserkGeneProfile(&gPlayerParty[i].box);
+
+        gPlayerParty[i] = gEnemyParty[i];
+    }
+}
+
+#if TESTING
+void Test_ApplyMirrorBattleParty(void)
+{
+    ApplyMirrorBattleParty();
+}
+#endif
 
 #define BUFFER_PARTY_VS_SCREEN_STATUS(party, flags, i)                      \
     for ((i) = 0; (i) < PARTY_SIZE; (i)++)                                  \

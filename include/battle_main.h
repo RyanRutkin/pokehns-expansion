@@ -66,6 +66,9 @@ enum FirstTurnEventsStates
 };
 
 void CB2_InitBattle(void);
+#if TESTING
+void Test_ApplyMirrorBattleParty(void);
+#endif
 void BattleMainCB2(void);
 void CB2_QuitRecordedBattle(void);
 void VBlankCB_Battle(void);

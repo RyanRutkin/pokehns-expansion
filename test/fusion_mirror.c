@@ -1,0 +1,128 @@
+#include "global.h"
+#include "battle.h"
+#include "battle_main.h"
+#include "follower_npc.h"
+#include "load_save.h"
+#include "pokemon.h"
+#include "pokemon_storage_system.h"
+#include "test/test.h"
+
+TEST("Fusion Mirror party replacement releases only permanently discarded profiles")
+{
+    bool8 mirror = TRUE, thief = TRUE, retained = FALSE, replaced = TRUE;
+    u32 battleFlags = BATTLE_TYPE_TRAINER;
+    u16 partyId, secondPartyId, boxedId, reusedId;
+    bool8 oldMirror = gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror;
+    bool8 oldThief = gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief;
+    u32 oldBattleFlags = gBattleTypeFlags;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { thief = FALSE; retained = TRUE; }
+    PARAMETRIZE { mirror = FALSE; retained = TRUE; replaced = FALSE; }
+    PARAMETRIZE { battleFlags = 0; retained = TRUE; replaced = FALSE; }
+    PARAMETRIZE { battleFlags = BATTLE_TYPE_DOUBLE; }
+    PARAMETRIZE { battleFlags = BATTLE_TYPE_TRAINER | BATTLE_TYPE_TRAINER_HILL; }
+    PARAMETRIZE { battleFlags = BATTLE_TYPE_TRAINER | BATTLE_TYPE_PYRAMID; retained = TRUE; }
+    PARAMETRIZE { battleFlags = BATTLE_TYPE_TRAINER | BATTLE_TYPE_PIKE; retained = TRUE; }
+    PARAMETRIZE { battleFlags = BATTLE_TYPE_TRAINER | BATTLE_TYPE_INGAME_PARTNER; retained = TRUE; }
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    ZeroEnemyPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_EEVEE, 30, 1, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gEnemyParty[0], SPECIES_PIKACHU, 30, 2, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_BULBASAUR, 30, 3, OTID_STRUCT_PLAYER_ID);
+    partyId = AllocBerserkGeneProfile();
+    secondPartyId = AllocBerserkGeneProfile();
+    boxedId = AllocBerserkGeneProfile();
+    EXPECT_NE(partyId, 0);
+    EXPECT_NE(secondPartyId, 0);
+    EXPECT_NE(boxedId, 0);
+    SetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID, &partyId);
+    SetMonData(&gPlayerParty[1], MON_DATA_BERSERK_GENE_PROFILE_ID, &secondPartyId);
+    CreateBoxMon(GetBoxedMonPtr(0, 0), SPECIES_SQUIRTLE, 30, 4, OTID_STRUCT_PLAYER_ID);
+    SetBoxMonData(GetBoxedMonPtr(0, 0), MON_DATA_BERSERK_GENE_PROFILE_ID, &boxedId);
+    gBattleTypeFlags = battleFlags;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror = mirror;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief = thief;
+
+    Test_ApplyMirrorBattleParty();
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), replaced ? SPECIES_PIKACHU : SPECIES_EEVEE);
+    EXPECT_EQ(GetBerserkGeneProfile(partyId) != NULL, retained);
+    EXPECT_EQ(GetBerserkGeneProfile(secondPartyId) != NULL, retained);
+    EXPECT(GetBerserkGeneProfile(boxedId) != NULL);
+    if (replaced && !thief)
+    {
+        EXPECT_EQ(GetMonData(&gPlayerPartyBackup[0], MON_DATA_BERSERK_GENE_PROFILE_ID), partyId);
+        EXPECT_EQ(GetMonData(&gPlayerPartyBackup[1], MON_DATA_BERSERK_GENE_PROFILE_ID), secondPartyId);
+    }
+
+    if (!retained)
+    {
+        reusedId = AllocBerserkGeneProfile();
+        EXPECT_EQ(reusedId, partyId);
+        FreeBerserkGeneProfile(reusedId);
+    }
+    else
+    {
+        FreeBerserkGeneProfile(partyId);
+        FreeBerserkGeneProfile(secondPartyId);
+    }
+    ClearBoxMonBerserkGeneProfile(GetBoxedMonPtr(0, 0));
+    gBattleTypeFlags = oldBattleFlags;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror = oldMirror;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief = oldThief;
+}
+
+TEST("Fusion Mirror Thief follower restore releases replaced selected profiles only")
+{
+    bool8 thief = TRUE;
+    u16 selectedId, unselectedId;
+    u32 oldBattleFlags = gBattleTypeFlags;
+    bool8 oldMirror = gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror;
+    bool8 oldThief = gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { thief = FALSE; }
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    ZeroEnemyPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_SQUIRTLE, 30, 1, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_EEVEE, 30, 2, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[2], SPECIES_BULBASAUR, 30, 3, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[3], SPECIES_CHARMANDER, 30, 4, OTID_STRUCT_PLAYER_ID);
+    selectedId = AllocBerserkGeneProfile();
+    unselectedId = AllocBerserkGeneProfile();
+    EXPECT_NE(selectedId, 0);
+    EXPECT_NE(unselectedId, 0);
+    SetMonData(&gPlayerParty[1], MON_DATA_BERSERK_GENE_PROFILE_ID, &selectedId);
+    SetMonData(&gPlayerParty[3], MON_DATA_BERSERK_GENE_PROFILE_ID, &unselectedId);
+    gPlayerPartyCount = 4;
+    SavePlayerParty();
+    memset(gSaveBlock2Ptr->frontier.selectedPartyMons, 0, sizeof(gSaveBlock2Ptr->frontier.selectedPartyMons));
+    gSaveBlock2Ptr->frontier.selectedPartyMons[0] = 2;
+    gPlayerParty[0] = gPlayerParty[1];
+    ZeroMonData(&gPlayerParty[1]);
+    ZeroMonData(&gPlayerParty[2]);
+    ZeroMonData(&gPlayerParty[3]);
+    CreateMon(&gEnemyParty[0], SPECIES_PIKACHU, 30, 5, OTID_STRUCT_PLAYER_ID);
+    gBattleTypeFlags = BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_INGAME_PARTNER;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror = TRUE;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief = thief;
+    Test_ApplyMirrorBattleParty();
+    if (!thief)
+        gPlayerParty[0] = gPlayerPartyBackup[0];
+
+    RestorePartyAfterFollowerNPCBattle();
+    EXPECT_EQ(gPlayerPartyCount, 4);
+    EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), thief ? SPECIES_PIKACHU : SPECIES_EEVEE);
+    EXPECT_EQ(GetBerserkGeneProfile(selectedId) != NULL, !thief);
+    EXPECT(GetBerserkGeneProfile(unselectedId) != NULL);
+    EXPECT_EQ(GetMonData(&gPlayerParty[3], MON_DATA_BERSERK_GENE_PROFILE_ID), unselectedId);
+    if (!thief)
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[1].box);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[3].box);
+    gBattleTypeFlags = oldBattleFlags;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror = oldMirror;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief = oldThief;
+}

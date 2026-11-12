@@ -965,12 +965,24 @@ Frontier save and Pike save: it verifies reload of the full party and an unchang
 profile after an entry full save. It does not simulate facility scripts or prove that no
 in-challenge profile mutation is possible. Other special-save paths still need review.
 
-An additional lifecycle risk is open: Mirror Thief replaces the active player party with the
-opponent's party without freeing discarded fusion profiles, potentially exhausting the eight
-profile slots. Ordinary Mirror mode keeps a temporary backup, and facilities and in-game partner
-battles can also retain or restore saved party copies; cleanup must distinguish genuinely
-discarded fusions from those temporary copies before freeing a profile. No fix or regression
-for Mirror Thief has been implemented yet.
+Mirror Thief replaces the active player party with the opponent's party. In ordinary battles,
+profiles belonging to the discarded party are now released before replacement, so those slots
+can be reused; ordinary Mirror mode still retains the original party and profiles. Focused
+helper-level coverage checks two party fusions, an unrelated boxed fusion, slot reuse, ordinary
+Mirror, trainer/double/Trainer Hill battles, and preservation of profiles for special cases. It
+does not execute a complete battle scene. In follower-NPC partner battles, cleanup happens
+instead immediately before selected party slots are written back: selected profiles missing
+from the active party are released, while unselected saved party members remain intact.
+`make -k check BUILD=hns -j8 TESTS='Fusion Mirror'` passed two tests, including a direct
+follower-party restore and ordinary Mirror control; it does not run the full partner scene.
+
+The Mirror Thief lifecycle audit remains open for Frontier facilities, non-follower partner
+paths and optionally configured Sky Battles. Their saved party copies can be restored or
+overwritten later, so the ordinary cleanup explicitly leaves those profiles alone. In particular, some
+Frontier `frontier_resetsketch` paths write the replacement party back over saved selected
+Pokémon, while Pyramid matches saved fusions by profile ID. A safe special-case fix must handle
+both ownership and the fact that non-Pyramid facility partial saves do not write profile storage.
+Until that is resolved, do not use Mirror Thief with fusions in those special battles.
 The battle EV-award investigation, remaining lifecycle audit, special saves, full regression,
 and production build remain open.
 
