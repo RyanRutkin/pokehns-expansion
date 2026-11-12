@@ -91,38 +91,46 @@ static void SummaryPortraitReturn(void)
 
 TEST("Fusion summary screens display donor portraits, fused names, and independent cries")
 {
-    struct Pokemon savedMon = gPlayerParty[0], beforeMon;
-    struct BoxPokemon savedBoxMon;
+    static struct Pokemon savedMon, beforeMon;
+    static struct BoxPokemon savedBoxMon;
     struct BerserkGeneProfile *profile = NULL;
-    struct BerserkGeneProfile beforeProfile;
+    static struct BerserkGeneProfile beforeProfile;
     MainCallback savedCallback = gMain.callback2;
     IntrCallback savedVBlank = gMain.vblankCallback;
-    const u8 colorsNormal[3] = {0, 1, 2};
+    const u8 colorsNormal[3] = {0, 3, 4};
     const u8 colorsMale[3] = {0, 7, 8};
     const u8 colorsFemale[3] = {0, 9, 10};
+    u8 savedPlayerName[PLAYER_NAME_LENGTH + 1];
     u8 expectedName[POKEMON_NAME_LENGTH + 1];
     u8 text[32];
     u8 *stringPtr, *infoPixels;
     const u8 *picBuffer;
-    u32 infoSize, fontId, paletteSlot, j;
+    u32 infoSize, fontId, paletteSlot;
     u16 frame, expectedSpecies;
     u8 mode = 0, spriteId = MAX_SPRITES, i, expectedGender, framesSinceSprite = 0;
     bool8 shiny = FALSE, boxMon = FALSE, sawCry = FALSE, sawName = FALSE, finished = FALSE;
     enum PokemonCry expectedCry;
     const u16 *palette;
 
+    savedMon = gPlayerParty[0];
     PARAMETRIZE { mode = 0; shiny = FALSE; }
     PARAMETRIZE { mode = 1; shiny = FALSE; }
     PARAMETRIZE { mode = 2; shiny = TRUE; }
     PARAMETRIZE { mode = 3; shiny = FALSE; }
-    //PARAMETRIZE { mode = 2; shiny = TRUE; boxMon = TRUE; }
+    PARAMETRIZE { mode = 2; shiny = TRUE; boxMon = TRUE; }
 
+    memcpy(savedPlayerName, gSaveBlock2Ptr->playerName, sizeof(savedPlayerName));
+    StringCopy(gSaveBlock2Ptr->playerName, COMPOUND_STRING("PLAYER"));
     CreateMon(&gPlayerParty[0], SPECIES_WOBBUFFET, 30, 123456, OTID_STRUCT_PLAYER_ID);
     SetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY, &shiny);
     if (mode)
     {
+        u32 experience = gExperienceTables[GROWTH_SLOW][30];
+
         profile = SetPortraitProfile(&gPlayerParty[0], mode >= 2);
         profile->cryId = mode == 3 ? CRY_NONE : GetCryIdBySpecies(SPECIES_PIKACHU);
+        SetMonData(&gPlayerParty[0], MON_DATA_EXP, &experience);
+        CalculateMonStats(&gPlayerParty[0]);
         beforeProfile = *profile;
     }
     beforeMon = gPlayerParty[0];
@@ -142,11 +150,8 @@ TEST("Fusion summary screens display donor portraits, fused names, and independe
         ShowPokemonSummaryScreen(SUMMARY_MODE_BOX, gPokemonStoragePtr->boxes[0], 0, 0, SummaryPortraitReturn);
     else
         ShowPokemonSummaryScreen(SUMMARY_MODE_NORMAL, gPlayerParty, 0, 0, SummaryPortraitReturn);
-    Test_MgbaPrintf("show ok");
     for (frame = 0; frame < 1200 && !finished; frame++)
     {
-        if ((frame % 100) == 0)
-            Test_MgbaPrintf("frame %d", frame);
         if (sawCry && sawName)
         {
             gMain.newKeys = B_BUTTON;
@@ -167,7 +172,6 @@ TEST("Fusion summary screens display donor portraits, fused names, and independe
             }
             if (spriteId != MAX_SPRITES)
             {
-                Test_MgbaPrintf("sprite %d at frame %d", spriteId, frame);
                 if (gMonSpritesGfxPtr != NULL)
                     picBuffer = gMonSpritesGfxPtr->spritesGfx[B_POSITION_OPPONENT_LEFT];
                 else
@@ -196,48 +200,31 @@ TEST("Fusion summary screens display donor portraits, fused names, and independe
                     }
                 }
                 sawCry = TRUE;
-                Test_MgbaPrintf("cry done frame %d", frame);
             }
         }
         else if (!sawName && gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData != NULL)
         {
             infoSize = GetWindowAttribute(SUMMARY_SPECIES_WINDOW_ID, WINDOW_WIDTH)
                 * GetWindowAttribute(SUMMARY_SPECIES_WINDOW_ID, WINDOW_HEIGHT) * TILE_SIZE_4BPP;
-            if ((frame % 100) == 3)
-                Test_MgbaPrintf("win size %d t0 %d t64 %d", infoSize,
-                    gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData[0],
-                    gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData[64]);
-            for (j = 0; j < infoSize; j++)
-            {
-                if (gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData[j] != 0)
-                    break;
-            }
-            if (j < infoSize)
-            {
-                infoPixels = Alloc(infoSize);
-                EXPECT(infoPixels != NULL);
-                memcpy(infoPixels, gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData, infoSize);
-                // Re-render the expected level, fused name, and gender, then compare.
-                FillWindowPixelBuffer(SUMMARY_SPECIES_WINDOW_ID, PIXEL_FILL(0));
-                stringPtr = StringCopy(text, gText_LevelSymbol);
-                ConvertIntToDecimalStringN(stringPtr, GetMonData(&beforeMon, MON_DATA_LEVEL), STR_CONV_MODE_LEFT_ALIGN, 3);
-                AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 24, 17, 0, 0, colorsNormal, 0, text);
-                AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 0, 1, 0, 0, colorsNormal, 0, gText_Slash);
-                fontId = GetFontIdToFit(expectedName, FONT_NORMAL, 0,
-                    GetWindowAttribute(SUMMARY_SPECIES_WINDOW_ID, WINDOW_WIDTH) * 8 - 9);
-                AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, fontId, 6, 1, 0, 0, colorsNormal, 0, expectedName);
-                if (expectedGender == MON_MALE)
-                    AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 57, 17, 0, 0, colorsMale, 0, gText_MaleSymbol);
-                else if (expectedGender == MON_FEMALE)
-                    AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 57, 17, 0, 0, colorsFemale, 0, gText_FemaleSymbol);
-                EXPECT_EQ(memcmp(infoPixels, gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData, infoSize), 0);
-                Free(infoPixels);
-                sawName = TRUE;
-                Test_MgbaPrintf("name done frame %d", frame);
-            }
+            infoPixels = Alloc(infoSize);
+            memcpy(infoPixels, gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData, infoSize);
+            FillWindowPixelBuffer(SUMMARY_SPECIES_WINDOW_ID, PIXEL_FILL(0));
+            stringPtr = StringCopy(text, gText_LevelSymbol);
+            ConvertIntToDecimalStringN(stringPtr, GetMonData(&beforeMon, MON_DATA_LEVEL), STR_CONV_MODE_LEFT_ALIGN, 3);
+            AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 24, 17, 0, 0, colorsNormal, 0, text);
+            AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 0, 1, 0, 0, colorsNormal, 0, gText_Slash);
+            fontId = GetFontIdToFit(expectedName, FONT_NORMAL, 0,
+                GetWindowAttribute(SUMMARY_SPECIES_WINDOW_ID, WINDOW_WIDTH) * 8 - 9);
+            AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, fontId, 6, 1, 0, 0, colorsNormal, 0, expectedName);
+            if (expectedGender == MON_MALE)
+                AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 57, 17, 0, 0, colorsMale, 0, gText_MaleSymbol);
+            else if (expectedGender == MON_FEMALE)
+                AddTextPrinterParameterized4(SUMMARY_SPECIES_WINDOW_ID, FONT_NORMAL, 57, 17, 0, 0, colorsFemale, 0, gText_FemaleSymbol);
+            EXPECT_EQ(memcmp(infoPixels, gWindows[SUMMARY_SPECIES_WINDOW_ID].tileData, infoSize), 0);
+            Free(infoPixels);
+            sawName = TRUE;
         }
         m4aSoundMain();
-
         if (gMain.callback2 == SummaryPortraitReturn)
             finished = TRUE;
     }
@@ -246,6 +233,8 @@ TEST("Fusion summary screens display donor portraits, fused names, and independe
     EXPECT(sawName);
     EXPECT(finished);
     EXPECT_EQ(memcmp(&gPlayerParty[0], &beforeMon, sizeof(beforeMon)), 0);
+    if (boxMon)
+        EXPECT_EQ(memcmp(&gPokemonStoragePtr->boxes[0][0], &beforeMon.box, sizeof(beforeMon.box)), 0);
     if (profile != NULL)
     {
         EXPECT_EQ(memcmp(profile, &beforeProfile, sizeof(beforeProfile)), 0);
@@ -253,6 +242,7 @@ TEST("Fusion summary screens display donor portraits, fused names, and independe
     }
     gPokemonStoragePtr->boxes[0][0] = savedBoxMon;
     gPlayerParty[0] = savedMon;
+    memcpy(gSaveBlock2Ptr->playerName, savedPlayerName, sizeof(savedPlayerName));
     gMain.newKeys = gMain.heldKeys = 0;
     StopCryAndClearCrySongs();
     ResetTasks();

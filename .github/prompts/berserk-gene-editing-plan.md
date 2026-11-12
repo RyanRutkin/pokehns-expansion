@@ -717,6 +717,26 @@ All contest surfaces remain species-only references; no code changes. Rationale 
 This supersedes any plan to resolve the player's contestant through
 `gContestMonPartyIndex`. Contest consumers are complete for milestone 2 by classification.
 
+## Milestone 2 checkpoint: full summary scene (2026-11-12; milestone 2 complete)
+
+The full-summary regression now drives the actual scene through entry and exit for five cases:
+an ordinary mon, direct and hidden fusion sprite donors, a silent fusion cry, and a shiny boxed
+fusion. It checks portrait pixels, all 16 palette entries, the rendered species name and gender,
+independent cry playback, unchanged mon/profile data, and the boxed source where applicable.
+The fixture initializes the player name before creating the mon: a cleared save has no
+string terminator there, so the summary's trainer memo would otherwise corrupt test state.
+Fusion fixtures also initialize EXP on their stored growth curve before checking party/box
+parity. Temporary summary/window debug instrumentation was removed.
+
+Verification:
+- `make -k check BUILD=hns -j8 TESTS='Fusion summary screens'`: **1 passed / 5 cases**,
+  headless.
+- With the same selector patched into the unpatched test ELF,
+  `tools/mgba-rom-test-hydra/mgba-rom-test-hydra tools/mgba/mgba-rom-test arm-none-eabi-objcopy pokehns-test.elf`:
+  **1 passed / 5 cases**, including actual cry tone and silence assertions.
+- No manual visual or listening validation was performed. Full Fusion regression, production
+  build and broader non-headless regression remain for the agreed commit-time validation.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -727,14 +747,14 @@ validation has been completed.
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
-| 2. Remaining display/cry consumers | In progress: prior checkpoints plus Pokeblock feeding and Hall of Fame induction verified; contests classified species-only by user decision | Finish the full-summary scene regression; see checkpoints above. |
+| 2. Remaining display/cry consumers | Complete (2026-11-12); manual visual/listening validation remains outstanding | Full-summary scene regression passed headless and non-headless; contests classified species-only by user decision. |
 | 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
-| 4. Old-save compatibility | Pending | Decide and document EXP/default-nickname migration policies; implement and test the agreed behavior. |
+| 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |
 | External profile-storage migration | Deferred, separate milestone | Begin only after the working, manually testable internal-storage version is available; follow the dedicated migration requirements below. |
 
-Report when each milestone completes and proceed toward the next. If investigation changes
-scope, ordering, or the number of milestones, update this tracker and explicitly notify the
+Stop when a milestone completes and report the status of all milestones; resume only when the
+user instructs. If investigation changes scope, ordering, or the number of milestones, update this tracker and explicitly notify the
 user rather than silently changing the completion estimate. Keep implementation completion,
 automated verification, and outstanding manual verification distinct in progress reports.
 

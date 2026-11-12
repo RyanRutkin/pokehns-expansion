@@ -118,3 +118,30 @@ Mitigation, once this is suspected:
   about to edit against WSL-native `git status`/`cat` first, rather than assuming
   the tool's cached view already reflects the new branch.
 
+
+## Test debugging and iteration efficiency (agreed 2026-11-10)
+Every test probe costs a full rebuild + link + emulator run (~3-5 minutes). To keep
+iteration cheap:
+- **Batch diagnostics.** Never rebuild for a single printf probe. Pack every plausible
+  diagnostic for the current hypothesis set into one instrumented build, run once, read
+  the full timeline, then decide.
+- **Relaxed validation while debugging.** While iterating on a failure, run only the
+  narrowest `TESTS=` selector that reproduces it. Reserve the full suite run, the
+  non-headless `tools/mgba-rom-test-hydra ... pokehns-test.elf` rerun, and the
+  production `make hns` build for commit time.
+- **`Test_MgbaPrintf` supports only `%d`, `%p`, `%q`, `%s`, `%S`** (see the format
+  switch in `test/test_runner.c`). `%x` is silently ignored and prints nothing — use
+  `%p` for pointers. Misreading blank `%x` output as NULL has wasted whole rebuild
+  cycles before.
+- **A failed `Alloc` panics in test builds** (`src/malloc.c` OOM assert) and aborts the
+  test as INVALID. Never probe free heap by checking `Alloc` for NULL; size fixture
+  allocations conservatively instead.
+- **Test CRASH results carry no stack trace.** The only diagnosis tool is batched
+  printf instrumentation (including temporarily instrumenting `src/` files with a local
+  `extern s32 Test_MgbaPrintf(const char *fmt, ...);`). Always revert such
+  instrumentation before committing; an editor checkpoint commit has accidentally
+  captured it before.
+- **Editor checkpoint commits happen.** Before building on HEAD, check whether the top
+  commit is a "checkpoint" snapshot that may contain unreviewed in-progress edits
+  (including debug instrumentation), and clean it up with a follow-up commit rather
+  than a history rewrite once pushed.

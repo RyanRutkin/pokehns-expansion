@@ -1380,14 +1380,11 @@ void ShowSelectMovePokemonSummaryScreen(struct Pokemon *mons, u8 monIndex, void 
 
 static void MainCB2(void)
 {
-    Test_MgbaPrintf("MainCB2 w19 %d", gWindows[PSS_LABEL_WINDOW_PORTRAIT_SPECIES].tileData != NULL);
     RunTasks();
-    Test_MgbaPrintf("post tasks w19 %d", gWindows[PSS_LABEL_WINDOW_PORTRAIT_SPECIES].tileData != NULL);
     AnimateSprites();
     BuildOamBuffer();
     DoScheduledBgTilemapCopiesToVram();
     UpdatePaletteFade();
-    Test_MgbaPrintf("end cb2 w19 %d", gWindows[PSS_LABEL_WINDOW_PORTRAIT_SPECIES].tileData != NULL);
 }
 
 static void VBlank(void)
@@ -3375,16 +3372,11 @@ static void LimitEggSummaryPageDisplay(void) // If the Pokémon is an egg, limit
         ChangeBgX(3, 0, BG_COORD_SET);
 }
 
-extern s32 Test_MgbaPrintf(const char *fmt, ...);
 static void ResetWindows(void)
 {
     u8 i;
-    bool32 initOk;
 
-    initOk = InitWindows(sSummaryTemplate);
-    Test_MgbaPrintf("ResetWindows init %d w: %d %d %d %d %d %d", initOk,
-        gWindows[0].tileData != NULL, gWindows[6].tileData != NULL, gWindows[7].tileData != NULL,
-        gWindows[8].tileData != NULL, gWindows[18].tileData != NULL, gWindows[19].tileData != NULL);
+    InitWindows(sSummaryTemplate);
     DeactivateAllTextPrinters();
     for (i = 0; i < PSS_LABEL_WINDOW_END; i++)
         FillWindowPixelBuffer(i, PIXEL_FILL(0));
