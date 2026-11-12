@@ -2,6 +2,7 @@
 #include "battle.h"
 #include "battle_pyramid.h"
 #include "evolution_scene.h"
+#include "event_data.h"
 #include "gba/m4a_internal.h"
 #include "main.h"
 #include "load_save.h"
@@ -94,10 +95,10 @@ static struct BerserkGeneProfile *SetChoiceProfile(struct Pokemon *mon, bool8 ph
     return profile;
 }
 
-TEST("Fusion Pyramid real evolution scene survives party exit merge")
+TEST("Fusion Pyramid real evolution scene rolls back on exit")
 {
     struct BerserkGeneProfile *profile;
-    struct BerserkGeneProfile evolvedProfile;
+    struct BerserkGeneProfile entryProfile;
     MainCallback savedCallback = gMain.callback2;
     MainCallback savedAfterEvolution = gCB2_AfterEvolution;
     IntrCallback savedVBlank = gMain.vblankCallback;
@@ -123,6 +124,13 @@ TEST("Fusion Pyramid real evolution scene survives party exit merge")
     gSaveBlock2Ptr->frontier.selectedPartyMons[0] = 4;
     gSaveBlock2Ptr->frontier.selectedPartyMons[1] = 2;
     gSaveBlock2Ptr->frontier.selectedPartyMons[2] = 1;
+    gSaveBlock2Ptr->frontier.lvlMode = FRONTIER_LVL_50;
+    gSpecialVar_0x8004 = BATTLE_PYRAMID_FUNC_INIT;
+    CallBattlePyramidFunction();
+    entryProfile = *profile;
+    GetMonData(&gPlayerParty[3], MON_DATA_NICKNAME, nickname);
+    for (i = 0; i < MAX_MON_MOVES; i++)
+        moves[i] = GetMonData(&gPlayerParty[3], MON_DATA_MOVE1 + i);
     gPlayerParty[0] = *GetSavedPlayerPartyMon(1);
     gPlayerParty[1] = *GetSavedPlayerPartyMon(3);
     gPlayerParty[2] = *GetSavedPlayerPartyMon(0);
@@ -147,16 +155,12 @@ TEST("Fusion Pyramid real evolution scene survives party exit merge")
     EXPECT_EQ(gMain.callback2, EvolutionChoiceReturn);
     EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), SPECIES_DRAGONAIR);
     EXPECT_EQ(profile->parentSpeciesA, SPECIES_DRAGONAIR);
-    evolvedProfile = *profile;
-    GetMonData(&gPlayerParty[1], MON_DATA_NICKNAME, nickname);
-    for (i = 0; i < MAX_MON_MOVES; i++)
-        moves[i] = GetMonData(&gPlayerParty[1], MON_DATA_MOVE1 + i);
-    SavePyramidFusionPartyChanges();
+    RestorePyramidFusionEntryState();
     LoadPlayerParty();
     EXPECT_EQ(gPlayerPartyCount, 4);
-    EXPECT_EQ(GetMonData(&gPlayerParty[3], MON_DATA_SPECIES), SPECIES_DRAGONAIR);
+    EXPECT_EQ(GetMonData(&gPlayerParty[3], MON_DATA_SPECIES), SPECIES_DRATINI);
     EXPECT_EQ(GetMonData(&gPlayerParty[3], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
-    EXPECT_EQ(memcmp(GetBerserkGeneProfile(profileId), &evolvedProfile, sizeof(evolvedProfile)), 0);
+    EXPECT_EQ(memcmp(GetBerserkGeneProfile(profileId), &entryProfile, sizeof(entryProfile)), 0);
     GetMonData(&gPlayerParty[3], MON_DATA_NICKNAME, restoredNickname);
     EXPECT_EQ(StringCompare(nickname, restoredNickname), 0);
     for (i = 0; i < MAX_MON_MOVES; i++)

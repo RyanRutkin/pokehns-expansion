@@ -8,6 +8,12 @@
 #define BOX_NAME_LENGTH         8
 #define MAX_FUSION_STORAGE      4
 
+struct PyramidFusionSnapshot
+{
+    struct BerserkGeneProfile profile;
+    u8 partyIndex;
+};
+
 /*
             COLUMNS
 ROWS        0   1   2   3   4   5
@@ -25,6 +31,8 @@ struct PokemonStorage
     /*0x83C2*/ u8 boxWallpapers[TOTAL_BOXES_COUNT];
     /*0x3???*/ struct BerserkGeneProfile berserkGeneProfiles[MAX_BERSERK_GENE_PROFILES + 1];
     /*0x8432*/ struct Pokemon fusions[MAX_FUSION_STORAGE];
+    struct PyramidFusionSnapshot pyramidFusionSnapshots[FRONTIER_PARTY_SIZE];
+    struct BoxPokemon pyramidFusionMonSnapshots[FRONTIER_PARTY_SIZE - 1];
 };
 
 extern struct PokemonStorage *gPokemonStoragePtr;

@@ -53,7 +53,7 @@ BattleFrontier_BattlePyramidLobby_EventScript_GiveBattlePoints_hns::
 	call_if_eq VAR_RESULT, TRUE, BattleFrontier_BattlePyramidLobby_EventScript_StoreHeldItemsInPyramidBag_hns
 	clearflag FLAG_STORING_ITEMS_IN_PYRAMID_BAG
 	frontier_checkairshow
-	callnative SavePyramidFusionPartyChanges
+	callnative RestorePyramidFusionEntryState
 	special LoadPlayerParty
 	pyramid_clearhelditems
 	special HealPlayerParty
@@ -79,7 +79,7 @@ BattleFrontier_BattlePyramidLobby_EventScript_GiveBattlePoints_hns::
 
 BattleFrontier_BattlePyramidLobby_EventScript_LostChallenge_hns::
 	frontier_checkairshow
-	callnative SavePyramidFusionPartyChanges
+	callnative RestorePyramidFusionEntryState
 	special LoadPlayerParty
 	pyramid_clearhelditems
 	special HealPlayerParty

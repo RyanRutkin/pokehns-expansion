@@ -1731,6 +1731,7 @@ void ResetPokemonStorageSystem(void)
 {
     u16 boxId, boxPosition;
 
+    memset(gPokemonStoragePtr->pyramidFusionSnapshots, 0, sizeof(gPokemonStoragePtr->pyramidFusionSnapshots));
     SetCurrentBox(0);
     for (boxId = 0; boxId < TOTAL_BOXES_COUNT; boxId++)
     {

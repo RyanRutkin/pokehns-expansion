@@ -846,10 +846,41 @@ void CallBattlePyramidFunction(void)
     sBattlePyramidFunctions[gSpecialVar_0x8004]();
 }
 
+static struct BoxPokemon *GetPyramidFusionMonSnapshot(u32 index)
+{
+    // The full snapshots exceed PokemonStorage's flash budget, so the last box record is in SaveBlock1.
+    if (index < FRONTIER_PARTY_SIZE - 1)
+        return &gPokemonStoragePtr->pyramidFusionMonSnapshots[index];
+    return &gSaveBlock1Ptr->pyramidFusionMonSnapshotLast;
+}
+
 static void InitPyramidChallenge(void)
 {
     bool32 isCurrent;
     enum FrontierLevelMode lvlMode = gSaveBlock2Ptr->frontier.lvlMode;
+    u32 i;
+
+    memset(gPokemonStoragePtr->pyramidFusionSnapshots, 0, sizeof(gPokemonStoragePtr->pyramidFusionSnapshots));
+    for (i = 0; i < FRONTIER_PARTY_SIZE; i++)
+    {
+        u16 partyIndex = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
+        struct Pokemon *mon;
+        struct BerserkGeneProfile *profile;
+        u16 profileId;
+
+        if (partyIndex >= PARTY_SIZE)
+            continue;
+        mon = GetSavedPlayerPartyMon(partyIndex);
+        profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+        if (profileId == 0)
+            continue;
+        profile = GetBerserkGeneProfile(profileId);
+        assertf(profile != NULL, "Pyramid fusion profile missing: %d", profileId)
+            continue;
+        *GetPyramidFusionMonSnapshot(i) = mon->box;
+        gPokemonStoragePtr->pyramidFusionSnapshots[i].profile = *profile;
+        gPokemonStoragePtr->pyramidFusionSnapshots[i].partyIndex = partyIndex;
+    }
 
     gSaveBlock2Ptr->frontier.challengeStatus = 0;
     gSaveBlock2Ptr->frontier.curChallengeBattleNum = 0;
@@ -1282,29 +1313,28 @@ static void RestorePyramidPlayerParty(void)
         gSaveBlock2Ptr->frontier.selectedPartyMons[i] = gSelectedOrderFromParty[i];
 }
 
-void SavePyramidFusionPartyChanges(void)
+void RestorePyramidFusionEntryState(void)
 {
-    int i, j;
+    u32 i;
 
     for (i = 0; i < FRONTIER_PARTY_SIZE; i++)
     {
-        int partyIndex = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
+        struct PyramidFusionSnapshot *snapshot = &gPokemonStoragePtr->pyramidFusionSnapshots[i];
+        struct BoxPokemon *mon = GetPyramidFusionMonSnapshot(i);
+        struct BerserkGeneProfile *profile;
         u16 profileId;
 
-        if (partyIndex < 0 || partyIndex >= PARTY_SIZE)
+        if (!snapshot->profile.inUse)
             continue;
-        profileId = GetMonData(GetSavedPlayerPartyMon(partyIndex), MON_DATA_BERSERK_GENE_PROFILE_ID);
-        if (GetBerserkGeneProfile(profileId) == NULL)
+        profileId = GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+        assertf(snapshot->partyIndex < PARTY_SIZE && profileId > 0 && profileId <= MAX_BERSERK_GENE_PROFILES,
+                "Invalid Pyramid fusion snapshot: %d", profileId)
             continue;
-        for (j = 0; j < FRONTIER_PARTY_SIZE; j++)
-        {
-            if (GetMonData(&gPlayerParty[j], MON_DATA_BERSERK_GENE_PROFILE_ID) == profileId)
-            {
-                SavePlayerPartyMon(partyIndex, &gPlayerParty[j]);
-                break;
-            }
-        }
+        profile = &gPokemonStoragePtr->berserkGeneProfiles[profileId];
+        *profile = snapshot->profile;
+        BoxMonToMon(mon, GetSavedPlayerPartyMon(snapshot->partyIndex));
     }
+    memset(gPokemonStoragePtr->pyramidFusionSnapshots, 0, sizeof(gPokemonStoragePtr->pyramidFusionSnapshots));
 }
 
 static u8 GetPostBattleDirectionHintTextIndex(int *hintType, u8 minDistanceForExitHint, u8 defaultHintType)

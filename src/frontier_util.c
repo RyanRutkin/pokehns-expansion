@@ -1,6 +1,7 @@
 #include "global.h"
 #include "frontier_util.h"
 #include "easy_chat.h"
+#include "debug.h"
 #include "event_data.h"
 #include "battle_setup.h"
 #include "overworld.h"
@@ -8,6 +9,7 @@
 #include "battle_frontier.h"
 #include "battle_special.h"
 #include "battle_tower.h"
+#include "battle_pike.h"
 #include "field_specials.h"
 #include "battle.h"
 #include "script_pokemon_util.h"
@@ -1027,6 +1029,16 @@ static void SetFrontierTrainers(void)
     gFacilityTrainers = gBattleFrontierTrainers;
 }
 
+static bool32 MirrorThiefReplacedSavedFusion(u32 partyIndex, u32 activeIndex)
+{
+    u16 savedProfileId = GetMonData(GetSavedPlayerPartyMon(partyIndex), MON_DATA_BERSERK_GENE_PROFILE_ID);
+
+    return gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror
+        && gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief
+        && savedProfileId != 0
+        && savedProfileId != GetMonData(&gPlayerParty[activeIndex], MON_DATA_BERSERK_GENE_PROFILE_ID);
+}
+
 static void SaveSelectedParty(void)
 {
     u8 i;
@@ -1034,7 +1046,7 @@ static void SaveSelectedParty(void)
     for (i = 0; i < MAX_FRONTIER_PARTY_SIZE; i++)
     {
         u16 monId = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
-        if (monId < PARTY_SIZE)
+        if (monId < PARTY_SIZE && !(InBattlePike() && MirrorThiefReplacedSavedFusion(monId, i)))
             SavePlayerPartyMon(gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1, &gPlayerParty[i]);
     }
 }
@@ -2346,6 +2358,13 @@ static void ResetSketchedMoves(void)
         u16 monId = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
         if (monId < PARTY_SIZE)
         {
+            if ((gBattleTypeFlags & BATTLE_TYPE_FRONTIER_NO_PYRAMID)
+             && (gBattleTypeFlags & (BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE))
+             && !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED))
+             && (!DEBUG_OVERWORLD_MENU || !gIsDebugBattle)
+             && MirrorThiefReplacedSavedFusion(monId, i))
+                continue;
+
             for (j = 0; j < MAX_MON_MOVES; j++)
             {
                 for (k = 0; k < MAX_MON_MOVES; k++)

@@ -1319,6 +1319,7 @@ struct SaveBlock1
 #if IS_HNS
     struct MomSavingsData momSavings;
 #endif
+    struct BoxPokemon pyramidFusionMonSnapshotLast; // Third entry; the others fit in PokemonStorage.
     // sizeof: 0x3???
 };
 

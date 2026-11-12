@@ -815,7 +815,7 @@ validation has been completed.
 | Link compatibility | Deferred until after initial MVP | Complete and verify link restrictions or profile transfer, including coordinated cancellation and multiplayer testing. Until then, do not use fusion link actions. |
 | External profile storage | Deferred until after initial MVP, planned before release | Replace the temporary eight-profile internal capacity with external storage after the user can experiment with the MVP. |
 | Fusion battle recording support | Deferred until after initial MVP | Enable reliable recording and playback with the fusion profiles captured at battle time. Until then, disable recording fusion battles while retaining ordinary battle recordings. |
-| Pyramid evolution rollback | Deferred until after external profile-storage migration | Revisit the temporary MVP behavior so fusion evolutions during the challenge revert after it, like other party Pokémon. |
+| Pyramid fusion rollback | In progress for MVP (decision revised 2026-11-12) | Restore fusion entry state, including profile, species and moves, on win, loss and retirement, including after pause/reload. Preserve ordinary Pyramid healing and held-item behavior. |
 
 ### Post-MVP decisions and MVP limitations (2026-11-12)
 
@@ -829,10 +829,12 @@ validation has been completed.
   implemented and has focused automated coverage; full regression and manual validation remain.
   Defer full fusion recording and playback support, including safe profile snapshots, until
   after the initial MVP.
-- **Battle Pyramid evolution:** for the MVP, retain fusion evolutions after the challenge.
-  After the deferred external profile-storage migration, revisit this behavior and revert
-  challenge evolution changes like other party Pokémon. For now, keep all changes to fusions,
-  including evolution, evolution-learned moves, and Sketch moves, when exiting the Pyramid.
+- **Battle Pyramid rollback (revised 2026-11-12):** fusion Pokémon should behave like ordinary
+  Pokémon on exit and return to their entry state, including their profiles, evolutions, learned
+  moves and Sketch moves. The earlier decision to retain those changes is superseded. The
+  existing implementation still retains them and must be changed before this criterion is met.
+- **Mirror Thief in other Frontier facilities:** protect selected fusion Pokémon from permanent
+  replacement; restore them after the challenge. This is not yet implemented.
 - **Previous-build/save compatibility:** not required unless the user explicitly requests it;
   it is not an automatic post-MVP migration requirement. Normal save/reload for the current
   build remains part of MVP validation.
@@ -921,27 +923,36 @@ new species was paired with the old profile. The test exercised the actual save/
 but did not simulate the Pyramid scene; it was removed after characterization. A separate
 issue is that `RestorePyramidPlayerParty` matches by species, so it cannot match an evolved
 Pokémon to the original species. Pyramid can also restore the original party on exit.
-The user chose to keep fusion evolutions after the challenge for the MVP, then revisit
-reverting them after the external-storage migration.
+The earlier decision to keep fusion evolutions after the challenge was subsequently reversed.
 
-Work in progress: Pyramid challenge saves now use the full-save path, party restoration
-matches valid fusion profiles by ID, and the user chose to keep fusion Sketch and
-evolution-learned moves. Win/loss/retire merge fusion party records before restoring the
-original party. On ordinary floor transitions `frontier_getstatus` converts challenge status
+Pyramid challenge saves use the full-save path, and in-challenge party restoration matches valid
+fusion profiles by ID. Entry snapshots now store selected fusion profiles and box records in
+checksummed PokemonStorage and SaveBlock1 space; win/loss/retire restore those snapshots before
+loading the full party. Existing healing and held-item clearing still apply. The snapshot is
+necessary because pause/resume saves update the working party. On ordinary floor transitions
+`frontier_getstatus` converts challenge status
 zero to 0xFF, so the floor's `ReadyChallenge` save is not invoked; when resuming a paused
 challenge, `PausePyramidChallenge` previously restored the full party before the pause save.
-Focused command `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid'` passed nine tests:
-profile-ID restoration, ordinary same-species party ordering, fusion-only exit merge, held
-item transfer and clearing, a flash-backed challenge save, a flash-backed pause/resume sequence
-with the full party, an actual evolution scene followed by exit merge, selected exit-script
-segments, and interrupted full-save recovery. The script test runs the real win, loss and
+Focused command `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid'` passed ten tests:
+profile-ID restoration, ordinary same-species party ordering, entry-state rollback, held
+item transfer and clearing, a flash-backed challenge save, a flash-backed pause/resume sequence,
+three fusion snapshots persisted across reload and an additional post-rollback full-save reload,
+an actual evolution scene followed by rollback,
+selected exit-script segments, and interrupted full-save recovery. The script test runs the real win, loss and
 retirement bytecode in both map variants until the warp, then the lobby bytecode through party
-restoration; it does not simulate the warp, dialogue, item-selection UI, or final save.
+restoration; HNS win/loss cases also cover a replacement active Pokémon. It does not simulate
+the warp, dialogue, item-selection UI, or final save through the scripts.
 The interruption test writes 0–13 complete sectors using the incremental writer shared with
 normal saves, plus a final sector without its signature, and checks that loading recovers the
 previous matching Pokémon and profile. It does not simulate interruption within each sector.
 The item-use scene and complete manual behavior remain unverified. Do not treat Pyramid fusion
 evolution as safe for manual testing yet.
+The updated SaveBlock1 and PokemonStorage size fixtures pass when run separately. Running
+`make -k check BUILD=hns -j8 TESTS='SaveBlock'` also exposed pre-existing mismatches in the
+unmodified SaveBlock2 and SaveBlock3 size expectations (actual 3892 vs 3884, and 52 vs 84);
+these are not evidence of compatibility with older saves. In the current HNS build the new
+sizes are 15840/15872 bytes for SaveBlock1 and 35660/35712 bytes for PokemonStorage; further
+save-data growth must respect the remaining space.
 
 The EV-yield audit is not complete. Normal wild and scripted enemies are created from species,
 secret-base opponents are reconstructed from species-only records, and EV/EXP awards are blocked
@@ -976,13 +987,15 @@ from the active party are released, while unselected saved party members remain 
 `make -k check BUILD=hns -j8 TESTS='Fusion Mirror'` passed two tests, including a direct
 follower-party restore and ordinary Mirror control; it does not run the full partner scene.
 
-The Mirror Thief lifecycle audit remains open for Frontier facilities, non-follower partner
-paths and optionally configured Sky Battles. Their saved party copies can be restored or
-overwritten later, so the ordinary cleanup explicitly leaves those profiles alone. In particular, some
-Frontier `frontier_resetsketch` paths write the replacement party back over saved selected
-Pokémon, while Pyramid matches saved fusions by profile ID. A safe special-case fix must handle
-both ownership and the fact that non-Pyramid facility partial saves do not write profile storage.
-Until that is resolved, do not use Mirror Thief with fusions in those special battles.
+For non-Pyramid Frontier battles, `frontier_resetsketch` now leaves a saved fusion unchanged
+when Mirror Thief has replaced its active slot; Pike's pause-party save applies the same
+protection. Other selected Pokémon retain existing behavior.
+Pyramid entry snapshots restore fusions regardless of their current battle-party replacement.
+`make -k check BUILD=hns -j8 TESTS='Fusion Mirror'` passed three focused tests including the
+Tower/Pike sketch-reset helper; a fourth test verifies the shared Frontier partial save and
+Pike pause save after Mirror Thief replacement, including reload. Full facility scenes and exit scripts remain untested.
+The audit remains open for non-follower partner paths and optionally
+configured Sky Battles; avoid Mirror Thief with fusions in those paths.
 The battle EV-award investigation, remaining lifecycle audit, special saves, full regression,
 and production build remain open.
 

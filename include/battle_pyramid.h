@@ -12,7 +12,7 @@ u8 GetPyramidRunMultiplier(void);
 u8 CurrentBattlePyramidLocation(void);
 bool8 InBattlePyramid_(void);
 void PausePyramidChallenge(void);
-void SavePyramidFusionPartyChanges(void);
+void RestorePyramidFusionEntryState(void);
 void SoftResetInBattlePyramid(void);
 void CopyPyramidTrainerSpeechBefore(u16 trainerId);
 void CopyPyramidTrainerWinSpeech(u16 trainerId);

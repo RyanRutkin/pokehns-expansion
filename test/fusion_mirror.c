@@ -1,11 +1,14 @@
 #include "global.h"
 #include "battle.h"
 #include "battle_main.h"
+#include "event_data.h"
 #include "follower_npc.h"
+#include "frontier_util.h"
 #include "load_save.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
 #include "test/test.h"
+#include "constants/frontier_util.h"
 
 TEST("Fusion Mirror party replacement releases only permanently discarded profiles")
 {
@@ -122,6 +125,49 @@ TEST("Fusion Mirror Thief follower restore releases replaced selected profiles o
     if (!thief)
         ClearBoxMonBerserkGeneProfile(&gPlayerParty[1].box);
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[3].box);
+    gBattleTypeFlags = oldBattleFlags;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror = oldMirror;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief = oldThief;
+}
+
+TEST("Fusion Mirror Thief Frontier sketch reset protects selected fusion")
+{
+    bool8 thief = TRUE;
+    u32 facility = BATTLE_TYPE_BATTLE_TOWER;
+    u32 oldBattleFlags = gBattleTypeFlags;
+    bool8 oldMirror = gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror;
+    bool8 oldThief = gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief;
+    u16 profileId;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { facility = BATTLE_TYPE_PIKE; }
+    PARAMETRIZE { thief = FALSE; }
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_SQUIRTLE, 30, 1, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_EEVEE, 30, 2, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[2], SPECIES_BULBASAUR, 30, 3, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    EXPECT_NE(profileId, 0);
+    SetMonData(&gPlayerParty[1], MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    gPlayerPartyCount = 3;
+    SavePlayerParty();
+    memset(gSaveBlock2Ptr->frontier.selectedPartyMons, 0, sizeof(gSaveBlock2Ptr->frontier.selectedPartyMons));
+    gSaveBlock2Ptr->frontier.selectedPartyMons[0] = 2;
+    gSaveBlock2Ptr->frontier.selectedPartyMons[1] = 1;
+    CreateMon(&gPlayerParty[0], SPECIES_PIKACHU, 30, 4, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_CHARMANDER, 30, 5, OTID_STRUCT_PLAYER_ID);
+    gBattleTypeFlags = BATTLE_TYPE_TRAINER | facility;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror = TRUE;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief = thief;
+    gSpecialVar_0x8004 = FRONTIER_UTIL_FUNC_RESET_SKETCH_MOVES;
+    CallFrontierUtilFunc();
+    LoadPlayerParty();
+
+    EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), thief ? SPECIES_EEVEE : SPECIES_PIKACHU);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_CHARMANDER);
+    EXPECT(GetBerserkGeneProfile(profileId) != NULL);
+    FreeBerserkGeneProfile(profileId);
     gBattleTypeFlags = oldBattleFlags;
     gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror = oldMirror;
     gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief = oldThief;
