@@ -107,6 +107,7 @@
 	setvar VAR_0x8005, \type | MULTI_BATTLE_CHOOSE_MONS
 	special DoSpecialTrainerBattle
 	waitstate
+	callnative ReleaseMirrorThiefReplacedPartyProfiles
 	setvar VAR_0x8004, FRONTIER_UTIL_FUNC_SAVE_PARTY
 	special CallFrontierUtilFunc
 	special LoadPlayerParty

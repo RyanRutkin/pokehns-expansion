@@ -709,7 +709,7 @@ static void ApplyMirrorBattleParty(void)
     {
         if (!gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief)
             gPlayerPartyBackup[i] = gPlayerParty[i];
-        else if (!(gBattleTypeFlags & (BATTLE_TYPE_FRONTIER | BATTLE_TYPE_INGAME_PARTNER))
+        else if (!(gBattleTypeFlags & (BATTLE_TYPE_FRONTIER | BATTLE_TYPE_INGAME_PARTNER | BATTLE_TYPE_EREADER_TRAINER))
               && (B_FLAG_SKY_BATTLE == 0 || !FlagGet(B_FLAG_SKY_BATTLE)))
             ClearBoxMonBerserkGeneProfile(&gPlayerParty[i].box);
 

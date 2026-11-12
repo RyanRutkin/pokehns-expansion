@@ -12,6 +12,8 @@ void ShowRankingHallRecordsWindow(void);
 void ScrollRankingHallRecordsWindow(void);
 void ClearRankingHallRecords(void);
 void SaveGameFrontier(void);
+void ReleaseMirrorThiefReplacedPartyProfiles(void);
+bool32 ShouldPreserveMirrorThiefFrontierFusion(u32 partyIndex, u32 activeIndex);
 enum TrainerPicID GetFrontierBrainTrainerPicIndex(void);
 enum TrainerClassID GetFrontierBrainTrainerClass(void);
 void CopyFrontierBrainTrainerName(u8 *dst);

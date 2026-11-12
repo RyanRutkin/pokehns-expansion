@@ -1290,7 +1290,7 @@ static void RestorePyramidPlayerParty(void)
 
             if (!(matchedParty & (1 << j)) && (sameFusion || sameOrdinaryMon))
             {
-                // MVP fusions keep moves learned during the challenge, including Sketch.
+                // Preserve fusion moves while paused; exit restores the entry snapshot.
                 for (k = 0; k < MAX_MON_MOVES && !sameFusion; k++)
                 {
                     for (l = 0; l < MAX_MON_MOVES; l++)

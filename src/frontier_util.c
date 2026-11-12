@@ -32,6 +32,7 @@
 #include "malloc.h"
 #include "save.h"
 #include "load_save.h"
+#include "pokemon_storage_system.h"
 #include "battle_dome.h"
 #include "constants/battle_frontier.h"
 #include "constants/battle_frontier_mons.h"
@@ -1037,6 +1038,46 @@ static bool32 MirrorThiefReplacedSavedFusion(u32 partyIndex, u32 activeIndex)
         && gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief
         && savedProfileId != 0
         && savedProfileId != GetMonData(&gPlayerParty[activeIndex], MON_DATA_BERSERK_GENE_PROFILE_ID);
+}
+
+bool32 ShouldPreserveMirrorThiefFrontierFusion(u32 partyIndex, u32 activeIndex)
+{
+    return (gBattleTypeFlags & BATTLE_TYPE_FRONTIER_NO_PYRAMID)
+        && (gBattleTypeFlags & (BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE))
+        && !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED))
+        && (!DEBUG_OVERWORLD_MENU || !gIsDebugBattle)
+        && MirrorThiefReplacedSavedFusion(partyIndex, activeIndex);
+}
+
+void ReleaseMirrorThiefReplacedPartyProfiles(void)
+{
+    u32 i, j;
+
+    if (!gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror
+     || !gSaveBlock3Ptr->challengeSettings.tx_Challenges_Mirror_Thief
+     || !(gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
+     || !(gBattleTypeFlags & (BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE))
+     || (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED | BATTLE_TYPE_FRONTIER))
+     || (DEBUG_OVERWORLD_MENU && gIsDebugBattle)
+     || (B_FLAG_SKY_BATTLE != 0 && FlagGet(B_FLAG_SKY_BATTLE)))
+        return;
+
+    for (i = 0; i < MAX_FRONTIER_PARTY_SIZE; i++)
+    {
+        u16 monId = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
+        u16 profileId;
+
+        if (monId >= PARTY_SIZE)
+            continue;
+        profileId = GetMonData(GetSavedPlayerPartyMon(monId), MON_DATA_BERSERK_GENE_PROFILE_ID);
+        if (profileId == 0)
+            continue;
+        for (j = 0; j < PARTY_SIZE; j++)
+            if (GetMonData(&gPlayerParty[j], MON_DATA_BERSERK_GENE_PROFILE_ID) == profileId)
+                break;
+        if (j == PARTY_SIZE)
+            ClearBoxMonBerserkGeneProfile(&GetSavedPlayerPartyMon(monId)->box);
+    }
 }
 
 static void SaveSelectedParty(void)
@@ -2358,11 +2399,7 @@ static void ResetSketchedMoves(void)
         u16 monId = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
         if (monId < PARTY_SIZE)
         {
-            if ((gBattleTypeFlags & BATTLE_TYPE_FRONTIER_NO_PYRAMID)
-             && (gBattleTypeFlags & (BATTLE_TYPE_TRAINER | BATTLE_TYPE_DOUBLE))
-             && !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED))
-             && (!DEBUG_OVERWORLD_MENU || !gIsDebugBattle)
-             && MirrorThiefReplacedSavedFusion(monId, i))
+            if (ShouldPreserveMirrorThiefFrontierFusion(monId, i))
                 continue;
 
             for (j = 0; j < MAX_MON_MOVES; j++)

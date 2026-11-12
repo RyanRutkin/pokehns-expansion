@@ -831,10 +831,12 @@ validation has been completed.
   after the initial MVP.
 - **Battle Pyramid rollback (revised 2026-11-12):** fusion Pokémon should behave like ordinary
   Pokémon on exit and return to their entry state, including their profiles, evolutions, learned
-  moves and Sketch moves. The earlier decision to retain those changes is superseded. The
-  existing implementation still retains them and must be changed before this criterion is met.
+  moves and Sketch moves. The earlier decision to retain those changes is superseded. Entry
+  snapshot rollback is implemented; complete scene and manual validation remain outstanding.
 - **Mirror Thief in other Frontier facilities:** protect selected fusion Pokémon from permanent
-  replacement; restore them after the challenge. This is not yet implemented.
+  replacement; restore them after the challenge. Shared and Dome-specific Sketch-reset and Pike
+  pause writeback protection is implemented with focused tests; full facility scenes remain
+  unverified.
 - **Previous-build/save compatibility:** not required unless the user explicitly requests it;
   it is not an automatic post-MVP migration requirement. Normal save/reload for the current
   build remains part of MVP validation.
@@ -945,6 +947,12 @@ the warp, dialogue, item-selection UI, or final save through the scripts.
 The interruption test writes 0–13 complete sectors using the incremental writer shared with
 normal saves, plus a final sector without its signature, and checks that loading recovers the
 previous matching Pokémon and profile. It does not simulate interruption within each sector.
+An additional `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid interrupted exit save'`
+regression passed: after pausing with three mutated fusions and saving, it interrupts the exit
+save at the same sector boundaries, reloads the prior save, resumes, executes the HNS loss
+lobby's party-restoration segment, and verifies all three entry profiles and party records
+after a final full save/reload. This checks both halves of the split snapshot; it does not
+simulate a complete battle, UI, warp, or interruptions within sectors.
 The item-use scene and complete manual behavior remain unverified. Do not treat Pyramid fusion
 evolution as safe for manual testing yet.
 The updated SaveBlock1 and PokemonStorage size fixtures pass when run separately. Running
@@ -984,18 +992,25 @@ Mirror, trainer/double/Trainer Hill battles, and preservation of profiles for sp
 does not execute a complete battle scene. In follower-NPC partner battles, cleanup happens
 instead immediately before selected party slots are written back: selected profiles missing
 from the active party are released, while unselected saved party members remain intact.
-`make -k check BUILD=hns -j8 TESTS='Fusion Mirror'` passed two tests, including a direct
-follower-party restore and ordinary Mirror control; it does not run the full partner scene.
+Scripted chosen-party partner battles now use the same cleanup immediately before their
+selected-party writeback. The Rocket Hideout Lance and Mossdeep Steven scripts use this
+shared macro; a test executes their actual post-battle cleanup/writeback bytecode, including
+an ordinary Mirror control. The unused fixed-party macro and optional Sky Battle paths have
+not been validated; Sky Battles are disabled by both current battle config settings.
+E-Reader trainer battles restore the entire saved party after battle, so their active fusion
+profiles are now retained rather than freed during Mirror Thief replacement. A focused test
+checks the selected and unselected profiles across the party restoration, not the full scene.
 
-For non-Pyramid Frontier battles, `frontier_resetsketch` now leaves a saved fusion unchanged
-when Mirror Thief has replaced its active slot; Pike's pause-party save applies the same
-protection. Other selected Pokémon retain existing behavior.
+For non-Pyramid Frontier battles, `frontier_resetsketch` and the Dome's separate
+`dome_resetsketch` now leave a saved fusion unchanged when Mirror Thief has replaced its
+active slot; Pike's pause-party save applies the same protection. Other selected Pokémon
+retain existing behavior.
 Pyramid entry snapshots restore fusions regardless of their current battle-party replacement.
-`make -k check BUILD=hns -j8 TESTS='Fusion Mirror'` passed three focused tests including the
-Tower/Pike sketch-reset helper; a fourth test verifies the shared Frontier partial save and
-Pike pause save after Mirror Thief replacement, including reload. Full facility scenes and exit scripts remain untested.
-The audit remains open for non-follower partner paths and optionally
-configured Sky Battles; avoid Mirror Thief with fusions in those paths.
+`make -k check BUILD=hns -j8 TESTS='Fusion Mirror'` passed seven tests, including the
+Tower/Pike and Dome sketch-reset helpers, shared Frontier and Pike partial saves with reload,
+follower and scripted partner restoration, and e-Reader restoration. Full battles, facility
+scenes and exit scripts remain untested. Avoid Mirror Thief with fusions in unvalidated special
+paths.
 The battle EV-award investigation, remaining lifecycle audit, special saves, full regression,
 and production build remain open.
 

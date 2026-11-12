@@ -5663,6 +5663,9 @@ static void ResetSketchedMoves(void)
         int playerMonId = gSaveBlock2Ptr->frontier.selectedPartyMons[gSelectedOrderFromParty[i] - 1] - 1;
         int count;
 
+        if (ShouldPreserveMirrorThiefFrontierFusion(playerMonId, i))
+            continue;
+
         for (moveSlot = 0; moveSlot < MAX_MON_MOVES; moveSlot++)
         {
             count = 0;
