@@ -1,6 +1,8 @@
 #include "global.h"
 #include "daycare.h"
 #include "item.h"
+#include "new_game.h"
+#include "script.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
 #include "shop.h"
@@ -10,6 +12,9 @@
 #include "event_data.h"
 #include "caps.h"
 #include "test/test.h"
+
+bool8 ScrCmd_removenamedmon(struct ScriptContext *ctx);
+bool8 ScrCmd_removegenericmon(struct ScriptContext *ctx);
 
 static const struct ShopPriceOverride sTestSellPriceOverrides[] = {
     { ITEM_SWEET_APPLE, 2200 },
@@ -113,6 +118,65 @@ TEST("Berserk Gene profile slots allocate, free, and reuse")
 
     reusedProfileId = AllocBerserkGeneProfile();
     EXPECT_EQ(reusedProfileId, profileId);
+}
+
+TEST("Fusion new game clears previous profile slots")
+{
+    u16 i;
+
+    for (i = 1; i <= MAX_BERSERK_GENE_PROFILES; i++)
+        EXPECT_EQ(AllocBerserkGeneProfile(), i);
+    EXPECT(IsBerserkGeneProfileTableFull());
+
+    NewGameInitData();
+
+    EXPECT(!IsBerserkGeneProfileTableFull());
+    for (i = 1; i <= MAX_BERSERK_GENE_PROFILES; i++)
+        EXPECT_EQ(AllocBerserkGeneProfile(), i);
+    for (i = 1; i <= MAX_BERSERK_GENE_PROFILES; i++)
+        FreeBerserkGeneProfile(i);
+}
+
+TEST("Fusion scripted gifts free only the removed mon profile")
+{
+    struct ScriptContext ctx = {0};
+    u16 removedId, keptId;
+    u8 mode = 0;
+    const u8 namedArg[] = {2, 0};
+    const u8 genericArg[] = {SPECIES_MAGIKARP & 0xFF, SPECIES_MAGIKARP >> 8};
+
+    PARAMETRIZE { mode = 0; }
+    PARAMETRIZE { mode = 1; }
+    PARAMETRIZE { mode = 2; }
+
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], mode == 0 ? SPECIES_SHUCKLE : SPECIES_MAGIKARP,
+              mode == 2 ? 100 : 20, 0, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    gPlayerPartyCount = 2;
+    removedId = AllocBerserkGeneProfile();
+    keptId = AllocBerserkGeneProfile();
+    SetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID, &removedId);
+    SetMonData(&gPlayerParty[1], MON_DATA_BERSERK_GENE_PROFILE_ID, &keptId);
+    if (mode == 0)
+    {
+        SetMonData(&gPlayerParty[0], MON_DATA_NICKNAME, COMPOUND_STRING("SHUCKIE"));
+        ctx.scriptPtr = namedArg;
+        ScrCmd_removenamedmon(&ctx);
+    }
+    else
+    {
+        gSpecialVar_0x8004 = 0;
+        ctx.scriptPtr = genericArg;
+        ScrCmd_removegenericmon(&ctx);
+    }
+
+    EXPECT_EQ(GetBerserkGeneProfile(removedId), NULL);
+    EXPECT_NE(GetBerserkGeneProfile(keptId), NULL);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), keptId);
+    EXPECT_EQ(AllocBerserkGeneProfile(), removedId);
+    FreeBerserkGeneProfile(removedId);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
 }
 
 TEST("Berserk Gene profile allocation reports full table")

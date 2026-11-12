@@ -259,6 +259,7 @@ void NewGameInitData(void)
     gPlayerPartyCount = 0;
     ZeroPlayerPartyMons();
     ResetPokemonStorageSystem();
+    memset(gPokemonStoragePtr->berserkGeneProfiles, 0, sizeof(gPokemonStoragePtr->berserkGeneProfiles));
     DeactivateAllRoamers();
     gSaveBlock1Ptr->registeredItem = ITEM_NONE;
     gSaveBlock3Ptr->registeredItemHold = ITEM_NONE;

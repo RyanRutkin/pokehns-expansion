@@ -305,6 +305,7 @@ extern const u8 gText_NoMoreThanVar1Pkmn[];
 extern const u8 gText_PkmnCantBeTradedNow[];
 extern const u8 gText_PkmnCantBeTraded[];
 extern const u8 gText_BerserkGeneTradeUnsupported[];
+extern const u8 gText_BerserkGeneLinkBattleUnsupported[];
 extern const u8 gText_EggCantBeTradedNow[];
 extern const u8 gText_OnlyPkmnForBattle[];
 extern const u8 gJPText_AreYouSureYouWantToSpinTradeMon[];

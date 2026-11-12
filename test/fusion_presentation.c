@@ -26,6 +26,7 @@
 #include "text.h"
 #include "trade.h"
 #include "window.h"
+#include "constants/battle_frontier.h"
 
 extern struct ToneData gCryTable[];
 extern struct ToneData gCryTable_Reverse[];
@@ -121,6 +122,40 @@ TEST("Fusion link trade safeguards isolate remote profile IDs and reject local f
 
     ClearBoxMonBerserkGeneProfile(&party[0].box);
     memcpy(gLinkPlayers, savedLinks, sizeof(savedLinks));
+}
+
+TEST("Fusion link battle selection blocks only linked contexts")
+{
+    struct Pokemon fusion, ordinary;
+    u16 savedFacility = VarGet(VAR_FRONTIER_FACILITY);
+    u16 savedMode = VarGet(VAR_FRONTIER_BATTLE_MODE);
+    u8 savedRemote = gReceivedRemoteLinkPlayers;
+
+    CreateMon(&fusion, SPECIES_PIKACHU, 20, 0, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&ordinary, SPECIES_PIKACHU, 20, 0, OTID_STRUCT_PLAYER_ID);
+    SetPresentationProfile(&fusion, FALSE);
+
+    gReceivedRemoteLinkPlayers = FALSE;
+    VarSet(VAR_FRONTIER_FACILITY, FACILITY_BATTLE_TOWER);
+    VarSet(VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_SINGLES);
+    EXPECT(!IsFusionRestrictedInBattleSelection(&fusion));
+    VarSet(VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_LINK_MULTIS);
+    EXPECT(IsFusionRestrictedInBattleSelection(&fusion));
+    EXPECT(!IsFusionRestrictedInBattleSelection(&ordinary));
+
+    VarSet(VAR_FRONTIER_FACILITY, FACILITY_MULTI_OR_EREADER);
+    EXPECT(!IsFusionRestrictedInBattleSelection(&fusion));
+    gReceivedRemoteLinkPlayers = TRUE;
+    EXPECT(IsFusionRestrictedInBattleSelection(&fusion));
+    EXPECT(!IsFusionRestrictedInBattleSelection(&ordinary));
+    VarSet(VAR_FRONTIER_FACILITY, FACILITY_UNION_ROOM);
+    EXPECT(IsFusionRestrictedInBattleSelection(&fusion));
+    EXPECT(!IsFusionRestrictedInBattleSelection(&ordinary));
+
+    ClearBoxMonBerserkGeneProfile(&fusion.box);
+    VarSet(VAR_FRONTIER_FACILITY, savedFacility);
+    VarSet(VAR_FRONTIER_BATTLE_MODE, savedMode);
+    gReceivedRemoteLinkPlayers = savedRemote;
 }
 
 static void PartyFormReturnTask(u8 taskId)

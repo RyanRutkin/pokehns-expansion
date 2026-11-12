@@ -387,6 +387,7 @@ ALIGNED(4) const u8 gText_OnlyPkmnForBattle[] = _("That's your only\nPOKéMON fo
 ALIGNED(4) const u8 gText_PkmnCantBeTradedNow[] = _("That POKéMON can't be traded\nnow.");
 ALIGNED(4) const u8 gText_PkmnCantBeTraded[] = _("That POKéMON can't be traded.");
 ALIGNED(4) const u8 gText_BerserkGeneTradeUnsupported[] = _("Fusions can't be traded\nthrough a link yet.");
+ALIGNED(4) const u8 gText_BerserkGeneLinkBattleUnsupported[] = _("Fusions can't enter\nlink battles yet.");
 ALIGNED(4) const u8 gText_EggCantBeTradedNow[] = _("An EGG can't be traded now.");
 ALIGNED(4) const u8 gText_OtherTrainersPkmnCantBeTraded[] = _("The other TRAINER's POKéMON\ncan't be traded now.");
 ALIGNED(4) const u8 gText_OtherTrainerCantAcceptPkmn[] = _("The other TRAINER can't accept\nthat POKéMON now.");

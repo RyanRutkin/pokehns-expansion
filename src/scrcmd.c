@@ -1557,6 +1557,7 @@ bool8 ScrCmd_removenamedmon(struct ScriptContext *ctx)
                     }
                 }
 
+                ClearBoxMonBerserkGeneProfile(&gPlayerParty[i].box);
                 ZeroMonData(&gPlayerParty[i]);
                 CompactPartySlots();
                 gSpecialVar_Result = MON_GIVEN_TO_PARTY;
@@ -1725,6 +1726,7 @@ bool8 ScrCmd_removegenericmon(struct ScriptContext *ctx)
         u8 level = GetMonData(mon, MON_DATA_LEVEL);
         if (level == 100)
         {
+            ClearBoxMonBerserkGeneProfile(&mon->box);
             ZeroMonData(mon);
             CompactPartySlots();
             gSpecialVar_Result = MON_SATISFACTORY;
@@ -1732,6 +1734,7 @@ bool8 ScrCmd_removegenericmon(struct ScriptContext *ctx)
         }
     }
 
+    ClearBoxMonBerserkGeneProfile(&mon->box);
     ZeroMonData(mon);
     CompactPartySlots();
     gSpecialVar_Result = MON_UNSATISFACTORY;

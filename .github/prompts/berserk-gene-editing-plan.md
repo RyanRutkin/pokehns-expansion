@@ -811,8 +811,29 @@ validation has been completed.
 | 2. Remaining display/cry consumers | Complete (2026-11-12); manual visual/listening validation remains outstanding | Full-summary scene regression passed headless and non-headless; contests classified species-only by user decision. |
 | 3. Rebreeding trait audit | Complete (2026-11-12); focused automated regressions passed | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
-| 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |
-| External profile-storage migration | Deferred, separate milestone | Begin only after the working, manually testable internal-storage version is available; follow the dedicated migration requirements below. |
+| 5. Final lifecycle validation and manual-testable checkpoint | In progress | Verify profile cleanup/reuse, normal save/reload, and the offline feature lifecycle; temporarily disable recording fusion battles; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. Link compatibility is deferred as noted below. |
+| Link compatibility | Deferred until after initial MVP | Complete and verify link restrictions or profile transfer, including coordinated cancellation and multiplayer testing. Until then, do not use fusion link actions. |
+| External profile storage | Deferred until after initial MVP, planned before release | Replace the temporary eight-profile internal capacity with external storage after the user can experiment with the MVP. |
+| Fusion battle recording support | Deferred until after initial MVP | Enable reliable recording and playback with the fusion profiles captured at battle time. Until then, disable recording fusion battles while retaining ordinary battle recordings. |
+
+### Post-MVP decisions and MVP limitations (2026-11-12)
+
+- **Link compatibility:** defer safe fusion trades and battles, profile transfer or complete
+  restrictions, and multiplayer validation until after the initial MVP. Existing guards are
+  incomplete; do not use fusion link actions.
+- **External profile storage:** defer implementation until after the user can experiment with
+  the initial MVP, but plan it before release. The MVP uses eight active internal profiles.
+- **Fusion battle recordings:** temporarily disable recording battles involving fusion Pokémon
+  for the MVP; ordinary battle recordings should remain available. This restriction is
+  **not yet implemented or validated**. Defer full fusion recording and playback support,
+  including safe profile snapshots, until after the initial MVP.
+- **Previous-build/save compatibility:** not required unless the user explicitly requests it;
+  it is not an automatic post-MVP migration requirement. Normal save/reload for the current
+  build remains part of MVP validation.
+
+The dated implementation checkpoints below are historical; their old "still deferred" notes
+may describe work completed or decisions changed in later checkpoints. The tracker and decisions
+above reflect current status.
 
 ### Milestone 5 investigation: link profile ownership blocker (2026-11-12)
 
@@ -834,14 +855,31 @@ Focused helper and trade-scene regressions cover the current changes; they do no
 linked systems. The Trading Board's incoming/stale-registration paths and link battles are
 not yet protected or validated. Do not use fusion link actions or claim link compatibility.
 
-An additional compatibility decision is needed for link battles against older builds. Those
-builds advertise the same profile bit but do not enforce the new restriction, and party records
-are first exchanged during battle initialization. Blocking all battles with older builds would
-also block ordinary Pokémon; alternatively, detecting and aborting after party exchange would
-need coordinated cleanup and may present a generic disconnect on an older peer. The current
-test runner does not itself simulate linked peers, so real or suitable multi-instance link
-validation remains necessary. The battle EV-award investigation, lifecycle audit, save/reload,
-full regression, and production build remain open.
+The user deferred link compatibility until after the initial MVP and clarified that support
+for previous builds is not needed unless explicitly requested.
+Fusion selection is now rejected for linked choose-half menus and Battle Tower link multis, with
+a focused context regression. Two-player Colosseum and remaining wireless paths still need
+coordinated guards; do not assume all link battles are restricted. Multiplayer validation is
+also deferred. This changes the remaining milestone scope: milestone 5 is the offline MVP
+checkpoint, and link compatibility is now a separate post-MVP milestone.
+
+New-game initialization now clears the profile table without clearing it when boxes alone are
+reset; a focused test verifies all eight slots are reusable. Scripted permanent gifts now release
+their outgoing profile; `remove5mons` is intentionally left alone because the Bug-Catching
+Contest temporarily saves and restores those party members. Focused scripted-gift tests pass for
+named gifts and both generic level branches, including preservation of another mon's profile.
+`make -k check BUILD=hns -j8 TESTS='Fusion normal save'` passed a flash-backed normal
+save/reload regression for party and boxed fusion records and their profiles. This does not
+validate every special partial-save pathway.
+
+An offline recording issue remains: Frontier battle recordings save Pokémon records but not
+their fusion profiles. Later playback resolves those saved IDs against the current profile
+table, which may have changed, evolved, or reused those slots. Recording full profile snapshots
+requires addressing the single-sector recorded-battle size limit. The user chose to temporarily
+disable recording fusion battles for the MVP; that safeguard still needs implementation and
+validation. Full fusion recording support is deferred until after the initial MVP.
+The battle EV-award investigation, remaining lifecycle audit, special saves, full regression,
+and production build remain open.
 
 Stop when a milestone completes and report the status of all milestones; resume only when the
 user instructs. If investigation changes scope, ordering, or the number of milestones, update this tracker and explicitly notify the
@@ -2270,7 +2308,9 @@ accepted with this choice:
 External/special save storage is planned for a later phase. Risks of deferring are accepted for now
 because Phase 1 needs a small, testable storage backend before the breeding pipeline exists, but
 the implementation must avoid baking in the internal table as the permanent architecture. The later
-migration phase must include:
+migration phase must include the applicable requirements below. Historical requirements to
+migrate or support existing saves and builds apply only if the user later explicitly requests
+compatibility; the current decision is that previous-build/save compatibility is not required.
 - a concrete special-sector/external-save design and corruption/dual-save-slot handling;
 - migration from the internal 16-slot table to the external table on save-version upgrade;
 - preservation of existing profile IDs where practical, or a full scan/rewrite of all mons'

@@ -23,6 +23,7 @@ struct PartyMenu
 #define DATA1_PARTY_MENU_FROM_FIELD -1
 
 extern struct PartyMenu gPartyMenu;
+bool32 IsFusionRestrictedInBattleSelection(struct Pokemon *mon);
 extern bool8 gPartyMenuUseExitCallback;
 extern u8 gSelectedMonPartyId;
 extern MainCallback gPostMenuFieldCallback;
