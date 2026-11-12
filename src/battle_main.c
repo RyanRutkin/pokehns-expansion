@@ -5773,6 +5773,29 @@ static void HandleEndTurn_MonFled(void)
     gBattleMainFunc = HandleEndTurn_FinishBattle;
 }
 
+static void TryApplyNuzlockePartyLoss(void)
+{
+    if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
+                            | BATTLE_TYPE_LINK_IN_BATTLE
+                            | BATTLE_TYPE_FIRST_BATTLE
+                            | BATTLE_TYPE_CATCH_TUTORIAL
+                            | BATTLE_TYPE_INGAME_PARTNER
+                            | BATTLE_TYPE_TOWER_LINK_MULTI
+                            | BATTLE_TYPE_RECORDED_LINK
+                            | BATTLE_TYPE_FRONTIER
+                            | BATTLE_TYPE_TRAINER_HILL
+                            | BATTLE_TYPE_EREADER_TRAINER))
+     && (IsNuzlockeEasyActive() || IsNuzlockeActive()))
+        NuzlockeDeleteFaintedPartyPokemon();
+}
+
+#if TESTING
+void Test_TryApplyNuzlockePartyLoss(void)
+{
+    TryApplyNuzlockePartyLoss();
+}
+#endif
+
 static void HandleEndTurn_FinishBattle(void)
 {
     if (gCurrentActionFuncId == B_ACTION_TRY_FINISH || gCurrentActionFuncId == B_ACTION_FINISHED)
@@ -5868,31 +5891,9 @@ static void HandleEndTurn_FinishBattle(void)
             TryPutBreakingNewsOnAir();
         }
 
-        if (IsNuzlockeEasyActive())
-        {
-            if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
-                                        | BATTLE_TYPE_LINK_IN_BATTLE
-                                        | BATTLE_TYPE_FIRST_BATTLE
-                                        | BATTLE_TYPE_CATCH_TUTORIAL
-                                        | BATTLE_TYPE_INGAME_PARTNER
-                                        | BATTLE_TYPE_TOWER_LINK_MULTI
-                                        | BATTLE_TYPE_RECORDED_LINK
-                                        | BATTLE_TYPE_FRONTIER
-                                        | BATTLE_TYPE_TRAINER_HILL)))
-                NuzlockeDeleteFaintedPartyPokemon();
-        }
+        TryApplyNuzlockePartyLoss();
         if (IsNuzlockeActive())
         {
-            if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
-                                        | BATTLE_TYPE_LINK_IN_BATTLE
-                                        | BATTLE_TYPE_FIRST_BATTLE
-                                        | BATTLE_TYPE_CATCH_TUTORIAL
-                                        | BATTLE_TYPE_INGAME_PARTNER
-                                        | BATTLE_TYPE_TOWER_LINK_MULTI
-                                        | BATTLE_TYPE_RECORDED_LINK
-                                        | BATTLE_TYPE_FRONTIER
-                                        | BATTLE_TYPE_TRAINER_HILL)))
-                NuzlockeDeleteFaintedPartyPokemon();
             if (!(gBattleTypeFlags & (BATTLE_TYPE_DOUBLE
                                         | BATTLE_TYPE_LINK
                                         | BATTLE_TYPE_TRAINER

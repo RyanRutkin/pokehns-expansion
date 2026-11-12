@@ -68,6 +68,7 @@ enum FirstTurnEventsStates
 void CB2_InitBattle(void);
 #if TESTING
 void Test_ApplyMirrorBattleParty(void);
+void Test_TryApplyNuzlockePartyLoss(void);
 #endif
 void BattleMainCB2(void);
 void CB2_QuitRecordedBattle(void);

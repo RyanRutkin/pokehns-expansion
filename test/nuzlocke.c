@@ -1,5 +1,8 @@
 #include "global.h"
+#include "battle.h"
+#include "battle_main.h"
 #include "event_data.h"
+#include "load_save.h"
 #include "nuzlocke.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
@@ -94,4 +97,80 @@ TEST("Fusion Nuzlocke whiteout rescue remains unchanged without full PC")
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_RATTATA);
     EXPECT_EQ(gPlayerPartyCount, 1);
     ResetPokemonStorageSystem();
+}
+
+TEST("Fusion Nuzlocke e-Reader party restore does not duplicate or free profiles")
+{
+    bool8 eReader = TRUE, easy = FALSE, deletion = FALSE, active = TRUE, fusion = TRUE;
+    bool8 oldEasy = gSaveBlock3Ptr->challengeSettings.tx_Nuzlocke_EasyMode;
+    bool8 oldNuzlocke = gSaveBlock3Ptr->challengeSettings.tx_Challenges_Nuzlocke;
+    bool8 oldDeletion = gSaveBlock3Ptr->challengeSettings.tx_Nuzlocke_Deletion;
+    bool8 hadPokemon = FlagGet(FLAG_SYS_POKEMON_GET);
+    bool8 hadStart = FlagGet(FLAG_START_NUZLOCKE);
+    bool8 hadEnd = FlagGet(FLAG_END_NUZLOCKE);
+    u32 oldBattleFlags = gBattleTypeFlags;
+    u32 hp = 0;
+    u16 profileId;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { easy = TRUE; }
+    PARAMETRIZE { deletion = TRUE; }
+    PARAMETRIZE { eReader = FALSE; }
+    PARAMETRIZE { eReader = FALSE; easy = TRUE; }
+    PARAMETRIZE { eReader = FALSE; deletion = TRUE; }
+    PARAMETRIZE { fusion = FALSE; }
+    PARAMETRIZE { eReader = FALSE; active = FALSE; }
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_EEVEE, 30, 1, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_PIKACHU, 30, 2, OTID_STRUCT_PLAYER_ID);
+    CalculateMonStats(&gPlayerParty[0]);
+    CalculateMonStats(&gPlayerParty[1]);
+    profileId = fusion ? AllocBerserkGeneProfile() : 0;
+    if (fusion)
+        EXPECT_NE(profileId, 0);
+    SetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    gPlayerPartyCount = 2;
+    SavePlayerParty();
+    SetMonData(&gPlayerParty[0], MON_DATA_HP, &hp);
+    FlagSet(FLAG_SYS_POKEMON_GET);
+    FlagSet(FLAG_START_NUZLOCKE);
+    FlagClear(FLAG_END_NUZLOCKE);
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Nuzlocke = active && !easy;
+    gSaveBlock3Ptr->challengeSettings.tx_Nuzlocke_EasyMode = easy;
+    gSaveBlock3Ptr->challengeSettings.tx_Nuzlocke_Deletion = deletion;
+    gBattleTypeFlags = BATTLE_TYPE_TRAINER | (eReader ? BATTLE_TYPE_EREADER_TRAINER : 0);
+    Test_TryApplyNuzlockePartyLoss();
+
+    if (eReader || !active)
+    {
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+        EXPECT_EQ(GetBoxMonData(GetBoxedMonPtr(0, 0), MON_DATA_SPECIES), SPECIES_NONE);
+        EXPECT_EQ(GetBerserkGeneProfile(profileId) != NULL, fusion);
+        LoadPlayerParty();
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+        EXPECT_EQ(GetBerserkGeneProfile(profileId) != NULL, fusion);
+        if (fusion)
+            ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    }
+    else
+    {
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_PIKACHU);
+        EXPECT_EQ(GetBerserkGeneProfile(profileId) != NULL, !deletion);
+        EXPECT_EQ(GetBoxMonData(GetBoxedMonPtr(0, 0), MON_DATA_BERSERK_GENE_PROFILE_ID), deletion ? 0 : profileId);
+        if (!deletion)
+            ClearBoxMonBerserkGeneProfile(GetBoxedMonPtr(0, 0));
+    }
+
+    gBattleTypeFlags = oldBattleFlags;
+    gSaveBlock3Ptr->challengeSettings.tx_Nuzlocke_EasyMode = oldEasy;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_Nuzlocke = oldNuzlocke;
+    gSaveBlock3Ptr->challengeSettings.tx_Nuzlocke_Deletion = oldDeletion;
+    if (!hadPokemon)
+        FlagClear(FLAG_SYS_POKEMON_GET);
+    if (!hadStart)
+        FlagClear(FLAG_START_NUZLOCKE);
+    if (hadEnd)
+        FlagSet(FLAG_END_NUZLOCKE);
 }

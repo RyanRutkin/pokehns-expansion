@@ -970,7 +970,12 @@ without first establishing its ownership and reachability. Enemy-party copy site
 far include double wild encounters (copies of generated wild Pokémon), link reception, and
 recorded-battle playback; none establishes a locally owned fusion as an EXP-awarding opponent.
 The Union Room temporarily copies the player's Pokémon to the enemy array during setup, but
-starts a link battle. Further nonstandard and scripted paths still need review.
+starts a link battle. Egg hatching also uses `gEnemyParty[0]` as a temporary copy of the
+hatched Pokémon, including its local fusion profile ID; ordinary wild, roamer, event-wild,
+and trainer party setup clear or overwrite that buffer before battle. Script-created enemy
+Pokémon are freshly created from species rather than copied from the player's party. This
+does not prove every custom scripted setup clears stale enemy slots; further nonstandard
+and scripted paths still need review.
 The partial-save audit remains open. Pike's start menu has no bag, its party menu prevents held
 item management, and fusion potential evolutions currently reject overworld-special and
 script-trigger modes; this limits the profile-mutation routes considered for its partial saves.
@@ -1000,6 +1005,14 @@ not been validated; Sky Battles are disabled by both current battle config setti
 E-Reader trainer battles restore the entire saved party after battle, so their active fusion
 profiles are now retained rather than freed during Mirror Thief replacement. A focused test
 checks the selected and unselected profiles across the party restoration, not the full scene.
+Nuzlocke faint processing now also excludes e-Reader battles: their scripts restore the saved
+party afterward, so moving a fainted fusion into storage or freeing its profile first would
+duplicate it or leave the restored record with a dangling profile. This applies to ordinary
+Pokémon as well as fusions, matching the existing whole-party restoration behavior.
+`make -k check BUILD=hns -j8 TESTS='Fusion Nuzlocke'` passed three tests, including easy,
+storage and deletion Nuzlocke modes, normal trainer controls and a non-fusion control. The
+new regression runs the actual end-of-battle cleanup helper and party restore, not a full
+e-Reader battle scene.
 
 For non-Pyramid Frontier battles, `frontier_resetsketch` and the Dome's separate
 `dome_resetsketch` now leave a saved fusion unchanged when Mirror Thief has replaced its
