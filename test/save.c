@@ -7,7 +7,7 @@
 #define T_SAVEBLOCK1_SIZE 15752
 #define T_SAVEBLOCK2_SIZE 3884
 #define T_SAVEBLOCK3_SIZE 84
-#define T_POKEMONSTORAGE_SIZE 35680
+#define T_POKEMONSTORAGE_SIZE 35008
 
 TEST("SaveBlock1 is backwards compatible")
 {

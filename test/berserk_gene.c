@@ -121,10 +121,17 @@ TEST("Berserk Gene profile allocation reports full table")
 
     ResetPokemonStorageSystem();
 
+    EXPECT_EQ(MAX_BERSERK_GENE_PROFILES, 8);
+    EXPECT(!IsBerserkGeneProfileTableFull());
     for (i = 1; i <= MAX_BERSERK_GENE_PROFILES; i++)
         EXPECT_EQ(AllocBerserkGeneProfile(), i);
 
+    EXPECT(IsBerserkGeneProfileTableFull());
     EXPECT_EQ(AllocBerserkGeneProfile(), 0);
+    FreeBerserkGeneProfile(4);
+    EXPECT(!IsBerserkGeneProfileTableFull());
+    EXPECT_EQ(AllocBerserkGeneProfile(), 4);
+    EXPECT(IsBerserkGeneProfileTableFull());
 }
 
 TEST("Clearing a BoxPokemon Berserk Gene profile frees its slot")

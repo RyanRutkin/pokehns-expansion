@@ -737,6 +737,25 @@ Verification:
 - No manual visual or listening validation was performed. Full Fusion regression, production
   build and broader non-headless regression remain for the agreed commit-time validation.
 
+## MVP profile capacity (2026-11-12)
+
+The user set the internal MVP limit to **8 active fusion profiles**, plus the reserved slot.
+External storage remains deferred until the user can experiment with the MVP, and is planned
+before release. No compatibility with previous fusion saves is required. Older capacity and
+save-size figures below are historical and do not describe the current limit.
+
+The user approved a bounded rebreeding move-source design: up to four species sources per parent
+side, with deterministic pruning and equal weighting within each side. That design remains
+unimplemented. The reduction from 15 active profiles creates additional internal save space;
+the current `PokemonStorage` size is **35,008 / 35,712 bytes**, leaving **704 bytes**. Remeasure
+after the move-source fields are implemented.
+
+Verification:
+- `make -k check BUILD=hns -j8 TESTS='Berserk Gene profile'`: **7 passed**, including the exact
+  eight-slot limit, full-table detection, freeing a slot, and reuse.
+- `make -k check BUILD=hns -j8 TESTS='PokemonStorage is backwards compatible'`: **1 passed**,
+  verifying the updated storage size pin. This size test does not establish old-save compatibility.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -748,7 +767,7 @@ validation has been completed.
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
 | 2. Remaining display/cry consumers | Complete (2026-11-12); manual visual/listening validation remains outstanding | Full-summary scene regression passed headless and non-headless; contests classified species-only by user decision. |
-| 3. Rebreeding trait audit | Pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
+| 3. Rebreeding trait audit | In progress; bounded move-source design approved, implementation pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |
 | External profile-storage migration | Deferred, separate milestone | Begin only after the working, manually testable internal-storage version is available; follow the dedicated migration requirements below. |
