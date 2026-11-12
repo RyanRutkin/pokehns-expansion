@@ -1683,7 +1683,7 @@ bool8 PartyHasMonWithSurf(void)
                 u16 species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES);
                 if (!species)
                     break;
-                if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG) && CanLearnTeachableMove(species, MOVE_SURF))
+                if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG) && CanBoxMonLearnTeachableMove(&gPlayerParty[i].box, MOVE_SURF))
                     return TRUE;
             }
             // Challenge runs (mono-type, randomized moves, etc.) can lock the player out of

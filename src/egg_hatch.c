@@ -311,15 +311,18 @@ static void CreateHatchedMon(struct Pokemon *egg, struct Pokemon *temp)
 {
     u16 species;
     u16 profileId;
+    const struct BerserkGeneProfile *profile;
     u32 personality, pokerus;
     enum PokeBall ball;
-    u8 i, friendship, language, gameMet, markings, isModernFatefulEncounter;
+    u8 i, friendship, language, gameMet, markings, isModernFatefulEncounter, abilityNum;
     bool32 isShiny;
     enum Move moves[MAX_MON_MOVES];
     u32 ivs[NUM_STATS];
 
     species = GetMonData(egg, MON_DATA_SPECIES);
     profileId = GetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    abilityNum = GetMonData(egg, MON_DATA_ABILITY_NUM);
 
     #if RANDOMIZER_AVAILABLE == TRUE
     if (RandomizerFeatureEnabled(RANDOMIZE_EGG_MON))
@@ -344,11 +347,12 @@ static void CreateHatchedMon(struct Pokemon *egg, struct Pokemon *temp)
     ball = GetMonData(egg, MON_DATA_POKEBALL);
 
     CreateMonWithIVs(temp, species, EGG_HATCH_LEVEL, personality, OTID_STRUCT_PLAYER_ID, USE_RANDOM_IVS);
-    if (GetBerserkGeneProfile(profileId) != NULL)
+    if (profile != NULL)
     {
         u32 experience;
 
         SetMonData(temp, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+        SetMonData(temp, MON_DATA_ABILITY_NUM, &abilityNum);
         experience = gExperienceTables[GetMonGrowthRate(temp)][EGG_HATCH_LEVEL];
         SetMonData(temp, MON_DATA_EXP, &experience);
     }
@@ -360,12 +364,15 @@ static void CreateHatchedMon(struct Pokemon *egg, struct Pokemon *temp)
     for (i = 0; i < NUM_STATS; i++)
         SetMonData(temp, MON_DATA_HP_IV + i,  &ivs[i]);
 
+    if (profile != NULL)
+        CalculateMonStats(temp);
+
     language = GAME_LANGUAGE;
     SetMonData(temp, MON_DATA_LANGUAGE, &language);
     SetMonData(temp, MON_DATA_MET_GAME, &gameMet);
     SetMonData(temp, MON_DATA_MARKINGS, &markings);
 
-    friendship = 120;
+    friendship = profile != NULL ? profile->friendship : 120;
     SetMonData(temp, MON_DATA_FRIENDSHIP, &friendship);
     SetMonData(temp, MON_DATA_POKERUS, &pokerus);
     SetMonData(temp, MON_DATA_MODERN_FATEFUL_ENCOUNTER, &isModernFatefulEncounter);

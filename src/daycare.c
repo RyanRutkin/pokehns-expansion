@@ -53,6 +53,31 @@ static u8 CountBerserkGeneHolders(struct DayCare *daycare)
     return count;
 }
 
+static struct BerserkGeneProfile *GetCopiedBreedingProfile(struct DayCare *daycare)
+{
+    u8 i;
+    bool8 hasDitto;
+
+    if (CountBerserkGeneHolders(daycare) != 0)
+        return NULL;
+
+    hasDitto = IS_DITTO(GetBoxMonData(&daycare->mons[0].mon, MON_DATA_SPECIES))
+            || IS_DITTO(GetBoxMonData(&daycare->mons[1].mon, MON_DATA_SPECIES));
+    for (i = 0; i < DAYCARE_MON_COUNT; i++)
+    {
+        struct BoxPokemon *mon = &daycare->mons[i].mon;
+        if (!IS_DITTO(GetBoxMonData(mon, MON_DATA_SPECIES))
+         && (hasDitto || GetBoxMonGender(mon) == MON_FEMALE))
+            return GetBerserkGeneProfile(GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+    }
+    return NULL;
+}
+
+static bool8 DaycareNeedsProfileCapacity(struct DayCare *daycare)
+{
+    return CountBerserkGeneHolders(daycare) > 0 || GetCopiedBreedingProfile(daycare) != NULL;
+}
+
 // 1 gene holder -> 62% chance to inherit from it (38% from the other parent); 2 holders -> 50/50.
 static bool8 BerserkGeneShouldInheritFromParent(bool8 parentHasGene, u8 numGeneHolders)
 {
@@ -72,6 +97,32 @@ static s32 BerserkGeneBlendNumeric(s32 pGeneValue, s32 pOtherValue, u8 numGeneHo
         return (pGeneValue + pOtherValue + 1) / 2;
 
     return (pGeneValue * 62 + pOtherValue * 38 + 50) / 100;
+}
+
+static enum Ability GetBreedingAbility(struct BerserkGeneProfile *profile, u16 species, u8 slot)
+{
+    if (profile == NULL)
+        return gSpeciesInfo[species].abilities[slot];
+    if (slot == 0)
+        return profile->ability1;
+    if (slot == 1)
+        return profile->ability2;
+    return profile->abilityHidden;
+}
+
+static u8 GetBreedingEvYield(struct BerserkGeneProfile *profile, u16 species, u8 stat)
+{
+    if (profile != NULL)
+        return (profile->evYields >> (stat * 2)) & 3;
+    switch (stat)
+    {
+    case STAT_HP:    return gSpeciesInfo[species].evYield_HP;
+    case STAT_ATK:   return gSpeciesInfo[species].evYield_Attack;
+    case STAT_DEF:   return gSpeciesInfo[species].evYield_Defense;
+    case STAT_SPEED: return gSpeciesInfo[species].evYield_Speed;
+    case STAT_SPATK: return gSpeciesInfo[species].evYield_SpAttack;
+    default:         return gSpeciesInfo[species].evYield_SpDefense;
+    }
 }
 
 // Current species data has at most 72 literal evolution entries for one species (Alcremie).
@@ -388,9 +439,7 @@ void PruneBerserkGeneLineage(struct FusionPotentialEvolution *nodes, u8 *ages, u
     }
 }
 
-// Steps 1-2 of the Berserk Gene trait inheritance order: primary/secondary type, drawn from a
-// pooled candidate set of both parents' own primary+secondary types. Ditto pairings never form
-// a fusion (Ditto contributes no meaningful traits), so this is a no-op for them.
+// Build a new profile for gene breeding, or copy the appropriate fusion parent without a gene.
 static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg)
 {
     u16 species[DAYCARE_MON_COUNT];
@@ -401,12 +450,35 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     u8 parent, slot, chosenType, tries;
     u16 profileId;
     struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile *parentProfiles[DAYCARE_MON_COUNT];
     u32 i;
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
+    {
         species[i] = GetBoxMonData(&daycare->mons[i].mon, MON_DATA_SPECIES);
+        parentProfiles[i] = GetBerserkGeneProfile(GetBoxMonData(&daycare->mons[i].mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+    }
 
-    if (geneHolders == 0 || IS_DITTO(species[0]) || IS_DITTO(species[1]))
+    if (geneHolders == 0)
+    {
+        const struct BerserkGeneProfile *source = GetCopiedBreedingProfile(daycare);
+
+        if (source == NULL)
+            return;
+        profileId = AllocBerserkGeneProfile();
+        if (profileId == 0)
+            return;
+        profile = GetBerserkGeneProfile(profileId);
+        *profile = *source;
+        profile->gender = GetGenderFromSpeciesAndPersonality(GetMonData(egg, MON_DATA_SPECIES),
+                                                              GetMonData(egg, MON_DATA_PERSONALITY));
+        SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+        SetMonData(egg, MON_DATA_FRIENDSHIP, &profile->eggCycles);
+        SetMonData(egg, MON_DATA_EXP, &gExperienceTables[profile->growthRate][EGG_HATCH_LEVEL]);
+        return;
+    }
+    if ((IS_DITTO(species[0]) || IS_DITTO(species[1]))
+     && parentProfiles[0] == NULL && parentProfiles[1] == NULL)
         return;
 
     // Same species, neither parent already a fusion: nothing meaningful to fuse. No profile is
@@ -424,6 +496,8 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     profile = GetBerserkGeneProfile(profileId);
     profile->parentSpeciesA = species[0];
     profile->parentSpeciesB = species[1];
+    for (i = 0; i < DAYCARE_MON_COUNT; i++)
+        GetBoxMonBreedingMoveSources(&daycare->mons[i].mon, profile->moveSources[i]);
     if (geneHolders == 1 && DaycareMonHasBerserkGene(daycare, 1))
         profile->evolutionFlags |= BERSERK_GENE_GENE_HOLDER_PARENT_B;
     if (geneHolders >= 2)
@@ -492,23 +566,23 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     // Wonder Guard is excluded from fusion profiles entirely (falls back to the other parent's
     // value for that slot, or Sap Sipper if both sides would be Wonder Guard).
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
-    profile->ability1 = gSpeciesInfo[species[parent]].abilities[0];
+    profile->ability1 = GetBreedingAbility(parentProfiles[parent], species[parent], 0);
     if (profile->ability1 == ABILITY_WONDER_GUARD)
-        profile->ability1 = gSpeciesInfo[species[parent ^ 1]].abilities[0];
+        profile->ability1 = GetBreedingAbility(parentProfiles[parent ^ 1], species[parent ^ 1], 0);
     if (profile->ability1 == ABILITY_WONDER_GUARD)
         profile->ability1 = ABILITY_SAP_SIPPER;
 
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
-    profile->ability2 = gSpeciesInfo[species[parent]].abilities[1];
+    profile->ability2 = GetBreedingAbility(parentProfiles[parent], species[parent], 1);
     if (profile->ability2 == ABILITY_WONDER_GUARD)
-        profile->ability2 = gSpeciesInfo[species[parent ^ 1]].abilities[1];
+        profile->ability2 = GetBreedingAbility(parentProfiles[parent ^ 1], species[parent ^ 1], 1);
     if (profile->ability2 == ABILITY_WONDER_GUARD)
         profile->ability2 = ABILITY_SAP_SIPPER;
 
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
-    profile->abilityHidden = gSpeciesInfo[species[parent]].abilities[2];
+    profile->abilityHidden = GetBreedingAbility(parentProfiles[parent], species[parent], 2);
     if (profile->abilityHidden == ABILITY_WONDER_GUARD)
-        profile->abilityHidden = gSpeciesInfo[species[parent ^ 1]].abilities[2];
+        profile->abilityHidden = GetBreedingAbility(parentProfiles[parent ^ 1], species[parent ^ 1], 2);
     if (profile->abilityHidden == ABILITY_WONDER_GUARD)
         profile->abilityHidden = ABILITY_SAP_SIPPER;
 
@@ -558,7 +632,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
 
     // Step 5: color
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
-    profile->color = gSpeciesInfo[species[parent]].bodyColor;
+    profile->color = parentProfiles[parent] != NULL ? parentProfiles[parent]->color : gSpeciesInfo[species[parent]].bodyColor;
 
     // Step 6: shininess — force it only if the selected parent happens to already be shiny;
     // otherwise leave the standard shiny-roll (already applied by SetInitialEggData) alone.
@@ -571,17 +645,25 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
 
     // Step 7: cry
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
-    profile->cryId = gSpeciesInfo[species[parent]].cryId;
+    profile->cryId = GetBoxMonCryId(&daycare->mons[parent].mon);
+
+    parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+    profile->eggCycles = parentProfiles[parent] != NULL ? parentProfiles[parent]->eggCycles : gSpeciesInfo[species[parent]].eggCycles;
+    SetMonData(egg, MON_DATA_FRIENDSHIP, &profile->eggCycles);
 
     // Step 8: size — height, weight, sprite scale, sprite offset, blended (not rolled).
     {
         u8 geneParent = DaycareMonHasBerserkGene(daycare, 0) ? 0 : 1;
         u8 otherParent = geneParent ^ 1;
 
-        profile->height = BerserkGeneBlendNumeric(gSpeciesInfo[species[geneParent]].height, gSpeciesInfo[species[otherParent]].height, geneHolders);
-        profile->weight = BerserkGeneBlendNumeric(gSpeciesInfo[species[geneParent]].weight, gSpeciesInfo[species[otherParent]].weight, geneHolders);
-        profile->pokemonScale = BerserkGeneBlendNumeric(gSpeciesInfo[species[geneParent]].pokemonScale, gSpeciesInfo[species[otherParent]].pokemonScale, geneHolders);
-        profile->pokemonOffset = BerserkGeneBlendNumeric(gSpeciesInfo[species[geneParent]].pokemonOffset, gSpeciesInfo[species[otherParent]].pokemonOffset, geneHolders);
+        profile->height = BerserkGeneBlendNumeric(GetBoxMonHeight(&daycare->mons[geneParent].mon), GetBoxMonHeight(&daycare->mons[otherParent].mon), geneHolders);
+        profile->weight = BerserkGeneBlendNumeric(GetBoxMonWeight(&daycare->mons[geneParent].mon), GetBoxMonWeight(&daycare->mons[otherParent].mon), geneHolders);
+        profile->pokemonScale = BerserkGeneBlendNumeric(
+            parentProfiles[geneParent] != NULL ? parentProfiles[geneParent]->pokemonScale : gSpeciesInfo[species[geneParent]].pokemonScale,
+            parentProfiles[otherParent] != NULL ? parentProfiles[otherParent]->pokemonScale : gSpeciesInfo[species[otherParent]].pokemonScale, geneHolders);
+        profile->pokemonOffset = BerserkGeneBlendNumeric(
+            parentProfiles[geneParent] != NULL ? parentProfiles[geneParent]->pokemonOffset : gSpeciesInfo[species[geneParent]].pokemonOffset,
+            parentProfiles[otherParent] != NULL ? parentProfiles[otherParent]->pokemonOffset : gSpeciesInfo[species[otherParent]].pokemonOffset, geneHolders);
     }
 
     // Step 9: gender — one binary roll, explicit override (decoupled from species genderRatio).
@@ -597,8 +679,9 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
 
         for (i = 0; i < DAYCARE_MON_COUNT; i++)
         {
-            eggGroups[i][0] = GetBoxMonEggGroup(&daycare->mons[i].mon, 0);
-            eggGroups[i][1] = GetBoxMonEggGroup(&daycare->mons[i].mon, 1);
+            u8 groupParent = IS_DITTO(species[i]) ? i ^ 1 : i;
+            eggGroups[i][0] = GetBoxMonEggGroup(&daycare->mons[groupParent].mon, 0);
+            eggGroups[i][1] = GetBoxMonEggGroup(&daycare->mons[groupParent].mon, 1);
             // Undiscovered is swapped for Monster before pooling, rather than excluded outright.
             if (eggGroups[i][0] == EGG_GROUP_NO_EGGS_DISCOVERED)
                 eggGroups[i][0] = EGG_GROUP_MONSTER;
@@ -683,24 +766,9 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     {
         u8 geneParent = DaycareMonHasBerserkGene(daycare, 0) ? 0 : 1;
         u8 otherParent = geneParent ^ 1;
-        u32 geneBase[NUM_STATS], otherBase[NUM_STATS];
-
-        geneBase[STAT_HP] = GetSpeciesBaseHP(species[geneParent]);
-        geneBase[STAT_ATK] = GetSpeciesBaseAttack(species[geneParent]);
-        geneBase[STAT_DEF] = GetSpeciesBaseDefense(species[geneParent]);
-        geneBase[STAT_SPEED] = GetSpeciesBaseSpeed(species[geneParent]);
-        geneBase[STAT_SPATK] = GetSpeciesBaseSpAttack(species[geneParent]);
-        geneBase[STAT_SPDEF] = GetSpeciesBaseSpDefense(species[geneParent]);
-
-        otherBase[STAT_HP] = GetSpeciesBaseHP(species[otherParent]);
-        otherBase[STAT_ATK] = GetSpeciesBaseAttack(species[otherParent]);
-        otherBase[STAT_DEF] = GetSpeciesBaseDefense(species[otherParent]);
-        otherBase[STAT_SPEED] = GetSpeciesBaseSpeed(species[otherParent]);
-        otherBase[STAT_SPATK] = GetSpeciesBaseSpAttack(species[otherParent]);
-        otherBase[STAT_SPDEF] = GetSpeciesBaseSpDefense(species[otherParent]);
-
         for (i = 0; i < NUM_STATS; i++)
-            profile->baseStats[i] = BerserkGeneBlendNumeric(geneBase[i], otherBase[i], geneHolders);
+            profile->baseStats[i] = BerserkGeneBlendNumeric(GetBoxMonBaseStat(&daycare->mons[geneParent].mon, i),
+                GetBoxMonBaseStat(&daycare->mons[otherParent].mon, i), geneHolders);
     }
 
     // Step 14: growth rate, EV yield (per stat), base friendship — independent binary rolls.
@@ -708,7 +776,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     profile->growthRate = GetBoxMonGrowthRate(&daycare->mons[parent].mon);
 
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
-    profile->friendship = gSpeciesInfo[species[parent]].friendship;
+    profile->friendship = parentProfiles[parent] != NULL ? parentProfiles[parent]->friendship : gSpeciesInfo[species[parent]].friendship;
 
     {
         u16 evYields = 0;
@@ -717,17 +785,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
         for (evStat = 0; evStat < NUM_STATS; evStat++)
         {
             u8 evParent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
-            u8 evValue;
-
-            switch (evStat)
-            {
-            case STAT_HP:    evValue = gSpeciesInfo[species[evParent]].evYield_HP; break;
-            case STAT_ATK:   evValue = gSpeciesInfo[species[evParent]].evYield_Attack; break;
-            case STAT_DEF:   evValue = gSpeciesInfo[species[evParent]].evYield_Defense; break;
-            case STAT_SPEED: evValue = gSpeciesInfo[species[evParent]].evYield_Speed; break;
-            case STAT_SPATK: evValue = gSpeciesInfo[species[evParent]].evYield_SpAttack; break;
-            default:         evValue = gSpeciesInfo[species[evParent]].evYield_SpDefense; break;
-            }
+            u8 evValue = GetBreedingEvYield(parentProfiles[evParent], species[evParent], evStat);
             evYields |= (evValue & 0x3) << (evStat * 2);
         }
         profile->evYields = evYields;
@@ -1099,7 +1157,14 @@ static void TransferEggMoves(void)
         }
 
         ClearHatchedEggMoves();
-        numEggMoves = GetEggMovesBySpecies(eggSpecies, sHatchedEggEggMoves);
+        if (GetBerserkGeneProfile(GetBoxMonData(&gSaveBlock1Ptr->daycare.mons[i].mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+        {
+            const u16 *moves = GetBoxMonEggMoveLearnset(&gSaveBlock1Ptr->daycare.mons[i].mon);
+            for (numEggMoves = 0; moves[numEggMoves] != MOVE_UNAVAILABLE; numEggMoves++)
+                sHatchedEggEggMoves[numEggMoves] = moves[numEggMoves];
+        }
+        else
+            numEggMoves = GetEggMovesBySpecies(eggSpecies, sHatchedEggEggMoves);
         for (j = 0; j < numEggMoves; j++)
         {
             // Go through other Daycare mons
@@ -1442,8 +1507,12 @@ static s32 GetParentToInheritNature(struct DayCare *daycare)
     if (result < 0)
     {
         u8 geneHolders = CountBerserkGeneHolders(daycare);
-        if (geneHolders > 0 && (Random() % 100) < 75)
-            result = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+        if (geneHolders > 0)
+        {
+            u8 selected = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
+            if (DaycareMonHasBerserkGene(daycare, selected) && (Random() % 100) < 75)
+                result = selected;
+        }
     }
 
     return result;
@@ -1660,8 +1729,16 @@ static void InheritAbility(struct Pokemon *egg, struct BoxPokemon *father, struc
 {
     enum Ability fatherAbility = GetBoxMonData(father, MON_DATA_ABILITY_NUM);
     enum Ability motherAbility = GetBoxMonData(mother, MON_DATA_ABILITY_NUM);
+    const struct BerserkGeneProfile *fatherProfile = GetBerserkGeneProfile(GetBoxMonData(father, MON_DATA_BERSERK_GENE_PROFILE_ID));
+    const struct BerserkGeneProfile *motherProfile = GetBerserkGeneProfile(GetBoxMonData(mother, MON_DATA_BERSERK_GENE_PROFILE_ID));
     u16 motherSpecies = GetBoxMonData(mother, MON_DATA_SPECIES);
-    enum Ability inheritAbility = motherAbility;
+    enum Ability inheritAbility;
+
+    if (fatherProfile != NULL)
+        fatherAbility = (fatherProfile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+    if (motherProfile != NULL)
+        motherAbility = (motherProfile->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+    inheritAbility = motherAbility;
 
     if (motherSpecies == SPECIES_DITTO)
     {
@@ -1712,7 +1789,8 @@ u8 GetEggMoves(struct Pokemon *pokemon, u16 *eggMoves)
 
     numEggMoves = 0;
     species = GetMonData(pokemon, MON_DATA_SPECIES);
-    eggMoveLearnset = GetSpeciesEggMoves(species);
+    eggMoveLearnset = GetBerserkGeneProfile(GetMonData(pokemon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL
+        ? GetMonEggMoveLearnset(pokemon) : GetSpeciesEggMoves(species);
 
     for (i = 0; eggMoveLearnset[i] != MOVE_UNAVAILABLE; i++)
     {
@@ -1773,7 +1851,15 @@ static void BuildEggMoveset(struct Pokemon *egg, struct BoxPokemon *father, stru
     for (i = 0; i < EGG_LVL_UP_MOVES_ARRAY_COUNT; i++)
         sHatchedEggLevelUpMoves[i] = MOVE_NONE;
 
-    numLevelUpMoves = GetLevelUpMovesBySpecies(GetMonData(egg, MON_DATA_SPECIES), sHatchedEggLevelUpMoves);
+    if (GetBerserkGeneProfile(GetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+    {
+        const struct LevelUpMove *learnset = GetMonLevelUpLearnset(egg);
+        for (numLevelUpMoves = 0; numLevelUpMoves < MAX_LEVEL_UP_MOVES
+             && learnset[numLevelUpMoves].move != LEVEL_UP_MOVE_END; numLevelUpMoves++)
+            sHatchedEggLevelUpMoves[numLevelUpMoves] = learnset[numLevelUpMoves].move;
+    }
+    else
+        numLevelUpMoves = GetLevelUpMovesBySpecies(GetMonData(egg, MON_DATA_SPECIES), sHatchedEggLevelUpMoves);
     for (i = 0; i < MAX_MON_MOVES; i++)
     {
         sHatchedEggFatherMoves[i] = GetBoxMonData(father, MON_DATA_MOVE1 + i);
@@ -1834,7 +1920,7 @@ static void BuildEggMoveset(struct Pokemon *egg, struct BoxPokemon *father, stru
                 for (j = 0; j < NUM_ALL_MACHINES; j++)
                 {
                     enum Move moveId = GetTMHMMoveId(j + 1);
-                    if (sHatchedEggFatherMoves[i] == moveId && CanLearnTeachableMove(GetMonData(egg, MON_DATA_SPECIES_OR_EGG), moveId))
+                    if (sHatchedEggFatherMoves[i] == moveId && CanBoxMonLearnTeachableMove(&egg->box, moveId))
                     {
                         if (GiveMoveToMon(egg, sHatchedEggFatherMoves[i]) == MON_HAS_MAX_MOVES)
                             DeleteFirstMoveAndGiveMoveToMon(egg, sHatchedEggFatherMoves[i]);
@@ -2028,8 +2114,7 @@ static void _GiveEggFromDaycare(struct DayCare *daycare)
 
     if (GetDaycareCompatibilityScore(daycare) == PARENTS_INCOMPATIBLE)
         return;
-    // Refuse to produce a Berserk Gene egg if the profile side-table has no free slot.
-    if (CountBerserkGeneHolders(daycare) > 0 && IsBerserkGeneProfileTableFull())
+    if (DaycareNeedsProfileCapacity(daycare) && IsBerserkGeneProfileTableFull())
         return;
 
     species = DetermineEggSpeciesAndParentSlots(daycare, parentSlots);
@@ -2037,16 +2122,47 @@ static void _GiveEggFromDaycare(struct DayCare *daycare)
         AlterEggSpeciesWithIncenseItem(&species, daycare);
     SetInitialEggData(&egg, species, daycare);
     BuildBerserkGeneProfile(daycare, &egg);
+    if (GetBerserkGeneProfile(GetMonData(&egg, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL)
+        GiveMonInitialMoveset(&egg);
     if (CountBerserkGeneHolders(daycare) > 0)
         InheritIVsBerserkGene(&egg, daycare);
     else
         InheritIVs(&egg, daycare);
     InheritPokeball(&egg, &daycare->mons[parentSlots[1]].mon, &daycare->mons[parentSlots[0]].mon);
     BuildEggMoveset(&egg, &daycare->mons[parentSlots[1]].mon, &daycare->mons[parentSlots[0]].mon);
+    if (CountBerserkGeneHolders(daycare) == 0)
+    {
+        const struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(&egg, MON_DATA_BERSERK_GENE_PROFILE_ID));
+        if (profile != NULL)
+        {
+            u8 slot = profile->ability2 != ABILITY_NONE ? GetMonData(&egg, MON_DATA_PERSONALITY) & 1 : 0;
+            SetMonData(&egg, MON_DATA_ABILITY_NUM, &slot);
+        }
+    }
     if (CountBerserkGeneHolders(daycare) > 0 && GetMonData(&egg, MON_DATA_BERSERK_GENE_PROFILE_ID) == 0)
         InheritAbilityBerserkGeneEqualWeight(&egg, species);
     else if (P_ABILITY_INHERITANCE >= GEN_6)
         InheritAbility(&egg, &daycare->mons[parentSlots[1]].mon, &daycare->mons[parentSlots[0]].mon);
+
+    if (CountBerserkGeneHolders(daycare) == 0)
+    {
+        struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(&egg, MON_DATA_BERSERK_GENE_PROFILE_ID));
+        if (profile != NULL)
+        {
+            u8 slot = GetMonData(&egg, MON_DATA_ABILITY_NUM);
+            if (slot >= NUM_ABILITY_SLOTS || GetBreedingAbility(profile, species, slot) == ABILITY_NONE)
+            {
+                for (slot = 0; slot < NUM_ABILITY_SLOTS; slot++)
+                    if (GetBreedingAbility(profile, species, slot) != ABILITY_NONE)
+                        break;
+                if (slot == NUM_ABILITY_SLOTS)
+                    slot = 0;
+            }
+            profile->inheritanceFlags = (profile->inheritanceFlags & ~BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK)
+                                      | (slot << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
+            SetMonData(&egg, MON_DATA_ABILITY_NUM, &slot);
+        }
+    }
 
     GiveMoveIfItem(&egg, daycare);
 
@@ -2125,7 +2241,7 @@ static bool8 TryProduceOrHatchEgg(struct DayCare *daycare)
     {
         u8 compatibility = ModifyBreedingScoreForOvalCharm(GetDaycareCompatibilityScore(daycare));
         if (compatibility > (Random() * 100u) / USHRT_MAX
-         && !(CountBerserkGeneHolders(daycare) > 0 && IsBerserkGeneProfileTableFull()))
+         && !(DaycareNeedsProfileCapacity(daycare) && IsBerserkGeneProfileTableFull()))
             TriggerPendingDaycareEgg();
     }
 
@@ -2271,12 +2387,9 @@ u8 GetDaycareCompatibilityScore(struct DayCare *daycare)
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
     {
-        u32 personality;
-
         species[i] = GetBoxMonData(&daycare->mons[i].mon, MON_DATA_SPECIES);
         trainerIds[i] = GetBoxMonData(&daycare->mons[i].mon, MON_DATA_OT_ID);
-        personality = GetBoxMonData(&daycare->mons[i].mon, MON_DATA_PERSONALITY);
-        genders[i] = GetGenderFromSpeciesAndPersonality(species[i], personality);
+        genders[i] = GetBoxMonGender(&daycare->mons[i].mon);
         eggGroups[i][0] = GetBoxMonEggGroup(&daycare->mons[i].mon, 0);
         eggGroups[i][1] = GetBoxMonEggGroup(&daycare->mons[i].mon, 1);
     }
@@ -2349,10 +2462,9 @@ void SetDaycareCompatibilityString(void)
 
     relationshipScore = GetDaycareCompatibilityScoreFromSave();
 
-    // Distinct from the normal compatibility messages: the pairing would produce a
-    // Berserk Gene egg, but the profile side-table has no free slot for it right now.
+    // The pairing requires a profile, but the side-table has no free slot.
     if (relationshipScore != PARENTS_INCOMPATIBLE
-     && CountBerserkGeneHolders(&gSaveBlock1Ptr->daycare) > 0
+     && DaycareNeedsProfileCapacity(&gSaveBlock1Ptr->daycare)
      && IsBerserkGeneProfileTableFull())
     {
         StringCopy(gStringVar4, gDaycareText_BerserkGeneStorageFull);

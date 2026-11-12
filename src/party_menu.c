@@ -2298,29 +2298,10 @@ static void Task_HandleCancelParticipationYesNoInput(u8 taskId)
 
 static enum CanMoveBeLearned CanTeachMove(struct Pokemon *mon, enum Move move)
 {
-    const u16 *fusionLearnset;
-    u16 i;
-    bool8 canLearnFusionMove = FALSE;
-
     if (GetMonData(mon, MON_DATA_IS_EGG))
         return CANNOT_LEARN_MOVE_IS_EGG;
 
-    fusionLearnset = GetMonTeachableLearnset(mon);
-    for (i = 0; fusionLearnset[i] != MOVE_UNAVAILABLE; i++)
-    {
-        if (fusionLearnset[i] == move)
-        {
-            canLearnFusionMove = TRUE;
-            break;
-        }
-    }
-
-    if (GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID) != 0)
-    {
-        if (!canLearnFusionMove)
-            return CANNOT_LEARN_MOVE;
-    }
-    else if (!CanLearnTeachableMove(GetMonData(mon, MON_DATA_SPECIES_OR_EGG), move))
+    if (!CanBoxMonLearnTeachableMove(&mon->box, move))
     {
         return CANNOT_LEARN_MOVE;
     }
@@ -2988,10 +2969,10 @@ static void SetPartyMonFieldSelectionActions(struct Pokemon *mons, u8 slotId)
                 }
             }
         }
-        if (sPartyMenuInternal->numActions < 5 && CanLearnTeachableMove(GetMonData(&mons[slotId], MON_DATA_SPECIES), MOVE_FLY))
+        if (sPartyMenuInternal->numActions < 5 && CanBoxMonLearnTeachableMove(&mons[slotId].box, MOVE_FLY))
             AppendToList(sPartyMenuInternal->actions, &sPartyMenuInternal->numActions, FIELD_MOVE_FLY + MENU_FIELD_MOVES);
         if (sPartyMenuInternal->numActions < 5 && CheckBagHasItem(ITEM_HM05, 1)
-         && CanLearnTeachableMove(GetMonData(&mons[slotId], MON_DATA_SPECIES), MOVE_FLASH))
+         && CanBoxMonLearnTeachableMove(&mons[slotId].box, MOVE_FLASH))
             AppendToList(sPartyMenuInternal->actions, &sPartyMenuInternal->numActions, FIELD_MOVE_FLASH + MENU_FIELD_MOVES);
     }
 

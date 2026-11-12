@@ -694,7 +694,7 @@ TEST("Fusion hatching preserves the profile donor growth and inherited moves")
     struct BerserkGeneProfile savedProfile;
     u16 savedSpecial = gSpecialVar_0x8004;
     u16 profileId = 0;
-    u8 mode = 0, shiny = FALSE, isEgg = TRUE, stat;
+    u8 mode = 0, shiny = FALSE, isEgg = TRUE, stat, abilityNum = 2;
     u8 nickname[POKEMON_NAME_BUFFER_SIZE];
     u32 personality = 123456;
     u32 ivs[NUM_STATS];
@@ -711,10 +711,13 @@ TEST("Fusion hatching preserves the profile donor growth and inherited moves")
     if (mode)
     {
         profile = SetPortraitProfile(&gPlayerParty[0], mode == 2);
+        profile->friendship = 123;
         savedProfile = *profile;
         profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
     }
     SetMonData(&gPlayerParty[0], MON_DATA_IS_EGG, &isEgg);
+    if (mode)
+        SetMonData(&gPlayerParty[0], MON_DATA_ABILITY_NUM, &abilityNum);
     SetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY, &shiny);
     SetMonData(&gPlayerParty[0], MON_DATA_MOVE1, &move);
     for (stat = 0; stat < NUM_STATS; stat++)
@@ -735,6 +738,9 @@ TEST("Fusion hatching preserves the profile donor growth and inherited moves")
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_PERSONALITY), personality);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_IS_SHINY), shiny);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_MOVE1), move);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_FRIENDSHIP), mode ? 123 : 120);
+    if (mode)
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_ABILITY_NUM), abilityNum);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_LEVEL), EGG_HATCH_LEVEL);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_EXP),
         gExperienceTables[mode ? GROWTH_SLOW : gSpeciesInfo[SPECIES_WOBBUFFET].growthRate][EGG_HATCH_LEVEL]);

@@ -1,5 +1,6 @@
 #include "global.h"
 #include "caps.h"
+#include "challenge_menu.h"
 #include "daycare.h"
 #include "event_data.h"
 #include "malloc.h"
@@ -172,6 +173,7 @@ TEST("(Daycare) Berserk Gene bypasses a same-gender pairing, but an all-male pai
 {
     bool32 canBreed = FALSE;
 
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     ZeroPlayerPartyMons();
     PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_NONE;         givemon SPECIES_EEVEE, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
     PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE; givemon SPECIES_EEVEE, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
@@ -188,6 +190,7 @@ TEST("(Daycare) Berserk Gene bypasses a same-gender pairing with only one holder
 {
     bool32 canBreed = FALSE;
 
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     ZeroPlayerPartyMons();
     PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_FEMALE, item=ITEM_NONE;         givemon SPECIES_EEVEE, 50, gender=MON_FEMALE, item=ITEM_NONE; ); }
     PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_PIKACHU, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE; givemon SPECIES_EEVEE, 50, gender=MON_FEMALE, item=ITEM_NONE; ); }
@@ -203,6 +206,7 @@ TEST("(Daycare) Berserk Gene bypasses a genderless parent only when both parents
 {
     bool32 canBreed = FALSE;
 
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     ZeroPlayerPartyMons();
     PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_MAGNEMITE, 50, item=ITEM_NONE;         givemon SPECIES_GEODUDE, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
     PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_MAGNEMITE, 50, item=ITEM_BERSERK_GENE; givemon SPECIES_GEODUDE, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
@@ -219,6 +223,7 @@ TEST("(Daycare) Berserk Gene bypasses the No Eggs Discovered egg group only when
 {
     bool32 canBreed = FALSE;
 
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     ZeroPlayerPartyMons();
     PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_MEWTWO, 50, item=ITEM_NONE;         givemon SPECIES_ARTICUNO, 50, item=ITEM_NONE;         ); }
     PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_MEWTWO, 50, item=ITEM_BERSERK_GENE; givemon SPECIES_ARTICUNO, 50, item=ITEM_NONE;         ); }
@@ -848,6 +853,7 @@ TEST("(Daycare) Rebreeding preserves only the fusion parent's remaining saved li
 
     profileId = AllocBerserkGeneProfile();
     parentProfile = GetBerserkGeneProfile(profileId);
+    EXPECT(parentProfile != NULL);
     parentProfile->parentSpeciesA = SPECIES_EEVEE;
     parentProfile->parentSpeciesB = SPECIES_APPLIN;
     parentProfile->type1 = TYPE_NORMAL;
@@ -957,6 +963,11 @@ TEST("(Daycare) Rebreeding preserves only the fusion parent's remaining saved li
     {
         EXPECT_EQ(childProfile->potentialEvolutionCount, 1);
     }
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[parentSlot].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
+    ZeroPlayerPartyMons();
 }
 
 TEST("Fusion growth daycare withdrawal uses the birth curve and level cap")
@@ -1052,6 +1063,681 @@ TEST("Fusion growth breeding inherits stored parent curves and initializes egg E
     ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[parentSlot].mon);
     ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
     ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
+}
+
+TEST("Fusion rebreeding copies the eligible parent without a gene")
+{
+    struct Pokemon fusion, other;
+    struct BerserkGeneProfile *parent, *child;
+    struct BerserkGeneProfile expected;
+    u16 parentId, childId;
+    u8 fusionSlot = 0, mode = 0, trial;
+    bool8 sawHidden = FALSE, sawNormal = FALSE;
+
+    PARAMETRIZE { fusionSlot = 0; mode = 0; }
+    PARAMETRIZE { fusionSlot = 1; mode = 0; }
+    PARAMETRIZE { fusionSlot = 0; mode = 1; }
+    PARAMETRIZE { fusionSlot = 1; mode = 1; }
+    PARAMETRIZE { fusionSlot = 0; mode = 2; }
+    PARAMETRIZE { fusionSlot = 0; mode = 3; }
+    PARAMETRIZE { fusionSlot = 1; mode = 3; }
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&fusion, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&other, mode == 1 || mode == 3 ? SPECIES_DITTO : SPECIES_RATTATA, 20, mode == 2 ? 0 : 0xFF, OTID_STRUCT_PLAYER_ID);
+    parentId = AllocBerserkGeneProfile();
+    parent = GetBerserkGeneProfile(parentId);
+    EXPECT(parent != NULL);
+    parent->parentSpeciesA = SPECIES_EEVEE;
+    parent->parentSpeciesB = SPECIES_APPLIN;
+    parent->eggGroup1 = parent->eggGroup2 = EGG_GROUP_FIELD;
+    parent->gender = mode >= 2 ? MON_MALE : MON_FEMALE;
+    parent->ability1 = ABILITY_OVERGROW;
+    parent->ability2 = ABILITY_BLAZE;
+    parent->abilityHidden = ABILITY_TORRENT;
+    parent->inheritanceFlags = 2 << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+    parent->eggCycles = 71;
+    parent->growthRate = GROWTH_ERRATIC;
+    parent->baseStats[STAT_HP] = 90;
+    SetMonData(&fusion, MON_DATA_BERSERK_GENE_PROFILE_ID, &parentId);
+    StorePokemonInDaycare(&fusion, &gSaveBlock1Ptr->daycare.mons[fusionSlot]);
+    StorePokemonInDaycare(&other, &gSaveBlock1Ptr->daycare.mons[fusionSlot ^ 1]);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+
+    for (trial = 0; trial < 32; trial++)
+    {
+        u8 slot;
+
+        gSaveBlock1Ptr->daycare.offspringPersonality = 0xFF;
+        GiveEggFromDaycare();
+        childId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        if (mode == 2)
+        {
+            EXPECT_EQ(childId, 0);
+            ZeroPlayerPartyMons();
+            break;
+        }
+
+        EXPECT_NE(childId, parentId);
+        child = GetBerserkGeneProfile(childId);
+        EXPECT(child != NULL);
+        slot = (child->inheritanceFlags & BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK) >> BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT;
+        EXPECT_EQ(slot, GetMonData(&gPlayerParty[0], MON_DATA_ABILITY_NUM));
+        EXPECT_EQ(GetMonAbility(&gPlayerParty[0]), slot == 0 ? ABILITY_OVERGROW : slot == 1 ? ABILITY_BLAZE : ABILITY_TORRENT);
+        EXPECT_EQ(GetMonGender(&gPlayerParty[0]), MON_MALE);
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_FRIENDSHIP), 71);
+        EXPECT_EQ(GetLevelFromMonExp(&gPlayerParty[0]), EGG_HATCH_LEVEL);
+        expected = *parent;
+        expected.gender = MON_MALE;
+        expected.inheritanceFlags = (expected.inheritanceFlags & ~BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK)
+                                  | (slot << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
+        EXPECT_EQ(memcmp(child, &expected, sizeof(expected)), 0);
+        EXPECT_EQ(parent->gender, mode == 3 ? MON_MALE : MON_FEMALE);
+        EXPECT_EQ(parent->inheritanceFlags, 2 << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
+        sawHidden |= slot == 2;
+        sawNormal |= slot < 2;
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+        ZeroPlayerPartyMons();
+    }
+    if (mode != 2)
+        EXPECT(sawHidden && sawNormal);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[fusionSlot].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
+}
+
+TEST("Fusion rebreeding with Ditto and a gene includes Ditto traits")
+{
+    struct Pokemon fusion, ditto;
+    struct BerserkGeneProfile *parent, *child;
+    u16 parentId, childId, geneItem = ITEM_BERSERK_GENE;
+    u8 fusionSlot = 0, geneSlot = 0, stat;
+
+    PARAMETRIZE { fusionSlot = 0; geneSlot = 0; }
+    PARAMETRIZE { fusionSlot = 0; geneSlot = 1; }
+    PARAMETRIZE { fusionSlot = 1; geneSlot = 0; }
+    PARAMETRIZE { fusionSlot = 1; geneSlot = 1; }
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&fusion, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&ditto, SPECIES_DITTO, 20, 0, OTID_STRUCT_PLAYER_ID);
+    parentId = AllocBerserkGeneProfile();
+    parent = GetBerserkGeneProfile(parentId);
+    EXPECT(parent != NULL);
+    parent->parentSpeciesA = SPECIES_EEVEE;
+    parent->parentSpeciesB = SPECIES_APPLIN;
+    parent->type1 = TYPE_GRASS;
+    parent->type2 = TYPE_DRAGON;
+    parent->eggGroup1 = EGG_GROUP_FIELD;
+    parent->eggGroup2 = EGG_GROUP_DRAGON;
+    parent->gender = MON_FEMALE;
+    parent->ability1 = ABILITY_OVERGROW;
+    parent->height = 100;
+    parent->growthRate = GROWTH_MEDIUM_FAST;
+    for (stat = 0; stat < NUM_STATS; stat++)
+        parent->baseStats[stat] = 100;
+    SetMonData(&fusion, MON_DATA_BERSERK_GENE_PROFILE_ID, &parentId);
+    if (geneSlot == fusionSlot)
+        SetMonData(&fusion, MON_DATA_HELD_ITEM, &geneItem);
+    else
+        SetMonData(&ditto, MON_DATA_HELD_ITEM, &geneItem);
+    StorePokemonInDaycare(&fusion, &gSaveBlock1Ptr->daycare.mons[fusionSlot]);
+    StorePokemonInDaycare(&ditto, &gSaveBlock1Ptr->daycare.mons[fusionSlot ^ 1]);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+    GiveEggFromDaycare();
+    childId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    child = GetBerserkGeneProfile(childId);
+    EXPECT(child != NULL);
+    EXPECT_EQ(fusionSlot == 0 ? child->parentSpeciesA : child->parentSpeciesB, SPECIES_EEVEE);
+    EXPECT_EQ(fusionSlot == 0 ? child->parentSpeciesB : child->parentSpeciesA, SPECIES_DITTO);
+    EXPECT_EQ(child->moveSources[fusionSlot ^ 1][0], SPECIES_DITTO);
+    EXPECT_EQ(child->eggGroup1, EGG_GROUP_FIELD);
+    EXPECT_EQ(child->eggGroup2, EGG_GROUP_DRAGON);
+    EXPECT_EQ(child->height, geneSlot == fusionSlot
+        ? (100 * 62 + GetSpeciesHeight(SPECIES_DITTO) * 38 + 50) / 100
+        : (100 * 38 + GetSpeciesHeight(SPECIES_DITTO) * 62 + 50) / 100);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[fusionSlot].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
+}
+
+TEST("Fusion rebreeding preserves profiles when storage is full")
+{
+    struct Pokemon fusion, other;
+    struct BerserkGeneProfile *parent;
+    u16 ids[MAX_BERSERK_GENE_PROFILES], i;
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&fusion, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&other, SPECIES_DITTO, 20, 0, OTID_STRUCT_PLAYER_ID);
+    for (i = 0; i < MAX_BERSERK_GENE_PROFILES; i++)
+        ids[i] = AllocBerserkGeneProfile();
+    parent = GetBerserkGeneProfile(ids[0]);
+    parent->parentSpeciesA = SPECIES_EEVEE;
+    parent->parentSpeciesB = SPECIES_APPLIN;
+    parent->eggGroup1 = parent->eggGroup2 = EGG_GROUP_FIELD;
+    parent->gender = MON_FEMALE;
+    SetMonData(&fusion, MON_DATA_BERSERK_GENE_PROFILE_ID, &ids[0]);
+    StorePokemonInDaycare(&fusion, &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&other, &gSaveBlock1Ptr->daycare.mons[1]);
+    gSaveBlock1Ptr->daycare.offspringPersonality = 0xFF;
+    GiveEggFromDaycare();
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    EXPECT_EQ(gSaveBlock1Ptr->daycare.offspringPersonality, 0xFF);
+    EXPECT_EQ(GetBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon, MON_DATA_BERSERK_GENE_PROFILE_ID), ids[0]);
+    for (i = 0; i < MAX_BERSERK_GENE_PROFILES; i++)
+        FreeBerserkGeneProfile(ids[i]);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
+}
+
+TEST("Fusion rebreeding move sources track both evolution phases")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 id, sources[MAX_FUSION_MOVE_SOURCES_PER_PARENT];
+    bool8 pseudo = FALSE;
+
+    PARAMETRIZE { pseudo = FALSE; }
+    PARAMETRIZE { pseudo = TRUE; }
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    id = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(id);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_RATTATA;
+    profile->moveSources[0][0] = SPECIES_EEVEE;
+    profile->moveSources[0][1] = SPECIES_APPLIN;
+    profile->moveSources[1][0] = SPECIES_RATTATA;
+    profile->moveSources[1][1] = SPECIES_SQUIRTLE;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL, 0};
+    profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_ESPEON, 30, EVO_LEVEL | EVO_POTENTIAL_PHASE_2, 0};
+    profile->potentialEvolutionCount = 2;
+    if (pseudo)
+    {
+        profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_RATICATE, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+        profile->potentialEvolutionCount++;
+    }
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_JOLTEON);
+    GetBoxMonBreedingMoveSources(&mon.box, sources);
+    EXPECT_EQ(sources[0], SPECIES_JOLTEON);
+    EXPECT_EQ(sources[1], pseudo ? SPECIES_RATICATE : SPECIES_RATTATA);
+    EXPECT_EQ(sources[2], pseudo ? SPECIES_NONE : SPECIES_SQUIRTLE);
+    UpdateBerserkGeneProfileAfterEvolution(&mon, SPECIES_ESPEON);
+    GetBoxMonBreedingMoveSources(&mon.box, sources);
+    EXPECT_EQ(sources[0], SPECIES_ESPEON);
+    EXPECT_EQ(sources[1], pseudo ? SPECIES_RATICATE : SPECIES_RATTATA);
+    EXPECT_EQ(sources[2], pseudo ? SPECIES_NONE : SPECIES_SQUIRTLE);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
+TEST("Fusion rebreeding projects all retained teachable sources")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const u16 sources[] = {SPECIES_EEVEE, SPECIES_APPLIN, SPECIES_RATTATA, SPECIES_SQUIRTLE};
+    const u16 *projected;
+    u16 id, i, j, k, uniqueMove = MOVE_NONE;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    id = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(id);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = sources[0];
+    profile->parentSpeciesB = sources[2];
+    profile->moveSources[0][0] = sources[0];
+    profile->moveSources[0][1] = sources[1];
+    profile->moveSources[1][0] = sources[2];
+    profile->moveSources[1][1] = sources[3];
+    profile->type1 = TYPE_NORMAL;
+    profile->type2 = TYPE_WATER;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
+    projected = GetBoxMonTeachableLearnset(&mon.box);
+    for (i = 0; i < ARRAY_COUNT(sources); i++)
+    {
+        const u16 *learnset = GetSpeciesTeachableLearnset(sources[i]);
+        for (j = 0; learnset[j] != MOVE_UNAVAILABLE; j++)
+        {
+            for (k = 0; projected[k] != MOVE_UNAVAILABLE && projected[k] != learnset[j]; k++);
+            EXPECT_EQ(projected[k], learnset[j]);
+            if (i != 0 && !CanLearnTeachableMove(SPECIES_EEVEE, learnset[j]))
+                uniqueMove = learnset[j];
+        }
+    }
+    EXPECT_NE(uniqueMove, MOVE_NONE);
+    EXPECT(CanBoxMonLearnTeachableMove(&mon.box, uniqueMove));
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    EXPECT(!CanBoxMonLearnTeachableMove(&mon.box, uniqueMove));
+}
+
+TEST("Fusion rebreeding transfers projected egg moves in daycare")
+{
+    struct Pokemon learner, teacher;
+    struct BerserkGeneProfile *profile;
+    const u16 *moves;
+    u16 id, i, chosenMove = MOVE_NONE;
+    enum Move emptyMove = MOVE_NONE;
+
+    ASSUME(P_EGG_MOVE_TRANSFER >= GEN_8);
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&learner, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&teacher, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    id = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(id);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_SQUIRTLE;
+    profile->type1 = TYPE_NORMAL;
+    profile->type2 = TYPE_WATER;
+    SetMonData(&learner, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
+    moves = GetBoxMonEggMoveLearnset(&learner.box);
+    for (i = 0; moves[i] != MOVE_UNAVAILABLE; i++)
+    {
+        if (!SpeciesCanLearnEggMove(SPECIES_EEVEE, moves[i]))
+        {
+            chosenMove = moves[i];
+            break;
+        }
+    }
+    EXPECT_NE(chosenMove, MOVE_NONE);
+    for (i = 0; i < MAX_MON_MOVES; i++)
+        SetMonMoveSlot(&learner, emptyMove, i);
+    SetMonMoveSlot(&teacher, chosenMove, 0);
+    StorePokemonInDaycare(&learner, &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&teacher, &gSaveBlock1Ptr->daycare.mons[1]);
+    EXPECT_EQ(GetBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon, MON_DATA_MOVE1), chosenMove);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
+}
+
+TEST("Fusion rebreeding eggs use projected initial and inherited moves")
+{
+    struct Pokemon fusion, other;
+    struct BerserkGeneProfile *profile;
+    const struct LevelUpMove *levelMoves;
+    const u16 *eggMoves;
+    enum Move initial[MAX_MON_MOVES] = {MOVE_NONE};
+    enum Move chosenMove = MOVE_NONE, emptyMove = MOVE_NONE;
+    u16 id, i, j;
+    u8 added = 0;
+    bool8 inherited = FALSE;
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&fusion, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&other, SPECIES_RATTATA, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    id = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(id);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_SQUIRTLE;
+    profile->type1 = TYPE_NORMAL;
+    profile->type2 = TYPE_WATER;
+    profile->eggGroup1 = profile->eggGroup2 = EGG_GROUP_FIELD;
+    profile->gender = MON_FEMALE;
+    profile->ability1 = ABILITY_RUN_AWAY;
+    profile->growthRate = GROWTH_MEDIUM_FAST;
+    SetMonData(&fusion, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
+    for (i = 0; i < MAX_MON_MOVES; i++)
+    {
+        SetMonMoveSlot(&fusion, emptyMove, i);
+        SetMonMoveSlot(&other, emptyMove, i);
+    }
+    StorePokemonInDaycare(&fusion, &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&other, &gSaveBlock1Ptr->daycare.mons[1]);
+    gSaveBlock1Ptr->daycare.offspringPersonality = 0xFF;
+    GiveEggFromDaycare();
+    levelMoves = GetMonLevelUpLearnset(&gPlayerParty[0]);
+    for (i = 0; levelMoves[i].move != LEVEL_UP_MOVE_END && levelMoves[i].level <= EGG_HATCH_LEVEL; i++)
+    {
+        if (levelMoves[i].level == 0)
+            continue;
+        for (j = 0; j < added && initial[j] != levelMoves[i].move; j++);
+        if (j != added)
+            continue;
+        if (added < MAX_MON_MOVES)
+            initial[added++] = levelMoves[i].move;
+        else
+        {
+            for (j = 0; j < MAX_MON_MOVES - 1; j++)
+                initial[j] = initial[j + 1];
+            initial[MAX_MON_MOVES - 1] = levelMoves[i].move;
+        }
+    }
+    for (i = 0; i < MAX_MON_MOVES; i++)
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_MOVE1 + i), initial[i]);
+
+    eggMoves = GetMonEggMoveLearnset(&gPlayerParty[0]);
+    for (i = 0; eggMoves[i] != MOVE_UNAVAILABLE; i++)
+    {
+        if (!SpeciesCanLearnEggMove(SPECIES_EEVEE, eggMoves[i]))
+        {
+            chosenMove = eggMoves[i];
+            break;
+        }
+    }
+    EXPECT_NE(chosenMove, MOVE_NONE);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    ZeroPlayerPartyMons();
+    SetBoxMonMoveSlot(&gSaveBlock1Ptr->daycare.mons[1].mon, chosenMove, 0);
+    gSaveBlock1Ptr->daycare.offspringPersonality = 0xFF;
+    GiveEggFromDaycare();
+    for (i = 0; i < MAX_MON_MOVES; i++)
+        inherited |= GetMonData(&gPlayerParty[0], MON_DATA_MOVE1 + i) == chosenMove;
+    EXPECT(inherited);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
+}
+
+TEST("Fusion rebreeding inherits effective parent traits and move sources")
+{
+    struct Pokemon fusionParent, otherParent;
+    struct BerserkGeneProfile *parentProfile, *childProfile;
+    struct BerserkGeneProfile savedParent;
+    u16 profileId, childId, geneItem = ITEM_BERSERK_GENE;
+    u8 parentSlot = 0, holders = 1, trial, stat;
+    bool8 sawColor = FALSE, sawCry = FALSE, sawCycles = FALSE, sawFriendship = FALSE;
+    bool8 sawAbility[3] = {FALSE}, sawYield[NUM_STATS] = {FALSE};
+
+    PARAMETRIZE { parentSlot = 0; holders = 1; }
+    PARAMETRIZE { parentSlot = 1; holders = 1; }
+    PARAMETRIZE { parentSlot = 0; holders = 2; }
+    PARAMETRIZE { parentSlot = 1; holders = 2; }
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&fusionParent, SPECIES_EEVEE, 20, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&otherParent, SPECIES_RATTATA, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    parentProfile = GetBerserkGeneProfile(profileId);
+    EXPECT(parentProfile != NULL);
+    parentProfile->parentSpeciesA = SPECIES_EEVEE;
+    parentProfile->parentSpeciesB = SPECIES_APPLIN;
+    parentProfile->type1 = TYPE_GRASS;
+    parentProfile->type2 = TYPE_DRAGON;
+    parentProfile->eggGroup1 = parentProfile->eggGroup2 = EGG_GROUP_FIELD;
+    parentProfile->gender = MON_FEMALE;
+    parentProfile->ability1 = ABILITY_OVERGROW;
+    parentProfile->ability2 = ABILITY_BLAZE;
+    parentProfile->abilityHidden = ABILITY_TORRENT;
+    parentProfile->color = BODY_COLOR_GREEN;
+    parentProfile->cryId = CRY_NONE;
+    parentProfile->eggCycles = 73;
+    parentProfile->friendship = 123;
+    parentProfile->height = 123;
+    parentProfile->weight = 345;
+    parentProfile->pokemonScale = 400;
+    parentProfile->pokemonOffset = 120;
+    parentProfile->growthRate = GROWTH_ERRATIC;
+    for (stat = 0; stat < NUM_STATS; stat++)
+    {
+        parentProfile->baseStats[stat] = 100 + stat;
+        parentProfile->evYields |= 3 << (stat * 2);
+    }
+    savedParent = *parentProfile;
+    SetMonData(&fusionParent, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    SetMonData(&fusionParent, MON_DATA_HELD_ITEM, &geneItem);
+    if (holders == 2)
+        SetMonData(&otherParent, MON_DATA_HELD_ITEM, &geneItem);
+    StorePokemonInDaycare(&fusionParent, &gSaveBlock1Ptr->daycare.mons[parentSlot]);
+    StorePokemonInDaycare(&otherParent, &gSaveBlock1Ptr->daycare.mons[parentSlot ^ 1]);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+
+    for (trial = 0; trial < 64; trial++)
+    {
+        u32 geneWeight = holders == 2 ? 50 : 62;
+        u32 otherWeight = 100 - geneWeight;
+
+        GiveEggFromDaycare();
+        childId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        childProfile = GetBerserkGeneProfile(childId);
+        EXPECT(childProfile != NULL);
+        EXPECT_EQ(childProfile->moveSources[parentSlot][0], SPECIES_EEVEE);
+        EXPECT_EQ(childProfile->moveSources[parentSlot][1], SPECIES_APPLIN);
+        EXPECT_EQ(childProfile->moveSources[parentSlot ^ 1][0], SPECIES_RATTATA);
+        EXPECT_EQ(childProfile->height, (123 * geneWeight + GetSpeciesHeight(SPECIES_RATTATA) * otherWeight + 50) / 100);
+        EXPECT_EQ(childProfile->weight, (345 * geneWeight + GetSpeciesWeight(SPECIES_RATTATA) * otherWeight + 50) / 100);
+        EXPECT_EQ(childProfile->pokemonScale, (400 * geneWeight + gSpeciesInfo[SPECIES_RATTATA].pokemonScale * otherWeight + 50) / 100);
+        EXPECT_EQ(childProfile->pokemonOffset, (120 * geneWeight + gSpeciesInfo[SPECIES_RATTATA].pokemonOffset * otherWeight + 50) / 100);
+        for (stat = 0; stat < NUM_STATS; stat++)
+        {
+            u8 yield = (childProfile->evYields >> (stat * 2)) & 3;
+            EXPECT_EQ(childProfile->baseStats[stat], ((100 + stat) * geneWeight + GetSpeciesBaseStat(SPECIES_RATTATA, stat) * otherWeight + 50) / 100);
+            sawYield[stat] |= yield == 3;
+        }
+        sawAbility[0] |= childProfile->ability1 == ABILITY_OVERGROW;
+        sawAbility[1] |= childProfile->ability2 == ABILITY_BLAZE;
+        sawAbility[2] |= childProfile->abilityHidden == ABILITY_TORRENT;
+        sawColor |= childProfile->color == BODY_COLOR_GREEN;
+        sawCry |= childProfile->cryId == CRY_NONE;
+        sawCycles |= childProfile->eggCycles == 73;
+        sawFriendship |= childProfile->friendship == 123;
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_FRIENDSHIP), childProfile->eggCycles);
+        EXPECT_EQ(memcmp(parentProfile, &savedParent, sizeof(savedParent)), 0);
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+        ZeroPlayerPartyMons();
+    }
+    EXPECT(sawColor && sawCry && sawCycles && sawFriendship);
+    for (stat = 0; stat < NUM_STATS; stat++)
+        EXPECT(sawYield[stat]);
+    for (stat = 0; stat < 3; stat++)
+        EXPECT(sawAbility[stat]);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[parentSlot].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
+}
+
+TEST("Fusion rebreeding combines two distinct effective profiles")
+{
+    struct Pokemon mons[2];
+    struct BerserkGeneProfile *parents[2], *child;
+    struct BerserkGeneProfile saved[2];
+    const u16 species[2] = {SPECIES_EEVEE, SPECIES_RATTATA};
+    u16 ids[2], geneItem = ITEM_BERSERK_GENE;
+    u8 geneSlot = 0, i, stat, trial;
+    bool8 sawFirst = FALSE, sawSecond = FALSE;
+
+    PARAMETRIZE { geneSlot = 0; }
+    PARAMETRIZE { geneSlot = 1; }
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    for (i = 0; i < 2; i++)
+    {
+        CreateMon(&mons[i], species[i], 20, i ? 0xFF : 0, OTID_STRUCT_PLAYER_ID);
+        ids[i] = AllocBerserkGeneProfile();
+        parents[i] = GetBerserkGeneProfile(ids[i]);
+        EXPECT(parents[i] != NULL);
+        parents[i]->parentSpeciesA = species[i];
+        parents[i]->parentSpeciesB = i ? SPECIES_SQUIRTLE : SPECIES_APPLIN;
+        parents[i]->type1 = TYPE_NORMAL;
+        parents[i]->type2 = TYPE_WATER;
+        parents[i]->eggGroup1 = parents[i]->eggGroup2 = EGG_GROUP_FIELD;
+        parents[i]->gender = i ? MON_MALE : MON_FEMALE;
+        parents[i]->ability1 = i ? ABILITY_BLAZE : ABILITY_OVERGROW;
+        parents[i]->ability2 = i ? ABILITY_TORRENT : ABILITY_SWIFT_SWIM;
+        parents[i]->abilityHidden = i ? ABILITY_RAIN_DISH : ABILITY_CHLOROPHYLL;
+        parents[i]->color = i ? BODY_COLOR_BLUE : BODY_COLOR_GREEN;
+        parents[i]->cryId = i ? SPECIES_SQUIRTLE : CRY_NONE;
+        parents[i]->eggCycles = i ? 72 : 0;
+        parents[i]->friendship = i ? 120 : 0;
+        parents[i]->growthRate = i ? GROWTH_ERRATIC : GROWTH_MEDIUM_FAST;
+        parents[i]->height = i ? 100 : 0;
+        parents[i]->weight = i ? 200 : 0;
+        parents[i]->pokemonScale = i ? 400 : 0;
+        parents[i]->pokemonOffset = i ? 80 : 0;
+        for (stat = 0; stat < NUM_STATS; stat++)
+        {
+            parents[i]->baseStats[stat] = i ? 100 + stat : 20 + stat;
+            parents[i]->evYields |= (i ? 3 : 0) << (stat * 2);
+        }
+        saved[i] = *parents[i];
+        SetMonData(&mons[i], MON_DATA_BERSERK_GENE_PROFILE_ID, &ids[i]);
+        if (i == geneSlot)
+            SetMonData(&mons[i], MON_DATA_HELD_ITEM, &geneItem);
+        StorePokemonInDaycare(&mons[i], &gSaveBlock1Ptr->daycare.mons[i]);
+    }
+
+    for (trial = 0; trial < 64; trial++)
+    {
+        u8 weight = geneSlot == 1 ? 62 : 38;
+        GiveEggFromDaycare();
+        child = GetBerserkGeneProfile(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
+        EXPECT(child != NULL);
+        EXPECT_EQ(child->height, weight);
+        EXPECT_EQ(child->weight, weight * 2);
+        EXPECT_EQ(child->pokemonScale, weight * 4);
+        EXPECT_EQ(child->pokemonOffset, (80 * weight + 50) / 100);
+        for (stat = 0; stat < NUM_STATS; stat++)
+        {
+            u8 yield = (child->evYields >> (stat * 2)) & 3;
+            EXPECT_EQ(child->baseStats[stat], 20 + stat + (80 * weight + 50) / 100);
+            EXPECT(yield == 0 || yield == 3);
+        }
+        EXPECT(child->ability1 == ABILITY_OVERGROW || child->ability1 == ABILITY_BLAZE);
+        EXPECT(child->ability2 == ABILITY_SWIFT_SWIM || child->ability2 == ABILITY_TORRENT);
+        EXPECT(child->abilityHidden == ABILITY_CHLOROPHYLL || child->abilityHidden == ABILITY_RAIN_DISH);
+        EXPECT(child->cryId == CRY_NONE || child->cryId == SPECIES_SQUIRTLE);
+        EXPECT(child->eggCycles == 0 || child->eggCycles == 72);
+        EXPECT(child->friendship == 0 || child->friendship == 120);
+        EXPECT(child->growthRate == GROWTH_MEDIUM_FAST || child->growthRate == GROWTH_ERRATIC);
+        sawFirst |= child->color == BODY_COLOR_GREEN;
+        sawSecond |= child->color == BODY_COLOR_BLUE;
+        for (i = 0; i < 2; i++)
+            EXPECT_EQ(memcmp(parents[i], &saved[i], sizeof(saved[i])), 0);
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+        ZeroPlayerPartyMons();
+    }
+    EXPECT(sawFirst && sawSecond);
+    for (i = 0; i < 2; i++)
+    {
+        ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[i].mon);
+        ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[i].mon);
+    }
+}
+
+TEST("Fusion rebreeding caps and deduplicates move sources")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    u16 sources[MAX_FUSION_MOVE_SOURCES_PER_PARENT];
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_EEVEE, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    profile->parentSpeciesA = SPECIES_EEVEE;
+    profile->parentSpeciesB = SPECIES_RATTATA;
+    profile->moveSources[0][0] = SPECIES_EEVEE;
+    profile->moveSources[0][1] = SPECIES_APPLIN;
+    profile->moveSources[0][2] = SPECIES_PIKACHU;
+    profile->moveSources[0][3] = SPECIES_CHARMANDER;
+    profile->moveSources[1][0] = SPECIES_RATTATA;
+    profile->moveSources[1][1] = SPECIES_SQUIRTLE;
+    profile->moveSources[1][2] = SPECIES_BULBASAUR;
+    profile->moveSources[1][3] = SPECIES_MEOWTH;
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    GetBoxMonBreedingMoveSources(&mon.box, sources);
+    EXPECT_EQ(sources[0], SPECIES_EEVEE);
+    EXPECT_EQ(sources[1], SPECIES_PIKACHU);
+    EXPECT_EQ(sources[2], SPECIES_RATTATA);
+    EXPECT_EQ(sources[3], SPECIES_BULBASAUR);
+    profile->moveSources[1][0] = SPECIES_EEVEE;
+    GetBoxMonBreedingMoveSources(&mon.box, sources);
+    EXPECT_EQ(sources[0], SPECIES_EEVEE);
+    EXPECT_EQ(sources[1], SPECIES_PIKACHU);
+    EXPECT_EQ(sources[2], SPECIES_SQUIRTLE);
+    EXPECT_EQ(sources[3], SPECIES_BULBASAUR);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
+static u32 HashFusionMovePools(struct BoxPokemon *mon)
+{
+    const struct LevelUpMove *levels = GetBoxMonLevelUpLearnset(mon);
+    const u16 *moves;
+    u32 hash = 2166136261u;
+    u16 i;
+
+    for (i = 0; levels[i].move != LEVEL_UP_MOVE_END; i++)
+        hash = (hash ^ (levels[i].move | (levels[i].level << 16))) * 16777619u;
+    moves = GetBoxMonEggMoveLearnset(mon);
+    for (i = 0; moves[i] != MOVE_UNAVAILABLE; i++)
+        hash = (hash ^ moves[i]) * 16777619u;
+    moves = GetBoxMonTeachableLearnset(mon);
+    for (i = 0; moves[i] != MOVE_UNAVAILABLE; i++)
+        hash = (hash ^ moves[i]) * 16777619u;
+    return hash;
+}
+
+TEST("Fusion rebreeding keeps two parent move snapshots after profile reuse")
+{
+    struct Pokemon parents[2];
+    struct BerserkGeneProfile *profiles[2], *childProfile;
+    u16 ids[2], geneItem = ITEM_BERSERK_GENE;
+    u16 parentSpecies[2] = {SPECIES_EEVEE, SPECIES_RATTATA};
+    u16 otherSpecies[2] = {SPECIES_APPLIN, SPECIES_SQUIRTLE};
+    u8 i, stat;
+    u32 savedHash;
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    for (i = 0; i < 2; i++)
+    {
+        CreateMon(&parents[i], parentSpecies[i], 20, i ? 0 : 0xFF, OTID_STRUCT_PLAYER_ID);
+        ids[i] = AllocBerserkGeneProfile();
+        profiles[i] = GetBerserkGeneProfile(ids[i]);
+        EXPECT(profiles[i] != NULL);
+        profiles[i]->parentSpeciesA = parentSpecies[i];
+        profiles[i]->parentSpeciesB = otherSpecies[i];
+        profiles[i]->type1 = TYPE_NORMAL;
+        profiles[i]->type2 = TYPE_WATER;
+        profiles[i]->eggGroup1 = profiles[i]->eggGroup2 = EGG_GROUP_FIELD;
+        profiles[i]->gender = i ? MON_MALE : MON_FEMALE;
+        profiles[i]->growthRate = GROWTH_MEDIUM_FAST;
+        profiles[i]->ability1 = ABILITY_RUN_AWAY;
+        profiles[i]->eggCycles = 20;
+        for (stat = 0; stat < NUM_STATS; stat++)
+            profiles[i]->baseStats[stat] = 50;
+        SetMonData(&parents[i], MON_DATA_BERSERK_GENE_PROFILE_ID, &ids[i]);
+        SetMonData(&parents[i], MON_DATA_HELD_ITEM, &geneItem);
+        StorePokemonInDaycare(&parents[i], &gSaveBlock1Ptr->daycare.mons[i]);
+    }
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+    GiveEggFromDaycare();
+    childProfile = GetBerserkGeneProfile(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
+    EXPECT(childProfile != NULL);
+    for (i = 0; i < 2; i++)
+    {
+        EXPECT_EQ(childProfile->moveSources[i][0], parentSpecies[i]);
+        EXPECT_EQ(childProfile->moveSources[i][1], otherSpecies[i]);
+    }
+    savedHash = HashFusionMovePools(&gPlayerParty[0].box);
+    for (i = 0; i < 2; i++)
+    {
+        ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[i].mon);
+        ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[i].mon);
+        EXPECT_EQ(AllocBerserkGeneProfile(), ids[i]);
+        profiles[i] = GetBerserkGeneProfile(ids[i]);
+        profiles[i]->parentSpeciesA = SPECIES_BULBASAUR;
+        profiles[i]->parentSpeciesB = SPECIES_CHARMANDER;
+    }
+    EXPECT_EQ(HashFusionMovePools(&gPlayerParty[0].box), savedHash);
+    for (i = 0; i < 2; i++)
+        FreeBerserkGeneProfile(ids[i]);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    ZeroPlayerPartyMons();
 }
 
 TEST("Fusion lineage rebreeding samples only retained multi-root descendants")

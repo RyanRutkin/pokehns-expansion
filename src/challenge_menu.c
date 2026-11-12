@@ -1117,8 +1117,6 @@ static const u8 *const sDesc_EvoLimit[] = {
     COMPOUND_STRING("{PKMN} can NOT evolve at all!"),
 };
 #define NUM_ONE_TYPE_CHOICES 20
-#define ONE_TYPE_OFF 31
-
 static const u8 sText_Desc_OneType[] = _("Allow only one {PKMN} type the\nplayer can capture and use.");
 static const u8 *const sDesc_OneType[] = {
     sText_Desc_OneType, sText_Desc_OneType, sText_Desc_OneType, sText_Desc_OneType,

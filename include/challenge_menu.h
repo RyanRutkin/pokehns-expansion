@@ -3,6 +3,8 @@
 
 struct ScriptContext;
 
+#define ONE_TYPE_OFF 31
+
 void CB2_InitChallengeMenu(void);
 void ChallengeMenu_SetInitialSetup(bool8 isInitial);
 void Script_OpenChallengeMenu(struct ScriptContext *ctx);

@@ -1169,17 +1169,8 @@ static void SortMovesAlphabetically(u16 *moves, u32 numMoves)
 
 static bool8 BoxMonCanLearnTeachableMove(struct BoxPokemon *mon, u16 species, enum Move move)
 {
-    const u16 *fusionLearnset;
-    u16 i;
-
-    if (GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID) == 0)
-        return CanLearnTeachableMove(species, move);
-
-    fusionLearnset = GetBoxMonTeachableLearnset(mon);
-    for (i = 0; fusionLearnset[i] != MOVE_UNAVAILABLE; i++)
-        if (fusionLearnset[i] == move)
-            return TRUE;
-    return FALSE;
+    (void)species;
+    return CanBoxMonLearnTeachableMove(mon, move);
 }
 
 static u32 GetRelearnerLevelUpMoves(struct BoxPokemon *mon, u16 *moves)

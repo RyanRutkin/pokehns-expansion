@@ -3947,7 +3947,7 @@ void GiveBoxMonInitialMoveset(struct BoxPokemon *boxMon) //Credit: AsparagusEdua
     enum Move moves[MAX_MON_MOVES] = {MOVE_NONE};
     u8 addedMoves = 0;
     bool32 firstMoveGiven = FALSE;
-    const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species);
+    const struct LevelUpMove *learnset = GetBoxMonLevelUpLearnset(boxMon);
 
     for (i = 0; learnset[i].move != LEVEL_UP_MOVE_END; i++)
     {
@@ -6183,7 +6183,7 @@ IWRAM_DATA static u16 sBerserkGeneTeachableMoves[MAX_BERSERK_GENE_TEACHABLE_MOVE
 
 // Keep root selections for Phase 1 reconstruction and a separate selected descendant for Phase 2.
 // Older completed profiles lack that metadata and retain their original two-species projection.
-static u8 GetBerserkGeneResolvedSources(const struct BerserkGeneProfile *profile, bool8 parentB, u16 *species)
+static u8 GetBerserkGeneLineageSources(const struct BerserkGeneProfile *profile, bool8 parentB, u16 *species, bool8 firstPhase)
 {
     u8 phase = (profile->evolutionFlags & BERSERK_GENE_EVOLUTION_PHASE_MASK)
         >> BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
@@ -6199,7 +6199,7 @@ static u8 GetBerserkGeneResolvedSources(const struct BerserkGeneProfile *profile
         for (i = 0; i < profile->potentialEvolutionCount; i++)
         {
             u8 flags = profile->potentialEvolutions[i].methodAndSourceParent;
-            if ((flags & (EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SELECTED))
+            if (!firstPhase && (flags & (EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SELECTED))
                 == (EVO_POTENTIAL_PHASE_2 | EVO_POTENTIAL_SELECTED))
                 phase2 = TRUE;
         }
@@ -6228,9 +6228,88 @@ static u8 GetBerserkGeneResolvedSources(const struct BerserkGeneProfile *profile
         }
     }
 
+    return count;
+}
+
+static u8 GetBerserkGeneResolvedSources(const struct BerserkGeneProfile *profile, bool8 parentB, u16 *species)
+{
+    u8 count = GetBerserkGeneLineageSources(profile, parentB, species, FALSE);
+
     if (count == 0)
         species[count++] = parentB ? profile->parentSpeciesB : profile->parentSpeciesA;
     return count;
+}
+
+static u8 GetBerserkGeneMoveSources(const struct BerserkGeneProfile *profile, bool8 parentB, u16 *species)
+{
+    u8 count = GetBerserkGeneLineageSources(profile, parentB, species, FALSE);
+    u8 i;
+
+    if (count == 0)
+        count = GetBerserkGeneLineageSources(profile, parentB, species, TRUE);
+    if (count == 0)
+    {
+        for (i = 0; i < MAX_FUSION_MOVE_SOURCES_PER_PARENT; i++)
+        {
+            u16 source = profile->moveSources[parentB][i];
+            if (source != SPECIES_NONE)
+                species[count++] = source;
+        }
+    }
+    if (count == 0)
+        species[count++] = parentB ? profile->parentSpeciesB : profile->parentSpeciesA;
+    return count;
+}
+
+void GetBoxMonBreedingMoveSources(struct BoxPokemon *boxMon, u16 *sources)
+{
+    const struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+    u16 sides[2][MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 counts[2] = {0}, quotas[2] = {0};
+    u8 side, i, j, total = 0;
+
+    for (i = 0; i < MAX_FUSION_MOVE_SOURCES_PER_PARENT; i++)
+        sources[i] = SPECIES_NONE;
+    if (profile == NULL)
+    {
+        sources[0] = GetBoxMonData(boxMon, MON_DATA_SPECIES);
+        return;
+    }
+    for (side = 0; side < 2; side++)
+    {
+        counts[side] = GetBerserkGeneMoveSources(profile, side, sides[side]);
+        if (side == 1)
+        {
+            for (i = 0; i < counts[1]; )
+            {
+                for (j = 0; j < counts[0] && sides[0][j] != sides[1][i]; j++);
+                if (j == counts[0])
+                    i++;
+                else
+                {
+                    counts[1]--;
+                    for (j = i; j < counts[1]; j++)
+                        sides[1][j] = sides[1][j + 1];
+                }
+            }
+        }
+    }
+    while (total < MAX_FUSION_MOVE_SOURCES_PER_PARENT
+        && (quotas[0] < counts[0] || quotas[1] < counts[1]))
+    {
+        for (side = 0; side < 2 && total < MAX_FUSION_MOVE_SOURCES_PER_PARENT; side++)
+        {
+            if (quotas[side] < counts[side])
+            {
+                quotas[side]++;
+                total++;
+            }
+        }
+    }
+    total = 0;
+    for (side = 0; side < 2; side++)
+        for (i = 0; i < quotas[side]; i++)
+            sources[total++] = sides[side][i * counts[side] / quotas[side]];
 }
 
 static void GetBerserkGeneMoveQuotas(const u16 *counts, u8 sourceCount, u16 take, u16 *quotas)
@@ -6329,8 +6408,8 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
     if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
         return GetSpeciesLevelUpLearnset(species);
 
-    sourceCountA = GetBerserkGeneResolvedSources(profile, FALSE, speciesA);
-    sourceCountB = GetBerserkGeneResolvedSources(profile, TRUE, speciesB);
+    sourceCountA = GetBerserkGeneMoveSources(profile, FALSE, speciesA);
+    sourceCountB = GetBerserkGeneMoveSources(profile, TRUE, speciesB);
     countA = CountBerserkGeneLevelUpMoves(speciesA, sourceCountA);
     countB = CountBerserkGeneLevelUpMoves(speciesB, sourceCountB);
     takeA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT)
@@ -6425,7 +6504,7 @@ const u16 *GetBoxMonTeachableLearnset(struct BoxPokemon *boxMon)
     // Teachable moves are a complete union, not the sampled/capped subset used by the other pools.
     for (parent = 0; parent < 2; parent++)
     {
-        sourceCount = GetBerserkGeneResolvedSources(profile, parent, sources);
+        sourceCount = GetBerserkGeneMoveSources(profile, parent, sources);
         for (source = 0; source < sourceCount; source++)
         {
             const u16 *learnset = GetSpeciesTeachableLearnset(sources[source]);
@@ -6494,8 +6573,8 @@ const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon)
     if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
         return GetSpeciesEggMoves(species);
 
-    sourceCountA = GetBerserkGeneResolvedSources(profile, FALSE, speciesA);
-    sourceCountB = GetBerserkGeneResolvedSources(profile, TRUE, speciesB);
+    sourceCountA = GetBerserkGeneMoveSources(profile, FALSE, speciesA);
+    sourceCountB = GetBerserkGeneMoveSources(profile, TRUE, speciesB);
     takeA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT)
         ? (EGG_MOVES_ARRAY_COUNT - 1 + 1) / 2
         : ((profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) ? 7 : 11);
@@ -9614,6 +9693,20 @@ u8 CanLearnTeachableMove(u16 species, enum Move move)
         if (teachableLearnset[i] == move)
             return TRUE;
     }
+    return FALSE;
+}
+
+bool8 CanBoxMonLearnTeachableMove(struct BoxPokemon *mon, enum Move move)
+{
+    const u16 *learnset;
+    u32 i;
+
+    if (GetBerserkGeneProfile(GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) == NULL)
+        return CanLearnTeachableMove(GetBoxMonData(mon, MON_DATA_SPECIES_OR_EGG), move);
+    learnset = GetBoxMonTeachableLearnset(mon);
+    for (i = 0; learnset[i] != MOVE_UNAVAILABLE; i++)
+        if (learnset[i] == move)
+            return TRUE;
     return FALSE;
 }
 

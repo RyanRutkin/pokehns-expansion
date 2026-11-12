@@ -190,11 +190,14 @@ enum BerserkGeneEvolutionPhase
     BERSERK_GENE_PHASE_COMPLETE,
 };
 
+#define MAX_FUSION_MOVE_SOURCES_PER_PARENT 4
+
 struct BerserkGeneProfile
 {
     bool8 inUse;
     u16 parentSpeciesA;
     u16 parentSpeciesB;
+    u16 moveSources[2][MAX_FUSION_MOVE_SOURCES_PER_PARENT];
     struct FusionPotentialEvolution potentialEvolutions[MAX_FUSION_POTENTIAL_EVOLUTIONS];
     // Nibble-packed per-entry age stamp (0-15, two entries per byte), kept aligned with the
     // root-contiguous lineage-node array for oldest-first pruning and re-breeding propagation.
@@ -929,6 +932,7 @@ u32 GetSpeciesBaseStat(u16 species, u32 statIndex);
 const struct LevelUpMove *GetSpeciesLevelUpLearnset(u16 species);
 const struct LevelUpMove *GetBoxMonLevelUpLearnset(struct BoxPokemon *boxMon);
 const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon);
+void GetBoxMonBreedingMoveSources(struct BoxPokemon *boxMon, u16 *sources);
 const u16 *GetSpeciesTeachableLearnset(u16 species);
 const u16 *GetBoxMonTeachableLearnset(struct BoxPokemon *boxMon);
 const u16 *GetMonTeachableLearnset(struct Pokemon *mon);
@@ -1008,6 +1012,7 @@ void MonGainEVs(struct Pokemon *mon, u16 defeatedSpecies);
 u16 GetMonEVCount(struct Pokemon *mon);
 bool8 TryIncrementMonLevel(struct Pokemon *mon);
 u8 CanLearnTeachableMove(u16 species, enum Move move);
+bool8 CanBoxMonLearnTeachableMove(struct BoxPokemon *mon, enum Move move);
 u8 GetLevelUpMovesBySpecies(u16 species, u16 *moves);
 u16 SpeciesToPokedexNum(u16 species);
 bool32 IsSpeciesInRegionalDex(u16 species);

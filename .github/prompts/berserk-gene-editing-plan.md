@@ -756,6 +756,48 @@ Verification:
 - `make -k check BUILD=hns -j8 TESTS='PokemonStorage is backwards compatible'`: **1 passed**,
   verifying the updated storage size pin. This size test does not establish old-save compatibility.
 
+### Milestone 3 checkpoint: bounded rebreeding inheritance (2026-11-12)
+
+Gene breeding reads each fusion parent's effective scalar traits and snapshots up to four species
+move sources per parent. Sources are deduplicated and sampled deterministically, with equal
+weight within each side; this remains a bounded, lossy approximation, not a reconstruction of
+the parent's exact move pool or internal weights. An evolving side uses its resolved lineage;
+an unchanged side retains its birth snapshot, or its previous resolved phase when applicable.
+Egg moves, initial moves, TM/tutor eligibility, daycare egg-move transfer, hatching friendship,
+and inherited growth/EXP use the profile-aware data.
+
+User decisions: with no gene and no Ditto, an offspring of a female fusion parent receives an
+independent copy of her fusion profile, used for standard breeding mechanics; with no gene and
+Ditto, it receives an independent copy of the fusion parent's profile. If either parent holds a
+gene in a fusion-parent/Ditto pairing, generate a new fusion profile incorporating Ditto's traits.
+For copied profiles, determine the offspring's gender from its nominal species and personality,
+and choose the active ability using standard inheritance against the copied profile's ability
+slots. For a new fusion with Ditto, exclude Ditto's special egg group and use the other parent's
+effective groups. Full-table gating covers both generated and copied profiles. Non-fusion/Ditto
+breeding retains its earlier behavior.
+
+Verification:
+- `make -k check BUILD=hns -j8 TESTS='Fusion rebreeding'`: **11 passed**. Coverage includes
+  copy eligibility and parent position, Ditto and gene combinations, full storage, two distinct
+  fusion parents, zero-valued traits, weighted numeric blends, move-source deduplication and
+  reuse, both evolution phases, teachable union, initial and inherited egg moves, and daycare
+  move transfer.
+- The headless mGBA runner was invoked on the same test ELF with patched selectors: `Fusion
+  growth` **4 passed**; `Fusion lineage rebreeding` **1 passed**; `(Daycare) Rebreeding
+  preserves only` **1 passed**; `Fusion hatching preserves` **1 passed**; `PokemonStorage is
+  backwards compatible` **1 passed**; `(Daycare) Berserk Gene bypasses` **4 passed**.
+  The storage-size pin is **35,152 bytes**; the nine storage sectors allow 35,712 bytes.
+  This size check does not establish old-save compatibility.
+- Two existing test fixtures were corrected: the scripted compatibility tests disable the
+  one-type challenge, and the parameterized lineage test releases its profiles after each case.
+  Temporary diagnostics were removed. Random trait outcomes were sampled, not exhaustively
+  proven at every probability threshold.
+
+Milestone 3 is complete. Full Fusion suite, non-headless regression, production build, and manual
+testing remain for the agreed final/commit-time checkpoint. In milestone 5, investigate battle
+EV awards: `MonGainEVs` currently receives only defeated species and therefore does not consume a
+defeated fusion's stored EV yields. Resolve ownership/link safety before changing that path.
+
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
@@ -767,7 +809,7 @@ validation has been completed.
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
 | 2. Remaining display/cry consumers | Complete (2026-11-12); manual visual/listening validation remains outstanding | Full-summary scene regression passed headless and non-headless; contests classified species-only by user decision. |
-| 3. Rebreeding trait audit | In progress; bounded move-source design approved, implementation pending | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
+| 3. Rebreeding trait audit | Complete (2026-11-12); focused automated regressions passed | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |
 | External profile-storage migration | Deferred, separate milestone | Begin only after the working, manually testable internal-storage version is available; follow the dedicated migration requirements below. |

@@ -3068,7 +3068,7 @@ bool8 ScrCmd_checkfieldmove(struct ScriptContext *ctx)
                 u16 species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES);
                 if (!species)
                     break;
-                if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG) && CanLearnTeachableMove(species, move))
+                if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG) && CanBoxMonLearnTeachableMove(&gPlayerParty[i].box, move))
                 {
                     gSpecialVar_Result = i;
                     gSpecialVar_0x8004 = species;
@@ -3133,7 +3133,7 @@ bool8 ScrCmd_checkpartymove(struct ScriptContext *ctx)
                 u16 species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES);
                 if (!species)
                     break;
-                if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG) && CanLearnTeachableMove(species, moveId))
+                if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG) && CanBoxMonLearnTeachableMove(&gPlayerParty[i].box, moveId))
                 {
                     gSpecialVar_Result = i;
                     gSpecialVar_0x8004 = species;
