@@ -68,6 +68,61 @@ static struct BerserkGeneProfile *SetPresentationProfile(struct Pokemon *mon, bo
     return profile;
 }
 
+TEST("Fusion link trade safeguards isolate remote profile IDs and reject local fusions")
+{
+    struct Pokemon party[2], remote;
+    struct LinkPlayer savedLinks[2];
+    struct BerserkGeneProfile *profile;
+    u16 profileId, invalidProfileId = MAX_BERSERK_GENE_PROFILES + 1;
+    u8 i, isEgg;
+
+    memcpy(savedLinks, gLinkPlayers, sizeof(savedLinks));
+    for (i = 0; i < 2; i++)
+    {
+        gLinkPlayers[i].version = VERSION_EMERALD;
+        gLinkPlayers[i].progressFlagsCopy = 0xF;
+    }
+
+    CreateMon(&party[0], SPECIES_PIKACHU, 20, 0, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&party[1], SPECIES_PIKACHU, 20, 0, OTID_STRUCT_PLAYER_ID);
+    profile = SetPresentationProfile(&party[0], FALSE);
+    profileId = GetMonData(&party[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile->gender = MON_MALE;
+
+    EXPECT_EQ(CanTradeSelectedMon(party, 2, 0), CANT_TRADE_FUSION);
+    EXPECT_EQ(CanTradeSelectedMon(party, 2, 1), CAN_TRADE_MON);
+    isEgg = TRUE;
+    SetMonData(&party[0], MON_DATA_IS_EGG, &isEgg);
+    EXPECT_EQ(CanTradeSelectedMon(party, 2, 0), CANT_TRADE_FUSION);
+    isEgg = FALSE;
+    SetMonData(&party[0], MON_DATA_IS_EGG, &isEgg);
+    SetMonData(&party[1], MON_DATA_BERSERK_GENE_PROFILE_ID, &invalidProfileId);
+    EXPECT_EQ(CanTradeSelectedMon(party, 2, 1), CANT_TRADE_FUSION);
+    invalidProfileId = 0;
+    SetMonData(&party[1], MON_DATA_BERSERK_GENE_PROFILE_ID, &invalidProfileId);
+    for (i = 0; i < 2; i++)
+        gLinkPlayers[i].version |= LINK_VERSION_BERSERK_GENE_EDITING;
+    EXPECT_EQ(CanTradeSelectedMon(party, 2, 0), CANT_TRADE_FUSION);
+    EXPECT_EQ(CanTradeSelectedMon(party, 2, 1), CAN_TRADE_MON);
+
+    remote = party[0];
+    EXPECT_EQ(GetMonGender(&remote), MON_MALE);
+    EXPECT(SanitizeLinkTradeMon(&remote, TRUE));
+    EXPECT_EQ(GetMonData(&remote, MON_DATA_BERSERK_GENE_PROFILE_ID), 0);
+    EXPECT_EQ(GetMonGender(&remote), MON_FEMALE);
+    EXPECT_EQ(GetMonData(&party[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT_EQ(GetBerserkGeneProfile(profileId), profile);
+    EXPECT_EQ(profile->gender, MON_MALE);
+    EXPECT(!SanitizeLinkTradeMon(&remote, TRUE));
+    remote = party[0];
+    EXPECT(!SanitizeLinkTradeMon(&remote, FALSE));
+    EXPECT_EQ(GetMonData(&remote, MON_DATA_BERSERK_GENE_PROFILE_ID), 0);
+    EXPECT_EQ(GetBerserkGeneProfile(profileId), profile);
+
+    ClearBoxMonBerserkGeneProfile(&party[0].box);
+    memcpy(gLinkPlayers, savedLinks, sizeof(savedLinks));
+}
+
 static void PartyFormReturnTask(u8 taskId)
 {
     gTasks[taskId].func = Task_HandleChooseMonInput;
@@ -486,7 +541,7 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     bool32 foreignProfileId = FALSE;
     bool32 evolve = FALSE, prepared = FALSE, sawEvolutionIntroCry = FALSE, sawEvolutionCry = FALSE;
     u16 frame, spriteId, expectedSpecies, i, outgoingSpriteId;
-    u16 incomingProfileId = 0;
+    u16 incomingProfileId = 0, outgoingProfileId;
     enum PokemonCry expectedArrivalCry;
     const u16 *palette;
     bool32 sawOutgoingCry = FALSE, sawIncomingCry = FALSE, sawForeignCry = FALSE, sawSecondFrame = FALSE;
@@ -514,6 +569,7 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     CreateMon(&gPlayerParty[0], SPECIES_WOBBUFFET, 20, 123456, OTID_STRUCT_PLAYER_ID);
     CreateMon(&gEnemyParty[0], SPECIES_WOBBUFFET, 20, 123456, OTID_STRUCT_PLAYER_ID);
     outgoing = SetPresentationProfile(&gPlayerParty[0], TRUE);
+    outgoingProfileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
     outgoing->cryId = gSpeciesInfo[SPECIES_BULBASAUR].cryId;
     saved->outgoing = *outgoing;
     if (mode)
@@ -650,7 +706,10 @@ TEST("Fusion trade scenes load donor portraits palettes and independent outgoing
     if (!isEgg && HasTwoFramesAnimation(expectedSpecies))
         EXPECT(sawSecondFrame);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), evolve ? SPECIES_DRAGONAIR : SPECIES_WOBBUFFET);
-    EXPECT_EQ(memcmp(outgoing, &saved->outgoing, sizeof(saved->outgoing)), 0);
+    EXPECT_EQ(GetBerserkGeneProfile(outgoingProfileId), NULL);
+    EXPECT_EQ(GetMonData(&gEnemyParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), 0);
+    EXPECT_EQ(AllocBerserkGeneProfile(), outgoingProfileId);
+    FreeBerserkGeneProfile(outgoingProfileId);
     if (evolve)
     {
         EXPECT(prepared);

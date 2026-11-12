@@ -814,6 +814,35 @@ validation has been completed.
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending | Verify profile cleanup/reuse, save/reload, trade/link compatibility, and full feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. |
 | External profile-storage migration | Deferred, separate milestone | Begin only after the working, manually testable internal-storage version is available; follow the dedicated migration requirements below. |
 
+### Milestone 5 investigation: link profile ownership blocker (2026-11-12)
+
+The current handshake advertises Berserk Gene support to all peers, and `CanTradeMon` permits
+fusion trades to a peer advertising that bit. However, the link trade party exchange sends
+`Pokemon` records, not their profiles; the trade animation explicitly avoids resolving remote
+profiles for this reason. `TradeMons` swaps the records without transferring, allocating, or
+freeing profiles. A received profile ID can therefore resolve to an unrelated local profile
+or to no profile, while the departing profile remains allocated. The remote summary also uses
+the ordinary profile-aware summary path, so remote IDs can be interpreted as local IDs before
+the trade completes. Link battle has not yet been validated.
+
+The user chose temporary restrictions on fusion link trades and battles for the MVP; profile
+transfer remains deferred. Work in progress rejects locally selected fusions in the ordinary
+trade menu, strips local profile IDs from exchanged preview copies, and remembers and rejects
+fusion IDs received from an older profile-aware partner. Trading Board registration and offers
+also reject locally selected fusions. An in-game trade now frees the outgoing fusion's profile.
+Focused helper and trade-scene regressions cover the current changes; they do not simulate two
+linked systems. The Trading Board's incoming/stale-registration paths and link battles are
+not yet protected or validated. Do not use fusion link actions or claim link compatibility.
+
+An additional compatibility decision is needed for link battles against older builds. Those
+builds advertise the same profile bit but do not enforce the new restriction, and party records
+are first exchanged during battle initialization. Blocking all battles with older builds would
+also block ordinary Pokémon; alternatively, detecting and aborting after party exchange would
+need coordinated cleanup and may present a generic disconnect on an older peer. The current
+test runner does not itself simulate linked peers, so real or suitable multi-instance link
+validation remains necessary. The battle EV-award investigation, lifecycle audit, save/reload,
+full regression, and production build remain open.
+
 Stop when a milestone completes and report the status of all milestones; resume only when the
 user instructs. If investigation changes scope, ordering, or the number of milestones, update this tracker and explicitly notify the
 user rather than silently changing the completion estimate. Keep implementation completion,

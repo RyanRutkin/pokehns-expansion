@@ -383,7 +383,7 @@ static const u8 *const sMessages[] =
     [MSG_MON_CANT_BE_TRADED]         = gText_PkmnCantBeTradedNow,
     [MSG_EGG_CANT_BE_TRADED]         = gText_EggCantBeTradedNow,
     [MSG_FRIENDS_MON_CANT_BE_TRADED] = gText_OtherTrainersPkmnCantBeTraded,
-    [MSG_PARTNER_NO_BERSERK_GENE_SUPPORT] = gText_BerserkGeneTradeUnsupported
+    [MSG_FUSION_TRADE_UNSUPPORTED] = gText_BerserkGeneTradeUnsupported
 };
 
 static const u8 sTradeTextColors[] =

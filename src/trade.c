@@ -97,7 +97,7 @@ enum {
     MSG_MON_CANT_BE_TRADED,
     MSG_EGG_CANT_BE_TRADED,
     MSG_FRIENDS_MON_CANT_BE_TRADED,
-    MSG_PARTNER_NO_BERSERK_GENE_SUPPORT,
+    MSG_FUSION_TRADE_UNSUPPORTED,
 };
 
 // IDs for QueueAction
@@ -111,7 +111,7 @@ enum {
     QUEUE_MON_CANT_BE_TRADED,
     QUEUE_EGG_CANT_BE_TRADED,
     QUEUE_FRIENDS_MON_CANT_BE_TRADED,
-    QUEUE_PARTNER_NO_BERSERK_GENE_SUPPORT,
+    QUEUE_FUSION_TRADE_UNSUPPORTED,
 };
 
 #define QUEUE_DELAY_MSG   3
@@ -189,6 +189,7 @@ static EWRAM_DATA struct {
     bool8 optionsActive[PARTY_SIZE * 2 + 1];
     bool8 isLiveMon[2][PARTY_SIZE];
     bool8 isEgg[2][PARTY_SIZE];
+    bool8 partnerHasFusion[PARTY_SIZE];
     u8 hpBarLevels[2][PARTY_SIZE];
     u8 bufferPartyState;
     u8 filler_6A[5];
@@ -294,7 +295,6 @@ static void ComputePartyTradeableFlags(u8);
 static void ComputePartyHPBarLevels(u8);
 static void SetTradePartyHPBarSprites(void);
 static void SaveTradeGiftRibbons(void);
-static u32 CanTradeSelectedMon(struct Pokemon *, int, int);
 static void SpriteCB_LinkMonGlow(struct Sprite *);
 static void SpriteCB_LinkMonShadow(struct Sprite *);
 static void SpriteCB_CableEndSending(struct Sprite *);
@@ -1051,6 +1051,26 @@ static void Trade_Memcpy(void *dest, const void *src, u32 size)
         _dest[i] = _src[i];
 }
 
+bool8 SanitizeLinkTradeMon(struct Pokemon *mon, bool32 hasFusionProfiles)
+{
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    u16 emptyProfileId = 0;
+
+    if (profileId != 0)
+        SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &emptyProfileId);
+    return profileId != 0 && hasFusionProfiles;
+}
+
+static void BufferLocalTradePair(u8 first)
+{
+    struct Pokemon *pair = (struct Pokemon *)gBlockSendBuffer;
+
+    Trade_Memcpy(pair, &gPlayerParty[first], 2 * sizeof(*pair));
+    // Older peers can otherwise mistake these local IDs for their own profiles.
+    SanitizeLinkTradeMon(&pair[0], FALSE);
+    SanitizeLinkTradeMon(&pair[1], FALSE);
+}
+
 static bool8 BufferTradeParties(void)
 {
     u8 id = GetMultiplayerId();
@@ -1061,7 +1081,7 @@ static bool8 BufferTradeParties(void)
     {
     case 0:
         // The parties are sent in pairs rather than all at once
-        Trade_Memcpy(gBlockSendBuffer, &gPlayerParty[0], 2 * sizeof(struct Pokemon));
+        BufferLocalTradePair(0);
         sTradeMenu->bufferPartyState++;
         sTradeMenu->timer = 0;
         break;
@@ -1093,7 +1113,7 @@ static bool8 BufferTradeParties(void)
         }
         break;
     case 5:
-        Trade_Memcpy(gBlockSendBuffer, &gPlayerParty[2], 2 * sizeof(struct Pokemon));
+        BufferLocalTradePair(2);
         sTradeMenu->bufferPartyState++;
         break;
     case 7:
@@ -1110,7 +1130,7 @@ static bool8 BufferTradeParties(void)
         }
         break;
     case 9:
-        Trade_Memcpy(gBlockSendBuffer, &gPlayerParty[4], 2 * sizeof(struct Pokemon));
+        BufferLocalTradePair(4);
         sTradeMenu->bufferPartyState++;
         break;
     case 11:
@@ -1165,6 +1185,9 @@ static bool8 BufferTradeParties(void)
         {
             u8 name[POKEMON_NAME_LENGTH + 1];
             u16 species = GetMonData(mon, MON_DATA_SPECIES);
+
+            sTradeMenu->partnerHasFusion[i] = SanitizeLinkTradeMon(mon,
+                gLinkPlayers[id ^ 1].version & LINK_VERSION_BERSERK_GENE_EDITING);
 
             if (species != SPECIES_NONE)
             {
@@ -1537,8 +1560,8 @@ static void CB_ProcessSelectedMonInput(void)
             QueueAction(QUEUE_DELAY_MSG, QUEUE_EGG_CANT_BE_TRADED);
             sTradeMenu->callbackId = CB_HANDLE_TRADE_CANCELED;
             break;
-        case CANT_TRADE_PARTNER_NO_BERSERK_GENE_SUPPORT:
-            QueueAction(QUEUE_DELAY_MSG, QUEUE_PARTNER_NO_BERSERK_GENE_SUPPORT);
+        case CANT_TRADE_FUSION:
+            QueueAction(QUEUE_DELAY_MSG, QUEUE_FUSION_TRADE_UNSUPPORTED);
             sTradeMenu->callbackId = CB_HANDLE_TRADE_CANCELED;
             break;
         }
@@ -1582,6 +1605,9 @@ static u8 CheckValidityOfTradeMons(u8 *aliveMons, u8 playerPartyCount, u8 player
     partnerMonIdx %= PARTY_SIZE;
     partnerSpecies = GetMonData(&gEnemyParty[partnerMonIdx], MON_DATA_SPECIES);
 
+    if (sTradeMenu->partnerHasFusion[partnerMonIdx])
+        return PARTNER_MON_INVALID;
+
     // Can't trade specific species
     if (gSpeciesInfo[partnerSpecies].cannotBeTraded)
         return PARTNER_MON_INVALID;
@@ -1621,7 +1647,10 @@ static bool32 CheckMonsBeforeTrade(void)
         SetLinkData(LINKCMD_INIT_BLOCK, 0);
         break;
     case PARTNER_MON_INVALID:
-        QueueAction(QUEUE_DELAY_MSG, QUEUE_FRIENDS_MON_CANT_BE_TRADED);
+        if (sTradeMenu->partnerHasFusion[sTradeMenu->partnerCursorPosition % PARTY_SIZE])
+            QueueAction(QUEUE_DELAY_MSG, QUEUE_FUSION_TRADE_UNSUPPORTED);
+        else
+            QueueAction(QUEUE_DELAY_MSG, QUEUE_FRIENDS_MON_CANT_BE_TRADED);
         return TRUE;
     }
 
@@ -2215,8 +2244,8 @@ static void DoQueuedActions(void)
                 case QUEUE_FRIENDS_MON_CANT_BE_TRADED:
                     PrintTradeMessage(MSG_FRIENDS_MON_CANT_BE_TRADED);
                     break;
-                case QUEUE_PARTNER_NO_BERSERK_GENE_SUPPORT:
-                    PrintTradeMessage(MSG_PARTNER_NO_BERSERK_GENE_SUPPORT);
+                case QUEUE_FUSION_TRADE_UNSUPPORTED:
+                    PrintTradeMessage(MSG_FUSION_TRADE_UNSUPPORTED);
                     break;
                 }
                 sTradeMenu->queuedActions[i].active = FALSE;
@@ -2394,12 +2423,15 @@ static void SaveTradeGiftRibbons(void)
     }
 }
 
-static u32 CanTradeSelectedMon(struct Pokemon *playerParty, int partyCount, int monIdx)
+u32 CanTradeSelectedMon(struct Pokemon *playerParty, int partyCount, int monIdx)
 {
     int i, numMonsLeft;
     struct LinkPlayer *partner;
     u32 species[PARTY_SIZE];
     u32 species2[PARTY_SIZE];
+
+    if (GetMonData(&playerParty[monIdx], MON_DATA_BERSERK_GENE_PROFILE_ID) != 0)
+        return CANT_TRADE_FUSION;
 
     for (i = 0; i < partyCount; i++)
     {
@@ -2418,11 +2450,6 @@ static u32 CanTradeSelectedMon(struct Pokemon *playerParty, int partyCount, int 
     }
 
     partner = &gLinkPlayers[GetMultiplayerId() ^ 1];
-    if (GetMonData(&playerParty[monIdx], MON_DATA_BERSERK_GENE_PROFILE_ID) != 0
-     && GetBerserkGeneProfile(GetMonData(&playerParty[monIdx], MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL
-     && !(partner->version & LINK_VERSION_BERSERK_GENE_EDITING))
-        return CANT_TRADE_PARTNER_NO_BERSERK_GENE_SUPPORT;
-
     if ((partner->version & 0xFF) != VERSION_RUBY &&
         (partner->version & 0xFF) != VERSION_SAPPHIRE)
     {
@@ -3149,6 +3176,9 @@ static void TradeMons(u8 playerPartyIdx, u8 partnerPartyIdx)
     // The mail attached to the sent Pokémon no longer exists in your file.
     if (playerMail != MAIL_NONE)
         ClearMail(&gSaveBlock1Ptr->mail[playerMail]);
+
+    if (!sTradeAnim->isLinkTrade)
+        ClearBoxMonBerserkGeneProfile(&playerMon->box);
 
     SWAP(*playerMon, *partnerMon, sTradeAnim->tempMon);
 

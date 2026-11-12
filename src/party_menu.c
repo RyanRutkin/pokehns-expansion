@@ -3988,12 +3988,30 @@ static void CursorCb_Store(u8 taskId)
     Task_ClosePartyMenu(taskId);
 }
 
+static bool32 RejectFusionTradingBoardMon(u8 taskId)
+{
+    if (GetMonData(&gPlayerParty[gPartyMenu.slotId], MON_DATA_BERSERK_GENE_PROFILE_ID) == 0)
+        return FALSE;
+
+    PlaySE(SE_FAILURE);
+    PartyMenuRemoveWindow(&sPartyMenuInternal->windowId[0]);
+    PartyMenuRemoveWindow(&sPartyMenuInternal->windowId[1]);
+    StringCopy(gStringVar4, gText_BerserkGeneTradeUnsupported);
+    StringAppend(gStringVar4, gText_PauseUntilPress);
+    DisplayPartyMenuMessage(gStringVar4, TRUE);
+    gTasks[taskId].func = Task_ReturnToChooseMonAfterText;
+    return TRUE;
+}
+
 // Register mon for the Trading Board in Union Room
 static void CursorCb_Register(u8 taskId)
 {
     u16 species2 = GetMonData(&gPlayerParty[gPartyMenu.slotId], MON_DATA_SPECIES_OR_EGG);
     u16 species = GetMonData(&gPlayerParty[gPartyMenu.slotId], MON_DATA_SPECIES);
     u8 isModernFatefulEncounter = GetMonData(&gPlayerParty[gPartyMenu.slotId], MON_DATA_MODERN_FATEFUL_ENCOUNTER);
+
+    if (RejectFusionTradingBoardMon(taskId))
+        return;
 
     switch (CanRegisterMonForTradingBoard(*(struct RfuGameCompatibilityData *)GetHostRfuGameData(), species2, species, isModernFatefulEncounter))
     {
@@ -4025,6 +4043,9 @@ static void CursorCb_Trade1(u8 taskId)
     u16 species = GetMonData(&gPlayerParty[gPartyMenu.slotId], MON_DATA_SPECIES);
     u8 isModernFatefulEncounter = GetMonData(&gPlayerParty[gPartyMenu.slotId], MON_DATA_MODERN_FATEFUL_ENCOUNTER);
     u32 stringId = GetUnionRoomTradeMessageId(*(struct RfuGameCompatibilityData *)GetHostRfuGameData(), gRfuPartnerCompatibilityData, species2, gUnionRoomOfferedSpecies, gUnionRoomRequestedMonType, species, isModernFatefulEncounter);
+
+    if (RejectFusionTradingBoardMon(taskId))
+        return;
 
     if (stringId != UR_TRADE_MSG_NONE)
     {
