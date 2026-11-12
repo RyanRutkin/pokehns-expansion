@@ -26,6 +26,7 @@
 #include "match_call.h"
 #include "metatile_behavior.h"
 #include "mom_savings.h"
+#include "nuzlocke.h"
 #include "overworld.h"
 #include "pokemon.h"
 #include "safari_zone.h"
@@ -185,6 +186,12 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
     playerDirection = GetPlayerFacingDirection();
     GetPlayerPosition(&position);
     metatileBehavior = MapGridGetMetatileBehaviorAt(position.x, position.y);
+
+    if (NuzlockeConsumeStorageFullNotice())
+    {
+        ScriptContext_SetupScript(EventScript_NuzlockeStorageFull);
+        return TRUE;
+    }
 
     if (CheckForTrainersWantingBattle() == TRUE)
         return TRUE;

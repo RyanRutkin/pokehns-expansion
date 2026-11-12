@@ -395,19 +395,7 @@ static void (*const sMovementStatusHandler[])(struct LinkPlayerObjectEvent *, st
 void DoWhiteOut(void)
 {
     if (IsNuzlockeActive() || IsNuzlockeEasyActive())
-    {
-        if (GetFirstAliveBoxPokemon() == IN_BOX_COUNT * TOTAL_BOXES_COUNT)
-        {
-            ZeroPlayerPartyMons();
-            CreateMon(&gPlayerParty[0], SPECIES_RATTATA, 1, 0, OTID_STRUCT_PLAYER_ID);
-            CalculateMonStats(&gPlayerParty[0]);
-            gPlayerPartyCount = 1;
-        }
-        else
-        {
-            MoveFirstBoxPokemonToParty();
-        }
-    }
+        NuzlockePrepareWhiteOutParty();
     RunScriptImmediately(EventScript_WhiteOut);
     HealPlayerParty();
     Overworld_ResetStateAfterWhiteOut();

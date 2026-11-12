@@ -66,6 +66,7 @@ u8 RecordedBattle_GetBattlerAction(u32 actionType, enum BattlerId battler);
 u8 RecordedBattle_BufferNewBattlerData(u8 *dst);
 void RecordedBattle_RecordAllBattlerData(u8 *src);
 bool32 CanCopyRecordedBattleSaveData(void);
+bool32 RecordedBattle_CanSave(void);
 bool32 MoveRecordedBattleToSaveData(void);
 void SetPartiesFromRecordedSave(struct RecordedBattleSave *src);
 void SetVariablesForRecordedBattle(struct RecordedBattleSave *);

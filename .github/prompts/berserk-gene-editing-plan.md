@@ -811,7 +811,7 @@ validation has been completed.
 | 2. Remaining display/cry consumers | Complete (2026-11-12); manual visual/listening validation remains outstanding | Full-summary scene regression passed headless and non-headless; contests classified species-only by user decision. |
 | 3. Rebreeding trait audit | Complete (2026-11-12); focused automated regressions passed | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
 | 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
-| 5. Final lifecycle validation and manual-testable checkpoint | In progress | Verify profile cleanup/reuse, normal save/reload, and the offline feature lifecycle; temporarily disable recording fusion battles; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. Link compatibility is deferred as noted below. |
+| 5. Final lifecycle validation and manual-testable checkpoint | In progress | Verify profile cleanup/reuse, normal save/reload, the temporary fusion-recording safeguard, and the offline feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. Link compatibility is deferred as noted below. |
 | Link compatibility | Deferred until after initial MVP | Complete and verify link restrictions or profile transfer, including coordinated cancellation and multiplayer testing. Until then, do not use fusion link actions. |
 | External profile storage | Deferred until after initial MVP, planned before release | Replace the temporary eight-profile internal capacity with external storage after the user can experiment with the MVP. |
 | Fusion battle recording support | Deferred until after initial MVP | Enable reliable recording and playback with the fusion profiles captured at battle time. Until then, disable recording fusion battles while retaining ordinary battle recordings. |
@@ -825,8 +825,9 @@ validation has been completed.
   the initial MVP, but plan it before release. The MVP uses eight active internal profiles.
 - **Fusion battle recordings:** temporarily disable recording battles involving fusion Pokémon
   for the MVP; ordinary battle recordings should remain available. This restriction is
-  **not yet implemented or validated**. Defer full fusion recording and playback support,
-  including safe profile snapshots, until after the initial MVP.
+  implemented and has focused automated coverage; full regression and manual validation remain.
+  Defer full fusion recording and playback support, including safe profile snapshots, until
+  after the initial MVP.
 - **Previous-build/save compatibility:** not required unless the user explicitly requests it;
   it is not an automatic post-MVP migration requirement. Normal save/reload for the current
   build remains part of MVP validation.
@@ -876,8 +877,40 @@ An offline recording issue remains: Frontier battle recordings save Pokémon rec
 their fusion profiles. Later playback resolves those saved IDs against the current profile
 table, which may have changed, evolved, or reused those slots. Recording full profile snapshots
 requires addressing the single-sector recorded-battle size limit. The user chose to temporarily
-disable recording fusion battles for the MVP; that safeguard still needs implementation and
-validation. Full fusion recording support is deferred until after the initial MVP.
+disable recording fusion battles for the MVP. The save path now rejects snapshots with a
+nonzero profile ID in either recorded party, the Frontier prompt respects that restriction,
+and existing recordings with such IDs cannot be replayed. Ordinary recordings remain available
+and a failed fusion recording does not overwrite one. The restriction checks all saved party
+slots, even if a Pokémon did not participate, because all slots are in the recording.
+Full fusion recording support is deferred until after the initial MVP.
+`make -k check BUILD=hns -j8 TESTS='Fusion battle recordings'` passed: the focused
+flash-backed test covers both recorded parties, a freed profile ID, the Frontier restriction,
+preservation of an existing ordinary recording, and rejection of unsafe existing recordings.
+
+Offline lifecycle audit finding: Nuzlocke's box-instead-of-delete paths call `CopyMonToPC`
+without checking for a full PC, then purge the party Pokémon anyway. A failed transfer loses
+the Pokémon and leaves its fusion profile allocated. This affects both normal and easy
+Nuzlocke. The user chose to preserve the fainted Pokémon in the party and notify the player
+when the PC is full. If a whiteout occurs, the user approved normal party healing as a
+temporary full-PC exception. Both transfer paths now leave the Pokémon, its profile and held
+item intact on failure; a pending field message explains the full-PC condition. During that
+whiteout, the normal replacement-party selection is bypassed so it cannot overwrite the
+preserved Pokémon before healing. Hardcore Nuzlocke's existing whiteout reset remains unchanged.
+`make -k check BUILD=hns -j8 TESTS='Fusion Nuzlocke'` passed two tests, including both Nuzlocke
+modes, ordinary and fusion Pokémon, full and available boxes, notice state, whiteout healing,
+and the existing replacement-party choices. The on-screen message and complete whiteout
+sequence still need manual validation.
+Pike and Pyramid challenge entry scripts perform a full save before their partial challenge
+saves, and `BATTLE_TYPE_FRONTIER` includes both facilities, preventing their battles from
+awarding EXP or triggering battle evolutions. This observation does not yet complete the
+audit of other ways profile data could change during a challenge. In particular, Pyramid
+held items can be moved into the persistent Pyramid bag after a completed challenge; a later
+challenge can use that bag's field items, including an evolution item. An item-triggered
+fusion evolution mutates its profile, while a Pyramid partial save writes the party but not
+profile storage, and the original party can also be restored after the challenge. This is a
+potential party/profile mismatch; the end-to-end path has not yet been reproduced. Decide how
+to preserve consistent profiles for temporary Frontier parties before treating partial-save
+validation as complete.
 The battle EV-award investigation, remaining lifecycle audit, special saves, full regression,
 and production build remain open.
 

@@ -18,6 +18,7 @@
 EWRAM_DATA u8 NuzlockeIsCaptureBlocked = FALSE;
 EWRAM_DATA u8 NuzlockeIsSpeciesClauseActive = FALSE;
 EWRAM_DATA u8 OneTypeChallengeCaptureBlocked = FALSE;
+EWRAM_DATA static bool8 sStorageFullNoticePending = FALSE;
 
 // Zone-to-bit mapping for one-encounter-per-area tracking.
 // Only locations with wild encounters should be listed.
@@ -336,7 +337,11 @@ void NuzlockeDeletePartyMon(u8 position)
 
     if (!cs->tx_Nuzlocke_Deletion)
     {
-        CopyMonToPC(&gPlayerParty[position]);
+        if (CopyMonToPC(&gPlayerParty[position]) != MON_GIVEN_TO_PC)
+        {
+            sStorageFullNoticePending = TRUE;
+            return;
+        }
     }
     else
     {
@@ -348,8 +353,37 @@ void NuzlockeDeletePartyMon(u8 position)
 
 void NuzlockeDeletePartyMonOption(u8 position)
 {
-    CopyMonToPC(&gPlayerParty[position]);
+    if (CopyMonToPC(&gPlayerParty[position]) != MON_GIVEN_TO_PC)
+    {
+        sStorageFullNoticePending = TRUE;
+        return;
+    }
     PurgeMonOrBoxMon(TOTAL_BOXES_COUNT, position);
+}
+
+bool8 NuzlockeConsumeStorageFullNotice(void)
+{
+    bool8 pending = sStorageFullNoticePending;
+    sStorageFullNoticePending = FALSE;
+    return pending;
+}
+
+void NuzlockePrepareWhiteOutParty(void)
+{
+    if (sStorageFullNoticePending)
+        return;
+
+    if (GetFirstAliveBoxPokemon() == IN_BOX_COUNT * TOTAL_BOXES_COUNT)
+    {
+        ZeroPlayerPartyMons();
+        CreateMon(&gPlayerParty[0], SPECIES_RATTATA, 1, 0, OTID_STRUCT_PLAYER_ID);
+        CalculateMonStats(&gPlayerParty[0]);
+        gPlayerPartyCount = 1;
+    }
+    else
+    {
+        MoveFirstBoxPokemonToParty();
+    }
 }
 
 void NuzlockeDeleteFaintedPartyPokemon(void)
@@ -369,14 +403,18 @@ void NuzlockeDeleteFaintedPartyPokemon(void)
             {
                 u32 monItem = GetMonData(pokemon, MON_DATA_HELD_ITEM, NULL);
                 if (monItem != ITEM_NONE)
-                {
-                    AddBagItem(monItem, 1);
                     SetMonData(pokemon, MON_DATA_HELD_ITEM, &item);
-                }
                 if (IsNuzlockeEasyActive())
                     NuzlockeDeletePartyMonOption(i);
                 else
                     NuzlockeDeletePartyMon(i);
+                if (monItem != ITEM_NONE)
+                {
+                    if (GetMonData(pokemon, MON_DATA_SANITY_HAS_SPECIES))
+                        SetMonData(pokemon, MON_DATA_HELD_ITEM, &monItem);
+                    else
+                        AddBagItem(monItem, 1);
+                }
             }
         }
     }

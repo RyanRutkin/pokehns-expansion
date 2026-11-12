@@ -1,10 +1,17 @@
 #include "global.h"
+#include "battle.h"
+#include "battle_setup.h"
+#include "event_data.h"
+#include "frontier_util.h"
 #include "load_save.h"
 #include "malloc.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
+#include "recorded_battle.h"
 #include "save.h"
 #include "test/test.h"
+#include "util.h"
+#include "constants/frontier_util.h"
 
 // If you would like to ensure save compatibility, update the values below with those for your hack. You can find these through the debug menu.
 // Please note that this simple check is not 100% foolproof, but should be able to catch most unintended shifts.
@@ -88,6 +95,85 @@ TEST("Fusion normal save and reload preserves party and boxed profiles")
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
     ClearBoxMonBerserkGeneProfile(boxMon);
     Free(expected);
+}
+
+TEST("Fusion battle recordings are blocked without replacing ordinary recordings")
+{
+    struct AiThinkingStruct *oldAi = gAiThinkingStruct;
+    struct RecordedBattleSave *record = AllocZeroed(SECTOR_SIZE);
+    struct RecordedBattleSave *original = Alloc(sizeof(*original));
+    u32 oldBattleFlags = gBattleTypeFlags;
+    u16 profileId;
+    int side;
+
+    EXPECT(gFlashMemoryPresent);
+    gAiThinkingStruct = AllocZeroed(sizeof(*gAiThinkingStruct));
+    gBattleTypeFlags = BATTLE_TYPE_TRAINER;
+    TRAINER_BATTLE_PARAM.opponentA = 0;
+    TRAINER_BATTLE_PARAM.opponentB = 0;
+    gPartnerTrainerId = 0;
+    ZeroPlayerPartyMons();
+    ZeroEnemyPartyMons();
+    CreateMon(&gPlayerParty[5], SPECIES_PIKACHU, 30, 12345, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gEnemyParty[5], SPECIES_EEVEE, 30, 54321, OTID_STRUCT_PLAYER_ID);
+    RecordedBattle_Init(B_RECORD_MODE_RECORDING);
+    RecordedBattle_SaveParties();
+    EXPECT(RecordedBattle_CanSave());
+    EXPECT(MoveRecordedBattleToSaveData());
+    EXPECT(CanCopyRecordedBattleSaveData());
+    EXPECT_EQ(TryReadSpecialSaveSector(SECTOR_ID_RECORDED_BATTLE, (u8 *)record), SAVE_STATUS_OK);
+    *original = *record;
+
+    gSpecialVar_0x8004 = FRONTIER_UTIL_FUNC_GET_DATA;
+    gSpecialVar_0x8005 = FRONTIER_DATA_RECORD_DISABLED;
+    gSaveBlock2Ptr->frontier.disableRecordBattle = FALSE;
+    CallFrontierUtilFunc();
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    gSaveBlock2Ptr->frontier.disableRecordBattle = TRUE;
+    CallFrontierUtilFunc();
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    gSaveBlock2Ptr->frontier.disableRecordBattle = FALSE;
+
+    for (side = 0; side < 2; side++)
+    {
+        struct Pokemon *mon = side == 0 ? &gPlayerParty[5] : &gEnemyParty[5];
+
+        profileId = AllocBerserkGeneProfile();
+        EXPECT_NE(profileId, 0);
+        SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+        RecordedBattle_SaveParties();
+        ClearBoxMonBerserkGeneProfile(&mon->box);
+        EXPECT(!RecordedBattle_CanSave());
+        CallFrontierUtilFunc();
+        EXPECT_EQ(gSpecialVar_Result, TRUE);
+        EXPECT(!MoveRecordedBattleToSaveData());
+        EXPECT(CanCopyRecordedBattleSaveData());
+        EXPECT_EQ(TryReadSpecialSaveSector(SECTOR_ID_RECORDED_BATTLE, (u8 *)record), SAVE_STATUS_OK);
+        EXPECT_EQ(memcmp(record, original, sizeof(*record)), 0);
+    }
+
+    for (side = 0; side < 2; side++)
+    {
+        struct Pokemon *mon;
+
+        memset(record, 0, SECTOR_SIZE);
+        mon = side == 0 ? &record->playerParty[0] : &record->opponentParty[0];
+        *mon = gPlayerParty[5];
+        profileId = 1;
+        SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+        record->battleFlags = BATTLE_TYPE_TRAINER;
+        record->checksum = CalcByteArraySum((const u8 *)record, sizeof(*record) - 4);
+        EXPECT_EQ(TryWriteSpecialSaveSector(SECTOR_ID_RECORDED_BATTLE, (u8 *)record), SAVE_STATUS_OK);
+        EXPECT(!CanCopyRecordedBattleSaveData());
+    }
+
+    RecordedBattle_SaveParties();
+    EXPECT(RecordedBattle_CanSave());
+    Free(original);
+    Free(record);
+    Free(gAiThinkingStruct);
+    gAiThinkingStruct = oldAi;
+    gBattleTypeFlags = oldBattleFlags;
 }
 
 #undef T_SAVEBLOCK1_SIZE

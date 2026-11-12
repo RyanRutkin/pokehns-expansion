@@ -259,6 +259,25 @@ bool32 CanCopyRecordedBattleSaveData(void)
     return ret;
 }
 
+static bool32 PartiesContainFusion(struct Pokemon *playerParty, struct Pokemon *opponentParty)
+{
+    s32 i;
+
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        if (GetMonData(&playerParty[i], MON_DATA_BERSERK_GENE_PROFILE_ID)
+         || GetMonData(&opponentParty[i], MON_DATA_BERSERK_GENE_PROFILE_ID))
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
+bool32 RecordedBattle_CanSave(void)
+{
+    return !PartiesContainFusion(sSavedPlayerParty, sSavedOpponentParty);
+}
+
 static bool32 IsRecordedBattleSaveValid(struct RecordedBattleSave *save)
 {
     if (save->battleFlags == 0)
@@ -266,6 +285,8 @@ static bool32 IsRecordedBattleSaveValid(struct RecordedBattleSave *save)
     if (save->battleFlags & BATTLE_TYPE_RECORDED_INVALID)
         return FALSE;
     if (CalcByteArraySum((void *)(save), sizeof(*save) - 4) != save->checksum)
+        return FALSE;
+    if (PartiesContainFusion(save->playerParty, save->opponentParty))
         return FALSE;
 
     return TRUE;
@@ -290,6 +311,9 @@ bool32 MoveRecordedBattleToSaveData(void)
     bool32 ret;
     struct RecordedBattleSave *battleSave, *savSection;
     u8 saveAttempts;
+
+    if (!RecordedBattle_CanSave())
+        return FALSE;
 
     saveAttempts = 0;
     battleSave = AllocZeroed(sizeof(struct RecordedBattleSave));

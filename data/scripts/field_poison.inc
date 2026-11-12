@@ -7,6 +7,16 @@ EventScript_FieldPoison::
 	releaseall
 	end
 
+EventScript_NuzlockeStorageFull::
+	lockall
+	msgbox EventScript_NuzlockeStorageFull_Text, MSGBOX_DEFAULT
+	releaseall
+	end
+
+EventScript_NuzlockeStorageFull_Text:
+	.string "Your PC BOXES are full.\n"
+	.string "Fainted POKéMON stayed in your party.$"
+
 EventScript_FieldWhiteOut::
 	goto_if_set FLAG_SYS_BUG_CONTEST_MODE, BugContest_EventScript_WhiteOut
 	message gText_PlayerWhitedOut

@@ -1,5 +1,6 @@
 #include "global.h"
 #include "new_game.h"
+#include "nuzlocke.h"
 #include "random.h"
 #include "config/randomizer.h"
 #include "pokemon.h"
@@ -219,6 +220,7 @@ void NewGameInitData(void)
     u8 rivalName[PLAYER_NAME_LENGTH + 1];
 #endif
     struct ChallengeSettings savedChallenge = gSaveBlock3Ptr->challengeSettings;
+    NuzlockeConsumeStorageFullNotice();
     if (gSaveFileStatus == SAVE_STATUS_EMPTY || gSaveFileStatus == SAVE_STATUS_CORRUPT)
         RtcReset();
 
