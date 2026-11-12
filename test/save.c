@@ -1,9 +1,11 @@
 #include "global.h"
 #include "battle.h"
+#include "battle_pike.h"
 #include "battle_pyramid.h"
 #include "battle_pyramid_bag.h"
 #include "battle_setup.h"
 #include "event_data.h"
+#include "event_object_movement.h"
 #include "frontier_util.h"
 #include "item.h"
 #include "load_save.h"
@@ -12,15 +14,38 @@
 #include "pokemon_storage_system.h"
 #include "recorded_battle.h"
 #include "save.h"
+#include "script.h"
 #include "string_util.h"
 #include "test/test.h"
 #include "util.h"
 #include "constants/battle_frontier.h"
+#include "constants/battle_pike.h"
 #include "constants/flags.h"
 #include "constants/frontier_util.h"
 #include "constants/items.h"
 #include "constants/layouts.h"
 #include "constants/moves.h"
+#include "constants/script_commands.h"
+
+extern ScrCmdFunc gScriptCmdTable[];
+extern ScrCmdFunc gScriptCmdTableEnd[];
+extern const u8 BattlePyramid_Retire[];
+extern const u8 BattlePyramid_Retire_hns[];
+extern const u8 BattleFrontier_BattlePyramid_EventScript_WarpToLobbyLost[];
+extern const u8 BattleFrontier_BattlePyramid_EventScript_WarpToLobby_hnsLost_hns[];
+extern const u8 BattleFrontier_BattlePyramidTop_EventScript_WarpToLobbyWon[];
+extern const u8 BattleFrontier_BattlePyramidTop_EventScript_WarpToLobbyWon_hns[];
+extern const u8 BattleFrontier_BattlePyramidLobby_EventScript_GiveBattlePoints[];
+extern const u8 BattleFrontier_BattlePyramidLobby_EventScript_GiveBattlePoints_hns[];
+extern const u8 BattleFrontier_BattlePyramidLobby_EventScript_LostChallenge[];
+extern const u8 BattleFrontier_BattlePyramidLobby_EventScript_LostChallenge_hns[];
+
+static void RunPyramidScriptCommand(struct ScriptContext *ctx)
+{
+    u8 cmd = ScriptReadByte(ctx);
+    EXPECT(gScriptCmdTable + cmd < gScriptCmdTableEnd);
+    EXPECT(!gScriptCmdTable[cmd](ctx));
+}
 
 // If you would like to ensure save compatibility, update the values below with those for your hack. You can find these through the debug menu.
 // Please note that this simple check is not 100% foolproof, but should be able to catch most unintended shifts.
@@ -103,6 +128,70 @@ TEST("Fusion normal save and reload preserves party and boxed profiles")
 
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
     ClearBoxMonBerserkGeneProfile(boxMon);
+    Free(expected);
+}
+
+TEST("Fusion facility partial saves preserve full party and unchanged profiles")
+{
+    bool8 pike = FALSE;
+    struct BerserkGeneProfile *expected = Alloc(sizeof(*expected));
+    u16 profileId;
+    u32 status = STATUS1_POISON;
+
+    PARAMETRIZE { pike = FALSE; }
+    PARAMETRIZE { pike = TRUE; }
+    EXPECT(gFlashMemoryPresent);
+    Save_ResetSaveCounters();
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_SQUIRTLE, 30, 1, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_BULBASAUR, 30, 2, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[2], SPECIES_EEVEE, 30, 3, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[3], SPECIES_PIKACHU, 30, 4, OTID_STRUCT_PLAYER_ID);
+    gPlayerPartyCount = 4;
+    profileId = AllocBerserkGeneProfile();
+    EXPECT_NE(profileId, 0);
+    SetMonData(&gPlayerParty[2], MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    GetBerserkGeneProfile(profileId)->parentSpeciesA = SPECIES_EEVEE;
+    GetBerserkGeneProfile(profileId)->parentSpeciesB = SPECIES_PIKACHU;
+    *expected = *GetBerserkGeneProfile(profileId);
+    gSaveBlock1Ptr->saveVersionMagic = SAVE_VERSION_MAGIC;
+    gSaveBlock1Ptr->saveVersion = SAVE_VERSION;
+    gSaveBlock1Ptr->pos.x = 0;
+    gSaveBlock1Ptr->pos.y = 0;
+    EXPECT_EQ(TrySavingData(SAVE_NORMAL), SAVE_STATUS_OK);
+    SetMonData(&gPlayerParty[2], MON_DATA_STATUS, &status);
+    SavePlayerParty();
+    if (pike)
+    {
+        gSpecialVar_0x8004 = BATTLE_PIKE_FUNC_SAVE;
+        gSpecialVar_0x8005 = CHALLENGE_STATUS_PAUSED;
+        CallBattlePikeFunction();
+    }
+    else
+    {
+        gPlayerParty[0] = gPlayerParty[2];
+        ZeroMonData(&gPlayerParty[1]);
+        ZeroMonData(&gPlayerParty[2]);
+        ZeroMonData(&gPlayerParty[3]);
+        gPlayerPartyCount = 1;
+        SaveGameFrontier();
+        EXPECT_EQ(gPlayerPartyCount, 1);
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    }
+
+    ZeroPlayerPartyMons();
+    FreeBerserkGeneProfile(profileId);
+    EXPECT_EQ(LoadGameSave(SAVE_NORMAL), SAVE_STATUS_OK);
+    EXPECT_EQ(gPlayerPartyCount, 4);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_SQUIRTLE);
+    EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), SPECIES_BULBASAUR);
+    EXPECT_EQ(GetMonData(&gPlayerParty[2], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT_EQ(GetMonData(&gPlayerParty[2], MON_DATA_STATUS), STATUS1_POISON);
+    EXPECT_EQ(GetMonData(&gPlayerParty[3], MON_DATA_SPECIES), SPECIES_PIKACHU);
+    EXPECT(GetBerserkGeneProfile(profileId) != NULL);
+    EXPECT_EQ(memcmp(GetBerserkGeneProfile(profileId), expected, sizeof(*expected)), 0);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[2].box);
     Free(expected);
 }
 
@@ -198,6 +287,80 @@ TEST("Fusion Pyramid exit merges only fusion changes into the full party")
     EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_MOVE1), MOVE_FLAMETHROWER);
     EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), SPECIES_BULBASAUR);
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[2].box);
+}
+
+TEST("Fusion Pyramid exit scripts preserve evolved fusion on win loss and retirement")
+{
+    const u8 *exitScript = NULL;
+    const u8 *lobbyScript = NULL;
+    struct ScriptContext ctx;
+    u16 profileId;
+    u16 species = SPECIES_JOLTEON;
+    u16 oldLayout = gMapHeader.mapLayoutId;
+    u16 expectedStatus = CHALLENGE_STATUS_LOST;
+    u8 commands;
+
+    PARAMETRIZE { exitScript = BattleFrontier_BattlePyramid_EventScript_WarpToLobbyLost;
+                  lobbyScript = BattleFrontier_BattlePyramidLobby_EventScript_LostChallenge; }
+    PARAMETRIZE { exitScript = BattleFrontier_BattlePyramid_EventScript_WarpToLobby_hnsLost_hns;
+                  lobbyScript = BattleFrontier_BattlePyramidLobby_EventScript_LostChallenge_hns; }
+    PARAMETRIZE { exitScript = BattlePyramid_Retire;
+                  lobbyScript = BattleFrontier_BattlePyramidLobby_EventScript_LostChallenge; }
+    PARAMETRIZE { exitScript = BattlePyramid_Retire_hns;
+                  lobbyScript = BattleFrontier_BattlePyramidLobby_EventScript_LostChallenge_hns; }
+    PARAMETRIZE { exitScript = BattleFrontier_BattlePyramidTop_EventScript_WarpToLobbyWon;
+                  lobbyScript = BattleFrontier_BattlePyramidLobby_EventScript_GiveBattlePoints;
+                  expectedStatus = CHALLENGE_STATUS_WON; }
+    PARAMETRIZE { exitScript = BattleFrontier_BattlePyramidTop_EventScript_WarpToLobbyWon_hns;
+                  lobbyScript = BattleFrontier_BattlePyramidLobby_EventScript_GiveBattlePoints_hns;
+                  expectedStatus = CHALLENGE_STATUS_WON; }
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_SQUIRTLE, 30, 1, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_BULBASAUR, 30, 2, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[2], SPECIES_EEVEE, 30, 3, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[3], SPECIES_PIKACHU, 30, 4, OTID_STRUCT_PLAYER_ID);
+    gPlayerPartyCount = 4;
+    profileId = AllocBerserkGeneProfile();
+    EXPECT_NE(profileId, 0);
+    SetMonData(&gPlayerParty[2], MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    GetBerserkGeneProfile(profileId)->parentSpeciesA = SPECIES_EEVEE;
+    SavePlayerParty();
+    gSaveBlock2Ptr->frontier.selectedPartyMons[0] = 3;
+    gSaveBlock2Ptr->frontier.selectedPartyMons[1] = 1;
+    gSaveBlock2Ptr->frontier.selectedPartyMons[2] = 4;
+    gPlayerParty[0] = *GetSavedPlayerPartyMon(3);
+    gPlayerParty[1] = *GetSavedPlayerPartyMon(2);
+    gPlayerParty[2] = *GetSavedPlayerPartyMon(0);
+    gPlayerPartyCount = 3;
+    SetMonData(&gPlayerParty[1], MON_DATA_SPECIES, &species);
+    SetMonMoveSlot(&gPlayerParty[1], MOVE_SURF, 0);
+    GetBerserkGeneProfile(profileId)->parentSpeciesA = species;
+    gMapHeader.mapLayoutId = LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR_HNS;
+    gSaveBlock2Ptr->frontier.lvlMode = FRONTIER_LVL_50;
+    VarSet(VAR_FRONTIER_FACILITY, FRONTIER_FACILITY_PYRAMID);
+    VarSet(VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_SINGLES);
+
+    InitScriptContext(&ctx, gScriptCmdTable, gScriptCmdTableEnd);
+    SetupBytecodeScript(&ctx, exitScript);
+    for (commands = 0; commands < 50 && *ctx.scriptPtr != SCR_OP_WARP && *ctx.scriptPtr != SCR_OP_WARPSILENT; commands++)
+        RunPyramidScriptCommand(&ctx);
+    EXPECT(commands < 50);
+    EXPECT_EQ(gSaveBlock2Ptr->frontier.challengeStatus, expectedStatus);
+
+    SetupBytecodeScript(&ctx, lobbyScript);
+    for (commands = 0; commands < 50 && !Script_MatchesCallNative(ctx.scriptPtr, UpdateFollowingPokemon, FALSE); commands++)
+        RunPyramidScriptCommand(&ctx);
+    EXPECT(commands < 50);
+    EXPECT_EQ(gPlayerPartyCount, 4);
+    EXPECT_EQ(GetMonData(&gPlayerParty[2], MON_DATA_SPECIES), SPECIES_JOLTEON);
+    EXPECT_EQ(GetMonData(&gPlayerParty[2], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT_EQ(GetMonData(&gPlayerParty[2], MON_DATA_MOVE1), MOVE_SURF);
+    EXPECT_EQ(GetBerserkGeneProfile(profileId)->parentSpeciesA, SPECIES_JOLTEON);
+    EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), SPECIES_BULBASAUR);
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[2].box);
+    gMapHeader.mapLayoutId = oldLayout;
 }
 
 TEST("Fusion Pyramid restoration distinguishes reordered ordinary same-species party")
@@ -393,6 +556,49 @@ TEST("Fusion Pyramid challenge save persists the evolved profile")
     EXPECT_EQ(GetBerserkGeneProfile(profileId)->parentSpeciesA, SPECIES_JOLTEON);
     EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), SPECIES_PIKACHU);
 
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+}
+
+TEST("Fusion Pyramid interrupted full save restores a consistent previous slot")
+{
+    u16 profileId;
+    u16 evolvedSpecies = SPECIES_JOLTEON;
+    u8 completedSectors = 0, i;
+
+    for (i = 0; i <= NUM_SECTORS_PER_SLOT; i++)
+    {
+        PARAMETRIZE { completedSectors = i; }
+    }
+    EXPECT(gFlashMemoryPresent);
+    Save_ResetSaveCounters();
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_EEVEE, 30, 12345, OTID_STRUCT_PLAYER_ID);
+    gPlayerPartyCount = 1;
+    profileId = AllocBerserkGeneProfile();
+    EXPECT_NE(profileId, 0);
+    SetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    GetBerserkGeneProfile(profileId)->parentSpeciesA = SPECIES_EEVEE;
+    gSaveBlock1Ptr->saveVersionMagic = SAVE_VERSION_MAGIC;
+    gSaveBlock1Ptr->saveVersion = SAVE_VERSION;
+    EXPECT_EQ(TrySavingData(SAVE_NORMAL), SAVE_STATUS_OK);
+    EXPECT_EQ(TrySavingData(SAVE_NORMAL), SAVE_STATUS_OK);
+
+    SetMonData(&gPlayerParty[0], MON_DATA_SPECIES, &evolvedSpecies);
+    GetBerserkGeneProfile(profileId)->parentSpeciesA = SPECIES_JOLTEON;
+    EXPECT(!LinkFullSave_Init());
+    for (i = 0; i < completedSectors && i < NUM_SECTORS_PER_SLOT - 1; i++)
+        EXPECT(!LinkFullSave_WriteSector());
+    if (completedSectors == NUM_SECTORS_PER_SLOT)
+        EXPECT(!LinkFullSave_ReplaceLastSector());
+    ZeroPlayerPartyMons();
+    FreeBerserkGeneProfile(profileId);
+    EXPECT_EQ(LoadGameSave(SAVE_NORMAL), completedSectors == 0 ? SAVE_STATUS_OK : SAVE_STATUS_ERROR);
+    EXPECT_EQ(gPlayerPartyCount, 1);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_EEVEE);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT(GetBerserkGeneProfile(profileId) != NULL);
+    EXPECT_EQ(GetBerserkGeneProfile(profileId)->parentSpeciesA, SPECIES_EEVEE);
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
 }
 

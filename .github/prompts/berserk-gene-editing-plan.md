@@ -930,19 +930,47 @@ evolution-learned moves. Win/loss/retire merge fusion party records before resto
 original party. On ordinary floor transitions `frontier_getstatus` converts challenge status
 zero to 0xFF, so the floor's `ReadyChallenge` save is not invoked; when resuming a paused
 challenge, `PausePyramidChallenge` previously restored the full party before the pause save.
-Focused command `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid'` passed seven tests:
+Focused command `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid'` passed nine tests:
 profile-ID restoration, ordinary same-species party ordering, fusion-only exit merge, held
 item transfer and clearing, a flash-backed challenge save, a flash-backed pause/resume sequence
-with the full party, and an actual evolution scene followed by exit merge. The tests do not
-run the complete Pyramid win/loss/retire scripts or item-use scene; manual behavior and
-interrupted saves remain unverified. Do not treat Pyramid fusion evolution as safe for manual
-testing yet.
+with the full party, an actual evolution scene followed by exit merge, selected exit-script
+segments, and interrupted full-save recovery. The script test runs the real win, loss and
+retirement bytecode in both map variants until the warp, then the lobby bytecode through party
+restoration; it does not simulate the warp, dialogue, item-selection UI, or final save.
+The interruption test writes 0–13 complete sectors using the incremental writer shared with
+normal saves, plus a final sector without its signature, and checks that loading recovers the
+previous matching Pokémon and profile. It does not simulate interruption within each sector.
+The item-use scene and complete manual behavior remain unverified. Do not treat Pyramid fusion
+evolution as safe for manual testing yet.
 
 The EV-yield audit is not complete. Normal wild and scripted enemies are created from species,
 secret-base opponents are reconstructed from species-only records, and EV/EXP awards are blocked
 in link and Frontier battles. Recorded wild battles are an explicit EXP exception, but fusion
 recordings are currently blocked. Do not resolve an opponent's local profile ID in this path
-without first establishing its ownership and reachability.
+without first establishing its ownership and reachability. Enemy-party copy sites inspected so
+far include double wild encounters (copies of generated wild Pokémon), link reception, and
+recorded-battle playback; none establishes a locally owned fusion as an EXP-awarding opponent.
+The Union Room temporarily copies the player's Pokémon to the enemy array during setup, but
+starts a link battle. Further nonstandard and scripted paths still need review.
+The partial-save audit remains open. Pike's start menu has no bag, its party menu prevents held
+item management, and fusion potential evolutions currently reject overworld-special and
+script-trigger modes; this limits the profile-mutation routes considered for its partial saves.
+Its pause/resume scripts restore the full saved party before saving. Link-contest partial saves
+follow an entry full save but remain part of the deferred multiplayer investigation. Other
+`SaveGameFrontier` callers include Tower, Arena, Dome, Palace, Factory and all three Battle
+Tents; their entry scripts were inspected for a full save. Factory and Slateport Tent replace the
+active party with rental Pokémon after preserving the original party. A flash-backed regression,
+`make -k check BUILD=hns -j8 TESTS='Fusion facility partial saves'`, passed for the shared
+Frontier save and Pike save: it verifies reload of the full party and an unchanged fusion
+profile after an entry full save. It does not simulate facility scripts or prove that no
+in-challenge profile mutation is possible. Other special-save paths still need review.
+
+An additional lifecycle risk is open: Mirror Thief replaces the active player party with the
+opponent's party without freeing discarded fusion profiles, potentially exhausting the eight
+profile slots. Ordinary Mirror mode keeps a temporary backup, and facilities and in-game partner
+battles can also retain or restore saved party copies; cleanup must distinguish genuinely
+discarded fusions from those temporary copies before freeing a profile. No fix or regression
+for Mirror Thief has been implemented yet.
 The battle EV-award investigation, remaining lifecycle audit, special saves, full regression,
 and production build remain open.
 
