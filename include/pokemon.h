@@ -946,6 +946,7 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
 bool8 PrepareBerserkGeneProfileEvolution(struct Pokemon *mon, u16 targetSpecies, struct BerserkGeneProfile *prepared);
 // Choices are ordinals in GetMonPotentialEvolutions, valid until the profile changes.
 bool8 PrepareBerserkGeneProfileEvolutionForChoice(struct Pokemon *mon, u16 targetSpecies, u8 choice, struct BerserkGeneProfile *prepared);
+bool8 PrepareBerserkGeneShedinjaProfile(const struct BerserkGeneProfile *source, u16 targetSpecies, u8 choice, u16 previousSpecies, struct BerserkGeneProfile *prepared);
 #define FUSION_EVOLUTION_CHOICE_NONE 0xFF
 void CommitBerserkGeneProfileEvolution(struct Pokemon *mon, const struct BerserkGeneProfile *prepared);
 u16 GetBerserkGeneSpriteSpecies(const struct BerserkGeneProfile *profile, u16 fallbackSpecies);

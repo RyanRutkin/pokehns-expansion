@@ -379,6 +379,12 @@ static void CreateHatchedMon(struct Pokemon *egg, struct Pokemon *temp)
     SetMonData(temp, MON_DATA_POKEBALL, &ball);
 
     *egg = *temp;
+    if (profile != NULL)
+    {
+        u16 emptyProfileId = 0;
+        // The enemy-party scratch copy does not own the hatchling's profile.
+        SetMonData(temp, MON_DATA_BERSERK_GENE_PROFILE_ID, &emptyProfileId);
+    }
 }
 
 static void AddHatchedMonToParty(u8 id)

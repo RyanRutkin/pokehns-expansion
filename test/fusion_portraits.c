@@ -23,6 +23,7 @@
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
 #include "pokemon_summary_screen.h"
+#include "script_pokemon_util.h"
 #include "sound.h"
 #include "sprite.h"
 #include "string_util.h"
@@ -30,6 +31,7 @@
 #include "test/test.h"
 #include "test_runner.h"
 #include "window.h"
+#include "wild_encounter.h"
 #include "constants/field_effects.h"
 #include "constants/map_groups.h"
 
@@ -733,6 +735,8 @@ TEST("Fusion hatching preserves the profile donor growth and inherited moves")
     ScriptHatchMon();
 
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT_EQ(GetMonData(&gEnemyParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), 0);
+    EXPECT_EQ(GetMonData(&gEnemyParty[0], MON_DATA_SPECIES), SPECIES_WOBBUFFET);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_IS_EGG), FALSE);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_WOBBUFFET);
     EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_PERSONALITY), personality);
@@ -756,6 +760,69 @@ TEST("Fusion hatching preserves the profile donor growth and inherited moves")
     }
     gPlayerParty[0] = savedPartyMon;
     gEnemyParty[0] = savedScratchMon;
+    gSpecialVar_0x8004 = savedSpecial;
+}
+
+TEST("Fusion hatch scratch and wild setup preserve local profile ownership")
+{
+    struct Pokemon savedPartyMon = gPlayerParty[0];
+    struct Pokemon *savedEnemyParty = Alloc(sizeof(gEnemyParty));
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile expected;
+    enum Move moves[MAX_MON_MOVES] = {MOVE_TACKLE, MOVE_NONE, MOVE_NONE, MOVE_NONE};
+    u16 savedSpecial = gSpecialVar_0x8004;
+    u16 profileId;
+    u8 isEgg = TRUE, setup = 0;
+    u32 i;
+
+    PARAMETRIZE { setup = 0; }
+    PARAMETRIZE { setup = 1; }
+    PARAMETRIZE { setup = 2; }
+    PARAMETRIZE { setup = 3; }
+    PARAMETRIZE { setup = 4; }
+
+    memcpy(savedEnemyParty, gEnemyParty, sizeof(gEnemyParty));
+    CreateMon(&gPlayerParty[0], SPECIES_WOBBUFFET, EGG_HATCH_LEVEL, 123456, OTID_STRUCT_PLAYER_ID);
+    profile = SetPortraitProfile(&gPlayerParty[0], FALSE);
+    EXPECT(profile != NULL);
+    expected = *profile;
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    SetMonData(&gPlayerParty[0], MON_DATA_IS_EGG, &isEgg);
+    gSpecialVar_0x8004 = 0;
+    ScriptHatchMon();
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT_EQ(GetMonData(&gEnemyParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), 0);
+    EXPECT_EQ(memcmp(profile, &expected, sizeof(expected)), 0);
+
+    gEnemyParty[5] = gPlayerParty[0];
+    switch (setup)
+    {
+    case 0:
+        CreateWildMon(SPECIES_PIKACHU, 30);
+        break;
+    case 1:
+        CreateScriptedWildMon(SPECIES_PIKACHU, 30, ITEM_NONE);
+        break;
+    case 2:
+        CreateScriptedDoubleWildMon(SPECIES_PIKACHU, 30, ITEM_NONE, SPECIES_EEVEE, 30, ITEM_NONE);
+        break;
+    case 3:
+        CreateScriptedWildBossMon(SPECIES_PIKACHU, 30, ITEM_NONE, moves);
+        break;
+    case 4:
+        CreateScriptedDoubleWildBossMon(SPECIES_PIKACHU, 30, ITEM_NONE, moves,
+                                        SPECIES_EEVEE, 30, ITEM_NONE, moves);
+        break;
+    }
+    for (i = 0; i < PARTY_SIZE; i++)
+        EXPECT_EQ(GetMonData(&gEnemyParty[i], MON_DATA_BERSERK_GENE_PROFILE_ID), 0);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT_EQ(memcmp(profile, &expected, sizeof(expected)), 0);
+
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    gPlayerParty[0] = savedPartyMon;
+    memcpy(gEnemyParty, savedEnemyParty, sizeof(gEnemyParty));
+    Free(savedEnemyParty);
     gSpecialVar_0x8004 = savedSpecial;
 }
 

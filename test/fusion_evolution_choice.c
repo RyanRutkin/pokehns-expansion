@@ -4,9 +4,11 @@
 #include "evolution_scene.h"
 #include "event_data.h"
 #include "gba/m4a_internal.h"
+#include "item.h"
 #include "main.h"
 #include "load_save.h"
 #include "m4a.h"
+#include "overworld.h"
 #include "palette.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
@@ -16,6 +18,7 @@
 #include "task.h"
 #include "test/test.h"
 #include "test_runner.h"
+#include "constants/layouts.h"
 
 extern struct ToneData gCryTable[];
 extern struct MusicPlayerInfo *gMPlay_PokemonCry;
@@ -93,6 +96,235 @@ static struct BerserkGeneProfile *SetChoiceProfile(struct Pokemon *mon, bool8 ph
     }
     SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     return profile;
+}
+
+TEST("Fusion Shedinja split uses independent branches and ordinary fallback")
+{
+    bool8 donorOnly = FALSE, fullProfiles = FALSE, noBall = FALSE, fullParty = FALSE, ordinary = FALSE;
+    bool8 paired = FALSE, otherFirst = FALSE, releaseOriginal = FALSE;
+    u16 pyramidLayout = 0;
+    struct BerserkGeneProfile *profile = NULL;
+    MainCallback savedCallback = gMain.callback2;
+    MainCallback savedAfterEvolution = gCB2_AfterEvolution;
+    IntrCallback savedVBlank = gMain.vblankCallback;
+    u32 savedBattleType = gBattleTypeFlags;
+    u16 savedLayout = gMapHeader.mapLayoutId;
+    u8 savedEvoLimit = gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit;
+    u16 originalId = 0, splitId = 0, allocated[MAX_BERSERK_GENE_PROFILES];
+    u8 allocatedCount = 0, choice = FUSION_EVOLUTION_CHOICE_NONE;
+    bool32 canStop = TRUE;
+    u16 frame;
+    int i;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { donorOnly = TRUE; }
+    PARAMETRIZE { fullProfiles = TRUE; }
+    PARAMETRIZE { donorOnly = TRUE; fullProfiles = TRUE; }
+    PARAMETRIZE { noBall = TRUE; }
+    PARAMETRIZE { fullParty = TRUE; }
+    PARAMETRIZE { ordinary = TRUE; }
+    PARAMETRIZE { pyramidLayout = LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR_HNS; }
+    PARAMETRIZE { pyramidLayout = LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_TOP_HNS; ordinary = TRUE; }
+    PARAMETRIZE { pyramidLayout = LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR; ordinary = TRUE; }
+    PARAMETRIZE { pyramidLayout = LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_TOP; }
+    PARAMETRIZE { paired = TRUE; }
+    PARAMETRIZE { paired = TRUE; otherFirst = TRUE; }
+    PARAMETRIZE { releaseOriginal = TRUE; }
+
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], donorOnly ? SPECIES_EEVEE : SPECIES_NINCADA, 20, 1, OTID_STRUCT_PLAYER_ID);
+    gPlayerPartyCount = 1;
+    if (!ordinary)
+    {
+        u32 exp = gExperienceTables[GROWTH_SLOW][20] + 25;
+        profile = SetChoiceProfile(&gPlayerParty[0], FALSE, FALSE, EVO_MODE_NORMAL);
+        originalId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        profile->parentSpeciesA = SPECIES_NINCADA;
+        profile->parentSpeciesB = SPECIES_EEVEE;
+        profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_NINJASK, 20, EVO_LEVEL, 0};
+        profile->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_SHEDINJA, SPECIES_NINJASK, EVO_SPLIT_FROM_EVO, 0};
+        profile->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL | EVO_POTENTIAL_SOURCE_PARENT_BIT, 0};
+        profile->potentialEvolutionCount = 3;
+        if (paired)
+        {
+            profile->potentialEvolutions[0].methodAndSourceParent |= EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+            profile->potentialEvolutions[2].methodAndSourceParent |= EVO_POTENTIAL_PAIRED_WITH_SIBLING;
+            if (otherFirst)
+            {
+                struct FusionPotentialEvolution tmp = profile->potentialEvolutions[0];
+                profile->potentialEvolutions[0] = profile->potentialEvolutions[2];
+                profile->potentialEvolutions[2] = tmp;
+            }
+        }
+        for (i = 0; i < NUM_STATS; i++)
+            profile->baseStats[i] = GetSpeciesBaseStat(SPECIES_NINCADA, i);
+        profile->ability1 = profile->ability2 = profile->abilityHidden = ABILITY_COMPOUND_EYES;
+        SetMonData(&gPlayerParty[0], MON_DATA_EXP, &exp);
+        CalculateMonStats(&gPlayerParty[0]);
+    }
+    if (fullProfiles)
+    {
+        u16 id;
+        while ((id = AllocBerserkGeneProfile()) != 0)
+            allocated[allocatedCount++] = id;
+    }
+    if (fullParty)
+    {
+        for (i = 1; i < PARTY_SIZE; i++)
+            CreateMon(&gPlayerParty[i], SPECIES_PIKACHU, 20, i + 1, OTID_STRUCT_PLAYER_ID);
+        gPlayerPartyCount = PARTY_SIZE;
+    }
+    if (pyramidLayout)
+        gMapHeader.mapLayoutId = pyramidLayout;
+    while (CheckBagHasItem(ITEM_POKE_BALL, 1))
+        RemoveBagItem(ITEM_POKE_BALL, 1);
+    if (!noBall)
+        EXPECT(AddBagItem(ITEM_POKE_BALL, 1));
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit = 0;
+    EXPECT_EQ(GetEvolutionTargetSpeciesWithChoice(&gPlayerParty[0], EVO_MODE_NORMAL, 0, NULL, &canStop, CHECK_EVO, &choice), otherFirst ? SPECIES_JOLTEON : SPECIES_NINJASK);
+
+    ResetTasks();
+    ResetSpriteData();
+    FreeAllSpritePalettes();
+    ResetPaletteFade();
+    StopCryAndClearCrySongs();
+    gBattleTypeFlags = 0;
+    gCB2_AfterEvolution = EvolutionChoiceReturn;
+    EvolutionScene(&gPlayerParty[0], otherFirst ? SPECIES_JOLTEON : SPECIES_NINJASK, FALSE, 0, choice);
+    for (frame = 0; frame < 3000 && gMain.callback2 != EvolutionChoiceReturn; frame++)
+    {
+        gMain.newKeys = B_BUTTON;
+        gMain.heldKeys = B_BUTTON;
+        gMain.callback2();
+        m4aSoundMain();
+        gPaletteFade.active = FALSE;
+    }
+    EXPECT_EQ(gMain.callback2, EvolutionChoiceReturn);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), otherFirst ? SPECIES_JOLTEON : SPECIES_NINJASK);
+    EXPECT_EQ(gPlayerPartyCount, fullParty ? PARTY_SIZE : (noBall || pyramidLayout) ? 1 : 2);
+    if (!ordinary)
+    {
+        EXPECT_EQ(profile->parentSpeciesA, SPECIES_NINJASK);
+        EXPECT_EQ(profile->parentSpeciesB, SPECIES_JOLTEON);
+        {
+            u16 sources[MAX_FUSION_MOVE_SOURCES_PER_PARENT];
+            GetBoxMonBreedingMoveSources(&gPlayerParty[0].box, sources);
+            for (i = 0; i < ARRAY_COUNT(sources); i++)
+                EXPECT_NE(sources[i], SPECIES_SHEDINJA);
+        }
+    }
+    if (pyramidLayout)
+        EXPECT(CheckBagHasItem(ITEM_POKE_BALL, 1));
+    if (!noBall && !fullParty && !pyramidLayout)
+    {
+        EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), SPECIES_SHEDINJA);
+        splitId = GetMonData(&gPlayerParty[1], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        EXPECT_EQ(CheckBagHasItem(ITEM_POKE_BALL, 1), FALSE);
+        if (ordinary || fullProfiles)
+        {
+            EXPECT_EQ(splitId, 0);
+            EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_MAX_HP), 1);
+            EXPECT_EQ(GetLevelFromMonExp(&gPlayerParty[1]), GetLevelFromMonExp(&gPlayerParty[0]));
+            if (fullProfiles)
+            {
+                u32 oldSpan = gExperienceTables[GROWTH_SLOW][21] - gExperienceTables[GROWTH_SLOW][20];
+                enum GrowthRate growth = GetMonGrowthRate(&gPlayerParty[1]);
+                u32 newSpan = gExperienceTables[growth][21] - gExperienceTables[growth][20];
+                EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_EXP),
+                          gExperienceTables[growth][20] + 25 * newSpan / oldSpan);
+            }
+        }
+        else
+        {
+            struct BerserkGeneProfile *split = GetBerserkGeneProfile(splitId);
+            u16 sources[MAX_FUSION_MOVE_SOURCES_PER_PARENT];
+            u32 level, expectedHp;
+            EXPECT_NE(splitId, originalId);
+            EXPECT(split != NULL);
+            EXPECT_EQ(split->parentSpeciesA, SPECIES_SHEDINJA);
+            EXPECT_EQ(split->parentSpeciesB, SPECIES_JOLTEON);
+            EXPECT_NE(split->ability1, ABILITY_WONDER_GUARD);
+            EXPECT_NE(split->ability2, ABILITY_WONDER_GUARD);
+            EXPECT_NE(split->abilityHidden, ABILITY_WONDER_GUARD);
+            EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_MAX_HP) > 1, TRUE);
+            EXPECT_EQ(split->baseStats[STAT_HP],
+                (GetSpeciesBaseStat(SPECIES_SHEDINJA, STAT_HP) * 62
+                 + GetSpeciesBaseStat(SPECIES_JOLTEON, STAT_HP) * 38 + 50) / 100);
+            level = GetMonData(&gPlayerParty[1], MON_DATA_LEVEL);
+            expectedHp = ((2 * split->baseStats[STAT_HP]
+                + GetMonData(&gPlayerParty[1], MON_DATA_HP_IV)
+                + GetMonData(&gPlayerParty[1], MON_DATA_HP_EV) / 4) * level) / 100 + level + 10;
+            EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_MAX_HP), expectedHp);
+            GetBoxMonBreedingMoveSources(&gPlayerParty[1].box, sources);
+            for (i = 0; i < ARRAY_COUNT(sources); i++)
+                EXPECT_NE(sources[i], SPECIES_NINJASK);
+            if (releaseOriginal)
+            {
+                ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+                EXPECT(GetBerserkGeneProfile(splitId) != NULL);
+                originalId = 0;
+            }
+            ClearBoxMonBerserkGeneProfile(&gPlayerParty[1].box);
+            if (originalId != 0)
+                EXPECT(GetBerserkGeneProfile(originalId) != NULL);
+        }
+    }
+    if (originalId != 0)
+        ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    while (allocatedCount != 0)
+        FreeBerserkGeneProfile(allocated[--allocatedCount]);
+    StopCryAndClearCrySongs();
+    ResetTasks();
+    ResetSpriteData();
+    FreeAllSpritePalettes();
+    gMain.newKeys = 0;
+    gMain.heldKeys = 0;
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit = savedEvoLimit;
+    gMapHeader.mapLayoutId = savedLayout;
+    gBattleTypeFlags = savedBattleType;
+    gCB2_AfterEvolution = savedAfterEvolution;
+    SetVBlankCallback(savedVBlank);
+    SetMainCallback2(savedCallback);
+}
+
+TEST("Fusion Shedinja split projects second-phase and source-parent branches independently")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *source;
+    struct BerserkGeneProfile ninjask, shedinja;
+    u16 profileId;
+    u8 sourceBit = 0;
+    u8 i;
+
+    PARAMETRIZE { sourceBit = 0; }
+    PARAMETRIZE { sourceBit = EVO_POTENTIAL_SOURCE_PARENT_BIT; }
+
+    CreateMon(&mon, SPECIES_EEVEE, 30, 1, OTID_STRUCT_PLAYER_ID);
+    source = SetChoiceProfile(&mon, FALSE, FALSE, EVO_MODE_NORMAL);
+    profileId = GetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    source->parentSpeciesA = sourceBit ? SPECIES_JOLTEON : SPECIES_NINCADA;
+    source->parentSpeciesB = sourceBit ? SPECIES_NINCADA : SPECIES_JOLTEON;
+    source->evolutionFlags = (BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT)
+        | BERSERK_GENE_RESOLVED_MOVE_SOURCES;
+    source->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_NINCADA, 10, EVO_LEVEL | EVO_POTENTIAL_SELECTED | sourceBit, 0};
+    source->potentialEvolutions[1] = (struct FusionPotentialEvolution){SPECIES_NINJASK, 20, EVO_LEVEL | EVO_POTENTIAL_PHASE_2 | sourceBit, 0};
+    source->potentialEvolutions[2] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 10, EVO_LEVEL | (sourceBit ^ EVO_POTENTIAL_SOURCE_PARENT_BIT), 0};
+    source->potentialEvolutions[3] = (struct FusionPotentialEvolution){SPECIES_FLAREON, 20, EVO_LEVEL | EVO_POTENTIAL_PHASE_2 | (sourceBit ^ EVO_POTENTIAL_SOURCE_PARENT_BIT), 0};
+    source->potentialEvolutionCount = 4;
+    for (i = 0; i < NUM_STATS; i++)
+        source->baseStats[i] = GetSpeciesBaseStat(SPECIES_NINCADA, i);
+    source->ability1 = source->ability2 = source->abilityHidden = ABILITY_COMPOUND_EYES;
+    EXPECT(PrepareBerserkGeneProfileEvolutionForChoice(&mon, SPECIES_NINJASK, 0, &ninjask));
+    EXPECT(PrepareBerserkGeneShedinjaProfile(source, SPECIES_NINJASK, 0, SPECIES_NINCADA, &shedinja));
+    EXPECT_EQ(sourceBit ? ninjask.parentSpeciesB : ninjask.parentSpeciesA, SPECIES_NINJASK);
+    EXPECT_EQ(sourceBit ? ninjask.parentSpeciesA : ninjask.parentSpeciesB, SPECIES_FLAREON);
+    EXPECT_EQ(sourceBit ? shedinja.parentSpeciesB : shedinja.parentSpeciesA, SPECIES_SHEDINJA);
+    EXPECT_EQ(sourceBit ? shedinja.parentSpeciesA : shedinja.parentSpeciesB, SPECIES_FLAREON);
+    EXPECT_EQ(shedinja.potentialEvolutions[1].targetSpecies, SPECIES_SHEDINJA);
+    EXPECT_EQ(ninjask.potentialEvolutions[1].targetSpecies, SPECIES_NINJASK);
+    EXPECT(!PrepareBerserkGeneShedinjaProfile(source, SPECIES_FLAREON, 1, SPECIES_NINCADA, &shedinja));
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    EXPECT(GetBerserkGeneProfile(profileId) == NULL);
 }
 
 TEST("Fusion Pyramid real evolution scene rolls back on exit")

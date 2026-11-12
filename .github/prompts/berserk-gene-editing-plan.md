@@ -971,8 +971,11 @@ far include double wild encounters (copies of generated wild Pokémon), link rec
 recorded-battle playback; none establishes a locally owned fusion as an EXP-awarding opponent.
 The Union Room temporarily copies the player's Pokémon to the enemy array during setup, but
 starts a link battle. Egg hatching also uses `gEnemyParty[0]` as a temporary copy of the
-hatched Pokémon, including its local fusion profile ID; ordinary wild, roamer, event-wild,
-and trainer party setup clear or overwrite that buffer before battle. Script-created enemy
+hatched Pokémon. The hatch code now clears the borrowed profile ID from that scratch copy
+without releasing the hatchling's profile. `make -k check BUILD=hns -j8 TESTS='Fusion hatch'`
+passed three tests, including five normal and scripted wild-setup variants and the hatch
+scene. Ordinary wild, roamer, event-wild, and trainer party setup clear or overwrite that
+buffer before battle. Script-created enemy
 Pokémon are freshly created from species rather than copied from the player's party. This
 does not prove every custom scripted setup clears stale enemy slots; further nonstandard
 and scripted paths still need review.
@@ -1026,6 +1029,44 @@ scenes and exit scripts remain untested. Avoid Mirror Thief with fusions in unva
 paths.
 The battle EV-award investigation, remaining lifecycle audit, special saves, full regression,
 and production build remain open.
+
+### MVP decision: Nincada fusion split evolution (2026-11-12)
+
+A temporary real evolution-scene characterization (removed after running) passed with a
+Nincada-based fusion whose selected level evolution was Ninjask. With party space and a
+Poké Ball, the existing Shedinja routine creates a Shedinja record by copying the evolved
+fusion, including its profile ID. Both Pokémon then reference the same profile: releasing
+either can invalidate the other, and profile changes affect both. This must be resolved
+before the offline MVP.
+
+The user chose an independently owned fusion Shedinja when a profile slot is available, and
+an ordinary Shedinja when all eight are occupied. The split also applies when Nincada is an
+inherited lineage donor rather than the physical species.
+
+The user further specified that the original branch uses Ninjask without Shedinja in its
+pseudo-fusion, while the new branch uses Shedinja without Ninjask in its pseudo-fusion.
+Fusion Shedinja uses weighted donor HP, not the nominal-species 1 HP special case; ordinary
+Shedinja retains 1 HP. For an ordinary full-capacity fallback, EXP is converted to preserve
+the current level and proportional progress on Shedinja's normal growth curve.
+
+The user decided that no Shedinja is created inside the Battle Pyramid, including for ordinary
+Pokémon. This avoids creating a fourth challenge Pokémon that the existing three-member
+pause/restore path cannot preserve. The original evolution still occurs, and no Poké Ball is
+consumed. Outside the Pyramid, ordinary Shedinja behavior remains unchanged.
+
+Implementation includes independent split-profile preparation, the ordinary fallback, fusion
+HP, and exclusion of split-only evolution entries from fusion candidate pools and projections.
+`make -k check BUILD=hns -j8 TESTS='Fusion Shedinja split'` passed three tests: real
+evolution scenes cover nominal and donor-only Nincada, paired evolutions in either order,
+full-profile fallback, missing ball, full party, ordinary Shedinja, and both Pyramid floors and
+tops. The other tests cover both source-parent sides in phase 2 and real daycare construction.
+`TESTS='Fusion evolution'` passed six tests, `TESTS='Fusion Pyramid'` passed eleven, and
+`TESTS='Fusion hatch'` passed three, using the same build command. `TESTS='Fusion rebreeding'`
+passed eleven and `TESTS='Fusion pseudo-side'` passed two. The existing
+`TESTS='(Daycare) Matching unconditional level evolutions'` test initially failed because
+its fixture enabled the one-type challenge and used incompatible breeding groups; the fixture
+now disables that challenge and uses compatible parents, and the test passes. Full Fusion
+regression, non-headless regression, production build, and manual gameplay remain outstanding.
 
 Stop when a milestone completes and report the status of all milestones; resume only when the
 user instructs. If investigation changes scope, ordering, or the number of milestones, update this tracker and explicitly notify the

@@ -200,7 +200,8 @@ static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sour
             struct FusionPotentialEvolution *root;
             bool8 rootActive;
 
-            if ((phase == BERSERK_GENE_PHASE_1 && isPhase2)
+            if ((evolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_SPLIT_FROM_EVO
+             || (phase == BERSERK_GENE_PHASE_1 && isPhase2)
              || (phase == BERSERK_GENE_PHASE_2 && !isPhase2))
                 continue;
 
@@ -236,6 +237,8 @@ static u8 CollectEvolutionCandidates(struct DayCare *daycare, u8 mon, bool8 sour
         for (i = 0; evolutions[i].method != EVOLUTIONS_END && count < maxCandidates; i++)
         {
             u8 conditionSetId = GetEvolutionConditionSetId(evolutions[i].params);
+            if (evolutions[i].method == EVO_SPLIT_FROM_EVO)
+                continue;
             if (evolutions[i].params != NULL && conditionSetId == 0)
                 continue; // malformed/unregistered source data; never discard conditions silently
 
@@ -278,6 +281,8 @@ static void CollectSelectedLineDescendants(struct DayCare *daycare, u8 parentMon
 
                 if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
                     break;
+                if ((evolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_SPLIT_FROM_EVO)
+                    continue;
                 if (*nodeCount < MAX_FUSION_POTENTIAL_EVOLUTIONS * (MAX_BERSERK_GENE_EVOLUTION_CANDIDATES + 1))
                 {
                     nodes[*nodeCount] = *evolution;
@@ -308,6 +313,8 @@ static void CollectSelectedLineDescendants(struct DayCare *daycare, u8 parentMon
             struct FusionPotentialEvolution candidate;
             u8 conditionSetId = GetEvolutionConditionSetId(evolutions[i].params);
 
+            if (evolutions[i].method == EVO_SPLIT_FROM_EVO)
+                continue;
             if (evolutions[i].params != NULL && conditionSetId == 0)
                 continue;
 

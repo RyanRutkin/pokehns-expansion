@@ -658,51 +658,89 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
     EXPECT(sawPidgeotContinuation);
 }
 
+TEST("Fusion Shedinja split-only entries are excluded from breeding evolution candidates")
+{
+    struct BerserkGeneProfile *profile;
+    bool8 sawNinjask = FALSE, sawMetapod = FALSE;
+    u16 gene = ITEM_BERSERK_GENE;
+    u8 i;
+
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_NINCADA, 50, 255, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_CATERPIE, 50, 1, OTID_STRUCT_PLAYER_ID);
+    SetMonData(&gPlayerParty[0], MON_DATA_HELD_ITEM, &gene);
+    SetMonData(&gPlayerParty[1], MON_DATA_HELD_ITEM, &gene);
+    gPlayerPartyCount = 2;
+    StorePokemonInDaycare(&gPlayerParty[0], &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&gPlayerParty[0], &gSaveBlock1Ptr->daycare.mons[1]);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+    GiveEggFromDaycare();
+    profile = GetBerserkGeneProfile(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
+    EXPECT(profile != NULL);
+    for (i = 0; i < profile->potentialEvolutionCount; i++)
+    {
+        const struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
+        EXPECT_NE(evolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK, EVO_SPLIT_FROM_EVO);
+        EXPECT_NE(evolution->targetSpecies, SPECIES_SHEDINJA);
+        if (evolution->targetSpecies == SPECIES_NINJASK)
+            sawNinjask = TRUE;
+        if (evolution->targetSpecies == SPECIES_METAPOD)
+            sawMetapod = TRUE;
+    }
+    EXPECT(sawNinjask);
+    EXPECT(sawMetapod);
+}
+
 TEST("(Daycare) Matching unconditional level evolutions are stored as a paired fusion phase")
 {
     u16 profileId;
     struct BerserkGeneProfile *profile;
-    bool32 sawPupitar = FALSE, sawRaticate = FALSE, sawTyranitar = FALSE;
+    bool32 sawPupitar = FALSE, sawCharmeleon = FALSE, sawTyranitar = FALSE, sawCharizard = FALSE;
+    u8 oldOneType = gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge;
     u8 phase1Count = 0;
     u8 i;
 
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     ZeroPlayerPartyMons();
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_LARVITAR, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
-        givemon SPECIES_RATTATA, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
+        givemon SPECIES_CHARMANDER, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
     );
     STORE_IN_DAYCARE_AND_GET_EGG();
 
     profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
     profile = GetBerserkGeneProfile(profileId);
     EXPECT(profile != NULL);
-    EXPECT_EQ(profile->potentialEvolutionCount, 3);
+    EXPECT_EQ(profile->potentialEvolutionCount, 4);
 
     for (i = 0; i < profile->potentialEvolutionCount; i++)
     {
         struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
         if (evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
         {
-            EXPECT_EQ(evolution->targetSpecies, SPECIES_TYRANITAR);
+            EXPECT(evolution->targetSpecies == SPECIES_TYRANITAR || evolution->targetSpecies == SPECIES_CHARIZARD);
             EXPECT_EQ(evolution->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING, 0);
-            sawTyranitar = TRUE;
+            sawTyranitar |= evolution->targetSpecies == SPECIES_TYRANITAR;
+            sawCharizard |= evolution->targetSpecies == SPECIES_CHARIZARD;
         }
         else
         {
             phase1Count++;
             EXPECT_EQ(evolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK, EVO_LEVEL);
             EXPECT_EQ(evolution->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING, EVO_POTENTIAL_PAIRED_WITH_SIBLING);
-            EXPECT_EQ(evolution->param, 25);
+            EXPECT_EQ(evolution->param, 23);
             if (evolution->targetSpecies == SPECIES_PUPITAR)
                 sawPupitar = TRUE;
-            if (evolution->targetSpecies == SPECIES_RATICATE)
-                sawRaticate = TRUE;
+            if (evolution->targetSpecies == SPECIES_CHARMELEON)
+                sawCharmeleon = TRUE;
         }
     }
     EXPECT_EQ(phase1Count, 2);
     EXPECT(sawPupitar);
-    EXPECT(sawRaticate);
+    EXPECT(sawCharmeleon);
     EXPECT(sawTyranitar);
+    EXPECT(sawCharizard);
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = oldOneType;
 }
 
 TEST("(Daycare) A Berserk Gene egg stores and projects the selected Poliwag line's Phase 2 branches")

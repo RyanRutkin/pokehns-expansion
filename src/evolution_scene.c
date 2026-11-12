@@ -1,6 +1,7 @@
 #include "global.h"
 #include "malloc.h"
 #include "battle.h"
+#include "battle_pyramid.h"
 #include "challenge_menu.h"
 #include "battle_message.h"
 #include "bg.h"
@@ -53,7 +54,9 @@ struct EvoInfo
     enum PokemonCry postEvoCryId;
     bool8 hasFusionProfile;
     bool8 hasPreparedProfile;
+    u8 fusionChoice;
     struct BerserkGeneProfile preparedProfile;
+    struct BerserkGeneProfile preEvolutionProfile;
 };
 
 static EWRAM_DATA struct EvoInfo *sEvoStructPtr = NULL;
@@ -82,6 +85,9 @@ static void PrepareEvolutionAppearance(struct Pokemon *mon, u16 targetSpecies, u
 {
     sEvoStructPtr->preEvoSpriteSpecies = GetMonDisplaySpriteSpecies(mon);
     sEvoStructPtr->hasFusionProfile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) != NULL;
+    sEvoStructPtr->fusionChoice = fusionChoice;
+    if (sEvoStructPtr->hasFusionProfile)
+        sEvoStructPtr->preEvolutionProfile = *GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
     sEvoStructPtr->preEvoCryId = GetMonCryId(mon);
     sEvoStructPtr->hasPreparedProfile = PrepareBerserkGeneProfileEvolutionForChoice(mon, targetSpecies, fusionChoice,
         &sEvoStructPtr->preparedProfile);
@@ -598,24 +604,61 @@ static void CreateShedinja(u32 preEvoSpecies, u32 postEvoSpecies, struct Pokemon
 {
     u32 data = 0;
     u16 ball = ITEM_POKE_BALL;
-    const struct Evolution *evolutions = GetSpeciesEvolutions(preEvoSpecies);
+    const struct Evolution *evolutions;
 
+    if (InBattlePyramid_())
+        return;
+    evolutions = GetSpeciesEvolutions(sEvoStructPtr->hasFusionProfile ? SPECIES_NINCADA : preEvoSpecies);
     if (evolutions == NULL)
         return;
 
     for (u32 i = 0; evolutions[i].method != EVOLUTIONS_END; i++)
     {
         if (evolutions[i].method == EVO_SPLIT_FROM_EVO
-         && evolutions[i].param == postEvoSpecies
+         && (sEvoStructPtr->hasFusionProfile || evolutions[i].param == postEvoSpecies)
          && gPlayerPartyCount < GetMaxPartySize()
          && DoesMonMeetAdditionalConditions(mon, evolutions[i].params, NULL, PARTY_SIZE, NULL, CHECK_EVO))
         {
             s32 j;
             struct Pokemon *shedinja = &gPlayerParty[gPlayerPartyCount];
+            u16 profileId = 0;
+            struct BerserkGeneProfile splitProfile;
+
+            if (sEvoStructPtr->hasFusionProfile)
+            {
+                if (!PrepareBerserkGeneShedinjaProfile(&sEvoStructPtr->preEvolutionProfile,
+                    postEvoSpecies, sEvoStructPtr->fusionChoice, sEvoStructPtr->preEvoSpriteSpecies, &splitProfile))
+                    return;
+                profileId = AllocBerserkGeneProfile();
+                if (profileId != 0)
+                    *GetBerserkGeneProfile(profileId) = splitProfile;
+            }
 
             CopyMon(&gPlayerParty[gPlayerPartyCount], mon, sizeof(struct Pokemon));
             SetMonData(&gPlayerParty[gPlayerPartyCount], MON_DATA_SPECIES, &evolutions[i].targetSpecies);
-            SetMonData(&gPlayerParty[gPlayerPartyCount], MON_DATA_NICKNAME, GetSpeciesName(evolutions[i].targetSpecies));
+            if (sEvoStructPtr->hasFusionProfile)
+            {
+                u32 level = GetLevelFromMonExp(mon);
+                u32 exp = GetMonData(mon, MON_DATA_EXP);
+                enum GrowthRate oldGrowth = GetMonGrowthRate(mon);
+                SetMonData(shedinja, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+                if (profileId == 0)
+                {
+                    enum GrowthRate newGrowth = GetMonGrowthRate(shedinja);
+                    u32 oldBase = gExperienceTables[oldGrowth][level];
+                    u32 newBase = gExperienceTables[newGrowth][level];
+                    if (level < MAX_LEVEL)
+                    {
+                        u32 oldSpan = gExperienceTables[oldGrowth][level + 1] - oldBase;
+                        u32 newSpan = gExperienceTables[newGrowth][level + 1] - newBase;
+                        exp = newBase + (u64)(exp - oldBase) * newSpan / oldSpan;
+                    }
+                    else
+                        exp = newBase;
+                    SetMonData(shedinja, MON_DATA_EXP, &exp);
+                }
+            }
+            SetMonData(shedinja, MON_DATA_NICKNAME, GetMonDisplaySpeciesName(shedinja));
             SetMonData(&gPlayerParty[gPlayerPartyCount], MON_DATA_HELD_ITEM, &data);
             SetMonData(&gPlayerParty[gPlayerPartyCount], MON_DATA_MARKINGS, &data);
             if (P_SHEDINJA_BALL >= GEN_4)
@@ -640,6 +683,7 @@ static void CreateShedinja(u32 preEvoSpecies, u32 postEvoSpecies, struct Pokemon
             GetSetPokedexFlag(SpeciesToNationalPokedexNum(evolutions[i].targetSpecies), FLAG_SET_CAUGHT);
 
             if (GetMonData(shedinja, MON_DATA_SPECIES) == SPECIES_SHEDINJA
+                && profileId == 0
                 && GetMonData(shedinja, MON_DATA_LANGUAGE) == LANGUAGE_JAPANESE
                 && GetMonData(mon, MON_DATA_SPECIES) == SPECIES_NINJASK)
                     SetMonData(shedinja, MON_DATA_NICKNAME, sText_ShedinjaJapaneseName);

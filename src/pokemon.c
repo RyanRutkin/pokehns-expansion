@@ -3779,7 +3779,8 @@ void CalculateMonStats(struct Pokemon *mon)
         return;
 #endif
 
-    if (species == SPECIES_SHEDINJA)
+    if (species == SPECIES_SHEDINJA
+     && GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)) == NULL)
     {
         newMaxHP = 1;
     }
@@ -6216,7 +6217,8 @@ static u8 GetBerserkGeneLineageSources(const struct BerserkGeneProfile *profile,
             u8 flags = node->methodAndSourceParent;
             u8 j;
 
-            if (((flags & EVO_POTENTIAL_PHASE_2) != 0) != phase2
+            if ((flags & EVO_POTENTIAL_METHOD_MASK) == EVO_SPLIT_FROM_EVO
+             || ((flags & EVO_POTENTIAL_PHASE_2) != 0) != phase2
              || ((flags & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0) != parentB
              || ((selectedParentMask & (1 << parentB)) && !(flags & EVO_POTENTIAL_SELECTED)))
                 continue;
@@ -6800,7 +6802,8 @@ static void ReblendBerserkGeneEvolutionBaseStats(struct BerserkGeneProfile *prof
         {
             const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[i];
             bool8 rootParentB;
-            if (root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+            if ((root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+             || (root->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_SPLIT_FROM_EVO)
                 continue;
             rootParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
             if (rootParentB != sourceParentB && counterpartCount < ARRAY_COUNT(counterpartSpecies))
@@ -6920,7 +6923,8 @@ static u8 ProjectBerserkGenePotentialEvolutions(const struct BerserkGeneProfile 
         for (i = 0; i < profile->potentialEvolutionCount; i++)
         {
             const struct FusionPotentialEvolution *evolution = &profile->potentialEvolutions[i];
-            if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+            if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+             && (evolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) != EVO_SPLIT_FROM_EVO)
             {
                 if (projection != NULL)
                     projection[count] = *evolution;
@@ -6953,7 +6957,8 @@ static u8 ProjectBerserkGenePotentialEvolutions(const struct BerserkGeneProfile 
             const struct FusionPotentialEvolution *root;
             bool8 rootIsOppositeSide;
 
-            if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+            if (!(evolution->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+             || (evolution->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_SPLIT_FROM_EVO)
                 continue;
             while (rootIndex > 0 && (profile->potentialEvolutions[rootIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
                 rootIndex--;
@@ -7071,7 +7076,8 @@ static bool8 ApplyBerserkGeneProfileEvolution(struct BerserkGeneProfile *profile
             {
                 const struct FusionPotentialEvolution *root = &profile->potentialEvolutions[rootIndex];
                 bool8 rootSourceParentB;
-                if (root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                if ((root->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                 || (root->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_SPLIT_FROM_EVO)
                     continue;
                 rootSourceParentB = (root->methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT) != 0;
                 if (rootSourceParentB != sourceParentB)
@@ -7128,7 +7134,8 @@ static bool8 ApplyBerserkGeneProfileEvolution(struct BerserkGeneProfile *profile
                 const struct FusionPotentialEvolution *root;
                 bool8 rootIsOppositeSide;
 
-                if (!(node->methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
+                if (!(node->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+                 || (node->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == EVO_SPLIT_FROM_EVO)
                     continue;
                 while (rootIndex > 0
                     && (profile->potentialEvolutions[rootIndex].methodAndSourceParent & EVO_POTENTIAL_PHASE_2))
@@ -7262,6 +7269,55 @@ bool8 PrepareBerserkGeneProfileEvolutionForChoice(struct Pokemon *mon, u16 targe
         return FALSE;
     *prepared = *profile;
     return ApplyBerserkGeneProfileEvolution(prepared, targetSpecies, choice, TRUE, GetMonDisplaySpriteSpecies(mon));
+}
+
+bool8 PrepareBerserkGeneShedinjaProfile(const struct BerserkGeneProfile *source, u16 targetSpecies, u8 choice, u16 previousSpecies, struct BerserkGeneProfile *prepared)
+{
+    u8 indices[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 count = ProjectBerserkGenePotentialEvolutions(source, NULL, indices);
+    u8 i, selected = FUSION_EVOLUTION_CHOICE_NONE, shedinjaIndex = FUSION_EVOLUTION_CHOICE_NONE;
+
+    for (i = 0; i < count; i++)
+    {
+        if ((choice == FUSION_EVOLUTION_CHOICE_NONE || choice == i)
+         && source->potentialEvolutions[indices[i]].targetSpecies == targetSpecies)
+        {
+            selected = i;
+            break;
+        }
+    }
+    if (selected == FUSION_EVOLUTION_CHOICE_NONE)
+        return FALSE;
+    if (targetSpecies == SPECIES_NINJASK)
+        shedinjaIndex = indices[selected];
+    else
+    {
+        const struct FusionPotentialEvolution *chosen = &source->potentialEvolutions[indices[selected]];
+        if (!(chosen->methodAndSourceParent & EVO_POTENTIAL_PHASE_2)
+         && (chosen->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING))
+        {
+            for (i = 0; i < count; i++)
+            {
+                const struct FusionPotentialEvolution *sibling = &source->potentialEvolutions[indices[i]];
+                if (sibling->targetSpecies == SPECIES_NINJASK
+                 && (sibling->methodAndSourceParent & EVO_POTENTIAL_PAIRED_WITH_SIBLING)
+                 && ((sibling->methodAndSourceParent ^ chosen->methodAndSourceParent) & EVO_POTENTIAL_SOURCE_PARENT_BIT)
+                 && (sibling->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK) == (chosen->methodAndSourceParent & EVO_POTENTIAL_METHOD_MASK)
+                 && sibling->param == chosen->param
+                 && sibling->conditionSetId == chosen->conditionSetId)
+                {
+                    shedinjaIndex = indices[i];
+                    break;
+                }
+            }
+        }
+    }
+    if (shedinjaIndex == FUSION_EVOLUTION_CHOICE_NONE)
+        return FALSE;
+    *prepared = *source;
+    prepared->potentialEvolutions[shedinjaIndex].targetSpecies = SPECIES_SHEDINJA;
+    return ApplyBerserkGeneProfileEvolution(prepared,
+        targetSpecies == SPECIES_NINJASK ? SPECIES_SHEDINJA : targetSpecies, selected, TRUE, previousSpecies);
 }
 
 void CommitBerserkGeneProfileEvolution(struct Pokemon *mon, const struct BerserkGeneProfile *prepared)
