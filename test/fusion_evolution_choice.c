@@ -1,8 +1,10 @@
 #include "global.h"
 #include "battle.h"
+#include "battle_pyramid.h"
 #include "evolution_scene.h"
 #include "gba/m4a_internal.h"
 #include "main.h"
+#include "load_save.h"
 #include "m4a.h"
 #include "palette.h"
 #include "pokemon.h"
@@ -16,6 +18,8 @@
 
 extern struct ToneData gCryTable[];
 extern struct MusicPlayerInfo *gMPlay_PokemonCry;
+
+static void EvolutionChoiceReturn(void);
 
 static const struct EvolutionParam sScaleCondition[] = {
     {IF_HOLD_ITEM, ITEM_DEEP_SEA_SCALE, 0, 0}, {CONDITIONS_END}
@@ -88,6 +92,88 @@ static struct BerserkGeneProfile *SetChoiceProfile(struct Pokemon *mon, bool8 ph
     }
     SetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     return profile;
+}
+
+TEST("Fusion Pyramid real evolution scene survives party exit merge")
+{
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile evolvedProfile;
+    MainCallback savedCallback = gMain.callback2;
+    MainCallback savedAfterEvolution = gCB2_AfterEvolution;
+    IntrCallback savedVBlank = gMain.vblankCallback;
+    u32 savedBattleType = gBattleTypeFlags;
+    u16 profileId;
+    u16 moves[MAX_MON_MOVES];
+    u8 nickname[POKEMON_NAME_BUFFER_SIZE], restoredNickname[POKEMON_NAME_BUFFER_SIZE];
+    u16 frame;
+    int i;
+
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_SQUIRTLE, 30, 1, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_PIKACHU, 30, 2, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[2], SPECIES_BULBASAUR, 30, 3, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[3], SPECIES_DRATINI, 60, 4, OTID_STRUCT_PLAYER_ID);
+    gPlayerPartyCount = 4;
+    profile = SetChoiceProfile(&gPlayerParty[3], FALSE, FALSE, EVO_MODE_ITEM_USE);
+    for (i = 0; i < NUM_STATS; i++)
+        profile->baseStats[i] = GetSpeciesBaseStat(SPECIES_DRATINI, i);
+    profile->ability1 = profile->ability2 = profile->abilityHidden = ABILITY_SHED_SKIN;
+    profileId = GetMonData(&gPlayerParty[3], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    SavePlayerParty();
+    gSaveBlock2Ptr->frontier.selectedPartyMons[0] = 4;
+    gSaveBlock2Ptr->frontier.selectedPartyMons[1] = 2;
+    gSaveBlock2Ptr->frontier.selectedPartyMons[2] = 1;
+    gPlayerParty[0] = *GetSavedPlayerPartyMon(1);
+    gPlayerParty[1] = *GetSavedPlayerPartyMon(3);
+    gPlayerParty[2] = *GetSavedPlayerPartyMon(0);
+    gPlayerPartyCount = 3;
+
+    ResetTasks();
+    ResetSpriteData();
+    FreeAllSpritePalettes();
+    ResetPaletteFade();
+    StopCryAndClearCrySongs();
+    gBattleTypeFlags = 0;
+    gCB2_AfterEvolution = EvolutionChoiceReturn;
+    EvolutionScene(&gPlayerParty[1], SPECIES_DRAGONAIR, FALSE, 1, 1);
+    for (frame = 0; frame < 3000 && gMain.callback2 != EvolutionChoiceReturn; frame++)
+    {
+        gMain.newKeys = B_BUTTON;
+        gMain.heldKeys = B_BUTTON;
+        gMain.callback2();
+        m4aSoundMain();
+        gPaletteFade.active = FALSE;
+    }
+    EXPECT_EQ(gMain.callback2, EvolutionChoiceReturn);
+    EXPECT_EQ(GetMonData(&gPlayerParty[1], MON_DATA_SPECIES), SPECIES_DRAGONAIR);
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_DRAGONAIR);
+    evolvedProfile = *profile;
+    GetMonData(&gPlayerParty[1], MON_DATA_NICKNAME, nickname);
+    for (i = 0; i < MAX_MON_MOVES; i++)
+        moves[i] = GetMonData(&gPlayerParty[1], MON_DATA_MOVE1 + i);
+    SavePyramidFusionPartyChanges();
+    LoadPlayerParty();
+    EXPECT_EQ(gPlayerPartyCount, 4);
+    EXPECT_EQ(GetMonData(&gPlayerParty[3], MON_DATA_SPECIES), SPECIES_DRAGONAIR);
+    EXPECT_EQ(GetMonData(&gPlayerParty[3], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT_EQ(memcmp(GetBerserkGeneProfile(profileId), &evolvedProfile, sizeof(evolvedProfile)), 0);
+    GetMonData(&gPlayerParty[3], MON_DATA_NICKNAME, restoredNickname);
+    EXPECT_EQ(StringCompare(nickname, restoredNickname), 0);
+    for (i = 0; i < MAX_MON_MOVES; i++)
+        EXPECT_EQ(GetMonData(&gPlayerParty[3], MON_DATA_MOVE1 + i), moves[i]);
+    EXPECT_EQ(GetMonData(&gPlayerParty[2], MON_DATA_SPECIES), SPECIES_BULBASAUR);
+
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[3].box);
+    StopCryAndClearCrySongs();
+    ResetTasks();
+    ResetSpriteData();
+    FreeAllSpritePalettes();
+    gMain.newKeys = 0;
+    gMain.heldKeys = 0;
+    gBattleTypeFlags = savedBattleType;
+    gCB2_AfterEvolution = savedAfterEvolution;
+    SetVBlankCallback(savedVBlank);
+    SetMainCallback2(savedCallback);
 }
 
 TEST("Fusion same-target evolution retains the condition-matched branch through preparation and commit")

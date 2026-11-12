@@ -97,7 +97,7 @@
 	special CallBattlePyramidFunction
 	.endm
 
-	@ Reset sketched moves and update the party order in the saveblock
+	@ Restore ordinary sketched moves and update the party order in the saveblock
 	.macro pyramid_resetparty
 	setvar VAR_0x8004, BATTLE_PYRAMID_FUNC_RESTORE_PARTY
 	special CallBattlePyramidFunction

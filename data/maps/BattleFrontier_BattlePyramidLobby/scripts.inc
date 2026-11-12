@@ -53,6 +53,7 @@ BattleFrontier_BattlePyramidLobby_EventScript_GiveBattlePoints::
 	call_if_eq VAR_RESULT, TRUE, BattleFrontier_BattlePyramidLobby_EventScript_StoreHeldItemsInPyramidBag
 	clearflag FLAG_STORING_ITEMS_IN_PYRAMID_BAG
 	frontier_checkairshow
+	callnative SavePyramidFusionPartyChanges
 	special LoadPlayerParty
 	pyramid_clearhelditems
 	special HealPlayerParty
@@ -78,6 +79,7 @@ BattleFrontier_BattlePyramidLobby_EventScript_GiveBattlePoints::
 
 BattleFrontier_BattlePyramidLobby_EventScript_LostChallenge::
 	frontier_checkairshow
+	callnative SavePyramidFusionPartyChanges
 	special LoadPlayerParty
 	pyramid_clearhelditems
 	special HealPlayerParty
@@ -905,4 +907,3 @@ BattleFrontier_BattlePyramidLobby_Text_ExplainBagRules:
 	.string "of ten kinds of items.\p"
 	.string "The contents of the BATTLE BAG are\n"
 	.string "lost if you fail in your quest.$"
-

@@ -4,6 +4,7 @@
 #include "event_data.h"
 #include "frontier_util.h"
 #include "pokemon.h"
+#include "pokemon_storage_system.h"
 #include "battle.h"
 #include "battle_setup.h"
 #include "battle_tower.h"
@@ -943,7 +944,8 @@ static void SavePyramidChallenge(void)
     VarSet(VAR_TEMP_CHALLENGE_STATUS, 0);
     gSaveBlock2Ptr->frontier.challengePaused = TRUE;
     SaveMapView();
-    TrySavingData(SAVE_LINK);
+    // Fusion profiles live in Pokemon storage and must be saved with the party.
+    TrySavingData(SAVE_NORMAL);
 }
 
 static void SetBattlePyramidPrize(void)
@@ -1233,19 +1235,36 @@ static void BattlePyramidStartMenu(void)
 static void RestorePyramidPlayerParty(void)
 {
     int i, j, k, l;
+    u8 matchedParty = 0;
 
     for (i = 0; i < FRONTIER_PARTY_SIZE; i++)
     {
         int partyIndex = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
+        struct Pokemon *savedMon;
+        u16 savedProfileId;
+
+        if (partyIndex < 0 || partyIndex >= PARTY_SIZE)
+            continue;
+        savedMon = GetSavedPlayerPartyMon(partyIndex);
+        savedProfileId = GetMonData(savedMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
         for (j = 0; j < FRONTIER_PARTY_SIZE; j++)
         {
-            if (GetMonData(GetSavedPlayerPartyMon(partyIndex), MON_DATA_SPECIES) == GetMonData(&gPlayerParty[j], MON_DATA_SPECIES))
+            bool8 sameFusion = GetBerserkGeneProfile(savedProfileId) != NULL
+                            && savedProfileId == GetMonData(&gPlayerParty[j], MON_DATA_BERSERK_GENE_PROFILE_ID);
+            bool8 sameOrdinaryMon = savedProfileId == 0
+                                && GetMonData(&gPlayerParty[j], MON_DATA_BERSERK_GENE_PROFILE_ID) == 0
+                                && GetMonData(savedMon, MON_DATA_SPECIES) == GetMonData(&gPlayerParty[j], MON_DATA_SPECIES)
+                                && GetMonData(savedMon, MON_DATA_PERSONALITY) == GetMonData(&gPlayerParty[j], MON_DATA_PERSONALITY)
+                                && GetMonData(savedMon, MON_DATA_OT_ID) == GetMonData(&gPlayerParty[j], MON_DATA_OT_ID);
+
+            if (!(matchedParty & (1 << j)) && (sameFusion || sameOrdinaryMon))
             {
-                for (k = 0; k < MAX_MON_MOVES; k++)
+                // MVP fusions keep moves learned during the challenge, including Sketch.
+                for (k = 0; k < MAX_MON_MOVES && !sameFusion; k++)
                 {
                     for (l = 0; l < MAX_MON_MOVES; l++)
                     {
-                        if (GetMonData(GetSavedPlayerPartyMon(partyIndex), MON_DATA_MOVE1 + l) == GetMonData(&gPlayerParty[j], MON_DATA_MOVE1 + k))
+                        if (GetMonData(savedMon, MON_DATA_MOVE1 + l) == GetMonData(&gPlayerParty[j], MON_DATA_MOVE1 + k))
                             break;
                     }
                     if (l == MAX_MON_MOVES)
@@ -1253,6 +1272,7 @@ static void RestorePyramidPlayerParty(void)
                 }
                 SavePlayerPartyMon(partyIndex, &gPlayerParty[j]);
                 gSelectedOrderFromParty[j] = partyIndex + 1;
+                matchedParty |= 1 << j;
                 break;
             }
         }
@@ -1260,6 +1280,31 @@ static void RestorePyramidPlayerParty(void)
 
     for (i = 0; i < FRONTIER_PARTY_SIZE; i++)
         gSaveBlock2Ptr->frontier.selectedPartyMons[i] = gSelectedOrderFromParty[i];
+}
+
+void SavePyramidFusionPartyChanges(void)
+{
+    int i, j;
+
+    for (i = 0; i < FRONTIER_PARTY_SIZE; i++)
+    {
+        int partyIndex = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
+        u16 profileId;
+
+        if (partyIndex < 0 || partyIndex >= PARTY_SIZE)
+            continue;
+        profileId = GetMonData(GetSavedPlayerPartyMon(partyIndex), MON_DATA_BERSERK_GENE_PROFILE_ID);
+        if (GetBerserkGeneProfile(profileId) == NULL)
+            continue;
+        for (j = 0; j < FRONTIER_PARTY_SIZE; j++)
+        {
+            if (GetMonData(&gPlayerParty[j], MON_DATA_BERSERK_GENE_PROFILE_ID) == profileId)
+            {
+                SavePlayerPartyMon(partyIndex, &gPlayerParty[j]);
+                break;
+            }
+        }
+    }
 }
 
 static u8 GetPostBattleDirectionHintTextIndex(int *hintType, u8 minDistanceForExitHint, u8 defaultHintType)

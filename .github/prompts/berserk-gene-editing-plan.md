@@ -815,6 +815,7 @@ validation has been completed.
 | Link compatibility | Deferred until after initial MVP | Complete and verify link restrictions or profile transfer, including coordinated cancellation and multiplayer testing. Until then, do not use fusion link actions. |
 | External profile storage | Deferred until after initial MVP, planned before release | Replace the temporary eight-profile internal capacity with external storage after the user can experiment with the MVP. |
 | Fusion battle recording support | Deferred until after initial MVP | Enable reliable recording and playback with the fusion profiles captured at battle time. Until then, disable recording fusion battles while retaining ordinary battle recordings. |
+| Pyramid evolution rollback | Deferred until after external profile-storage migration | Revisit the temporary MVP behavior so fusion evolutions during the challenge revert after it, like other party Pokémon. |
 
 ### Post-MVP decisions and MVP limitations (2026-11-12)
 
@@ -828,6 +829,10 @@ validation has been completed.
   implemented and has focused automated coverage; full regression and manual validation remain.
   Defer full fusion recording and playback support, including safe profile snapshots, until
   after the initial MVP.
+- **Battle Pyramid evolution:** for the MVP, retain fusion evolutions after the challenge.
+  After the deferred external profile-storage migration, revisit this behavior and revert
+  challenge evolution changes like other party Pokémon. For now, keep all changes to fusions,
+  including evolution, evolution-learned moves, and Sketch moves, when exiting the Pyramid.
 - **Previous-build/save compatibility:** not required unless the user explicitly requests it;
   it is not an automatic post-MVP migration requirement. Normal save/reload for the current
   build remains part of MVP validation.
@@ -907,10 +912,37 @@ audit of other ways profile data could change during a challenge. In particular,
 held items can be moved into the persistent Pyramid bag after a completed challenge; a later
 challenge can use that bag's field items, including an evolution item. An item-triggered
 fusion evolution mutates its profile, while a Pyramid partial save writes the party but not
-profile storage, and the original party can also be restored after the challenge. This is a
-potential party/profile mismatch; the end-to-end path has not yet been reproduced. Decide how
-to preserve consistent profiles for temporary Frontier parties before treating partial-save
-validation as complete.
+profile storage, and the original party can also be restored after the challenge. The user
+chose to support fusion evolution in Pyramid challenges rather than block it.
+
+A temporary flash-backed test confirmed the underlying partial-save mismatch: after a full
+save, changing a fusion's species and profile, then writing `SAVE_LINK` and reloading, the
+new species was paired with the old profile. The test exercised the actual save/load path
+but did not simulate the Pyramid scene; it was removed after characterization. A separate
+issue is that `RestorePyramidPlayerParty` matches by species, so it cannot match an evolved
+Pokémon to the original species. Pyramid can also restore the original party on exit.
+The user chose to keep fusion evolutions after the challenge for the MVP, then revisit
+reverting them after the external-storage migration.
+
+Work in progress: Pyramid challenge saves now use the full-save path, party restoration
+matches valid fusion profiles by ID, and the user chose to keep fusion Sketch and
+evolution-learned moves. Win/loss/retire merge fusion party records before restoring the
+original party. On ordinary floor transitions `frontier_getstatus` converts challenge status
+zero to 0xFF, so the floor's `ReadyChallenge` save is not invoked; when resuming a paused
+challenge, `PausePyramidChallenge` previously restored the full party before the pause save.
+Focused command `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid'` passed seven tests:
+profile-ID restoration, ordinary same-species party ordering, fusion-only exit merge, held
+item transfer and clearing, a flash-backed challenge save, a flash-backed pause/resume sequence
+with the full party, and an actual evolution scene followed by exit merge. The tests do not
+run the complete Pyramid win/loss/retire scripts or item-use scene; manual behavior and
+interrupted saves remain unverified. Do not treat Pyramid fusion evolution as safe for manual
+testing yet.
+
+The EV-yield audit is not complete. Normal wild and scripted enemies are created from species,
+secret-base opponents are reconstructed from species-only records, and EV/EXP awards are blocked
+in link and Frontier battles. Recorded wild battles are an explicit EXP exception, but fusion
+recordings are currently blocked. Do not resolve an opponent's local profile ID in this path
+without first establishing its ownership and reachability.
 The battle EV-award investigation, remaining lifecycle audit, special saves, full regression,
 and production build remain open.
 
