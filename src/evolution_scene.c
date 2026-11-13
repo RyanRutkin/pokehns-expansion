@@ -631,7 +631,10 @@ static void CreateShedinja(u32 preEvoSpecies, u32 postEvoSpecies, struct Pokemon
                     return;
                 profileId = AllocBerserkGeneProfile();
                 if (profileId != 0)
+                {
+                    CopyBerserkGeneProfile(profileId, GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
                     *GetBerserkGeneProfile(profileId) = splitProfile;
+                }
             }
 
             CopyMon(&gPlayerParty[gPlayerPartyCount], mon, sizeof(struct Pokemon));

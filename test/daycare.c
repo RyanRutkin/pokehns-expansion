@@ -1736,6 +1736,7 @@ TEST("Fusion growth breeding inherits stored parent curves and initializes egg E
 
 TEST("Fusion rebreeding copies the eligible parent without a gene")
 {
+    struct BerserkGeneLineage expectedLineage = {0};
     struct Pokemon fusion, other;
     struct BerserkGeneProfile *parent, *child;
     struct BerserkGeneProfile expected;
@@ -1769,6 +1770,9 @@ TEST("Fusion rebreeding copies the eligible parent without a gene")
     parent->eggCycles = 71;
     parent->growthRate = GROWTH_ERRATIC;
     parent->baseStats[STAT_HP] = 90;
+    expectedLineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_EEVEE, 1234, 8};
+    expectedLineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_APPLIN, 4321, 3};
+    *GetBerserkGeneLineage(parentId) = expectedLineage;
     SetMonData(&fusion, MON_DATA_BERSERK_GENE_PROFILE_ID, &parentId);
     StorePokemonInDaycare(&fusion, &gSaveBlock1Ptr->daycare.mons[fusionSlot]);
     StorePokemonInDaycare(&other, &gSaveBlock1Ptr->daycare.mons[fusionSlot ^ 1]);
@@ -1802,6 +1806,9 @@ TEST("Fusion rebreeding copies the eligible parent without a gene")
         expected.inheritanceFlags = (expected.inheritanceFlags & ~BERSERK_GENE_ACTIVE_ABILITY_SLOT_MASK)
                                   | (slot << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
         EXPECT_EQ(memcmp(child, &expected, sizeof(expected)), 0);
+        EXPECT_EQ(memcmp(GetBerserkGeneLineage(childId), &expectedLineage, sizeof(expectedLineage)), 0);
+        GetBerserkGeneLineage(childId)->contributors[0].age = UINT16_MAX;
+        EXPECT_EQ(memcmp(GetBerserkGeneLineage(parentId), &expectedLineage, sizeof(expectedLineage)), 0);
         EXPECT_EQ(parent->gender, mode == 3 ? MON_MALE : MON_FEMALE);
         EXPECT_EQ(parent->inheritanceFlags, 2 << BERSERK_GENE_ACTIVE_ABILITY_SLOT_SHIFT);
         sawHidden |= slot == 2;

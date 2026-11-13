@@ -340,6 +340,18 @@ struct ChallengeSettings
     u8 tx_Features_ShinyChance:4;
 };
 
+struct __attribute__((packed, aligned(2))) BerserkGeneContributor
+{
+    u16 species;
+    u16 weight;
+    u16 age;
+};
+
+struct BerserkGeneLineage
+{
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+};
+
 struct SaveBlock3
 {
     struct SiiRtcInfo fakeRTC;
@@ -358,6 +370,8 @@ struct SaveBlock3
 #endif
     struct ChallengeSettings challengeSettings;
     u16 registeredItemHold;
+    struct BerserkGeneLineage berserkGeneLineages[MAX_BERSERK_GENE_PROFILES];
+    struct BerserkGeneLineage pyramidFusionLineages[FRONTIER_PARTY_SIZE];
 }; /* max size 1624 bytes */
 
 extern struct SaveBlock3 *gSaveBlock3Ptr;

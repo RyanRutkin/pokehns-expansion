@@ -861,6 +861,7 @@ static void InitPyramidChallenge(void)
     u32 i;
 
     memset(gPokemonStoragePtr->pyramidFusionSnapshots, 0, sizeof(gPokemonStoragePtr->pyramidFusionSnapshots));
+    memset(gSaveBlock3Ptr->pyramidFusionLineages, 0, sizeof(gSaveBlock3Ptr->pyramidFusionLineages));
     for (i = 0; i < FRONTIER_PARTY_SIZE; i++)
     {
         u16 partyIndex = gSaveBlock2Ptr->frontier.selectedPartyMons[i] - 1;
@@ -879,6 +880,7 @@ static void InitPyramidChallenge(void)
             continue;
         *GetPyramidFusionMonSnapshot(i) = mon->box;
         gPokemonStoragePtr->pyramidFusionSnapshots[i].profile = *profile;
+        gSaveBlock3Ptr->pyramidFusionLineages[i] = *GetBerserkGeneLineage(profileId);
         gPokemonStoragePtr->pyramidFusionSnapshots[i].partyIndex = partyIndex;
     }
 
@@ -1332,9 +1334,11 @@ void RestorePyramidFusionEntryState(void)
             continue;
         profile = &gPokemonStoragePtr->berserkGeneProfiles[profileId];
         *profile = snapshot->profile;
+        *GetBerserkGeneLineage(profileId) = gSaveBlock3Ptr->pyramidFusionLineages[i];
         BoxMonToMon(mon, GetSavedPlayerPartyMon(snapshot->partyIndex));
     }
     memset(gPokemonStoragePtr->pyramidFusionSnapshots, 0, sizeof(gPokemonStoragePtr->pyramidFusionSnapshots));
+    memset(gSaveBlock3Ptr->pyramidFusionLineages, 0, sizeof(gSaveBlock3Ptr->pyramidFusionLineages));
 }
 
 static u8 GetPostBattleDirectionHintTextIndex(int *hintType, u8 minDistanceForExitHint, u8 defaultHintType)

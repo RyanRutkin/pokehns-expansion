@@ -193,6 +193,7 @@ TEST("Fusion target methods retain all native alternatives")
 
 TEST("Fusion Shedinja split uses independent branches and ordinary fallback")
 {
+    struct BerserkGeneLineage expectedLineage = {0};
     bool8 donorOnly = FALSE, fullProfiles = FALSE, noBall = FALSE, fullParty = FALSE, ordinary = FALSE;
     bool8 paired = FALSE, otherFirst = FALSE, releaseOriginal = FALSE;
     u16 pyramidLayout = 0;
@@ -232,6 +233,9 @@ TEST("Fusion Shedinja split uses independent branches and ordinary fallback")
         u32 exp = gExperienceTables[GROWTH_SLOW][20] + 25;
         profile = SetChoiceProfile(&gPlayerParty[0], FALSE, FALSE, EVO_MODE_NORMAL);
         originalId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        expectedLineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_NINCADA, 1000, 5};
+        expectedLineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_EEVEE, 2000, 9};
+        *GetBerserkGeneLineage(originalId) = expectedLineage;
         profile->parentSpeciesA = SPECIES_NINCADA;
         profile->parentSpeciesB = SPECIES_EEVEE;
         profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_NINJASK, 20, EVO_LEVEL, 0};
@@ -334,6 +338,9 @@ TEST("Fusion Shedinja split uses independent branches and ordinary fallback")
             u32 level, expectedHp;
             EXPECT_NE(splitId, originalId);
             EXPECT(split != NULL);
+            EXPECT_EQ(memcmp(GetBerserkGeneLineage(splitId), &expectedLineage, sizeof(expectedLineage)), 0);
+            GetBerserkGeneLineage(splitId)->contributors[0].age = UINT16_MAX;
+            EXPECT_EQ(memcmp(GetBerserkGeneLineage(originalId), &expectedLineage, sizeof(expectedLineage)), 0);
             EXPECT_EQ(split->parentSpeciesA, SPECIES_SHEDINJA);
             EXPECT_EQ(split->parentSpeciesB, SPECIES_JOLTEON);
             EXPECT_NE(split->ability1, ABILITY_WONDER_GUARD);

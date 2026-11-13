@@ -57,6 +57,8 @@ void SetBoxMonAt(u8 boxId, u8 boxPosition, struct BoxPokemon *src);
 void CopyBoxMonAt(u8 boxId, u8 boxPosition, struct BoxPokemon *dst);
 void ZeroBoxMonAt(u8 boxId, u8 boxPosition);
 struct BerserkGeneProfile *GetBerserkGeneProfile(u16 profileId);
+struct BerserkGeneLineage *GetBerserkGeneLineage(u16 profileId);
+void CopyBerserkGeneProfile(u16 destinationId, u16 sourceId);
 u16 AllocBerserkGeneProfile(void);
 void FreeBerserkGeneProfile(u16 profileId);
 bool8 IsBerserkGeneProfileTableFull(void);

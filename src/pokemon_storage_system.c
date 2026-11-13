@@ -1732,6 +1732,7 @@ void ResetPokemonStorageSystem(void)
     u16 boxId, boxPosition;
 
     memset(gPokemonStoragePtr->pyramidFusionSnapshots, 0, sizeof(gPokemonStoragePtr->pyramidFusionSnapshots));
+    memset(gSaveBlock3Ptr->pyramidFusionLineages, 0, sizeof(gSaveBlock3Ptr->pyramidFusionLineages));
     SetCurrentBox(0);
     for (boxId = 0; boxId < TOTAL_BOXES_COUNT; boxId++)
     {
@@ -9665,6 +9666,24 @@ struct BerserkGeneProfile *GetBerserkGeneProfile(u16 profileId)
     return &gPokemonStoragePtr->berserkGeneProfiles[profileId];
 }
 
+struct BerserkGeneLineage *GetBerserkGeneLineage(u16 profileId)
+{
+    if (GetBerserkGeneProfile(profileId) == NULL)
+        return NULL;
+    return &gSaveBlock3Ptr->berserkGeneLineages[profileId - 1];
+}
+
+void CopyBerserkGeneProfile(u16 destinationId, u16 sourceId)
+{
+    struct BerserkGeneProfile *destination = GetBerserkGeneProfile(destinationId);
+    const struct BerserkGeneProfile *source = GetBerserkGeneProfile(sourceId);
+
+    assertf(destination != NULL && source != NULL, "Invalid fusion profile copy %d -> %d", sourceId, destinationId)
+        return;
+    *destination = *source;
+    *GetBerserkGeneLineage(destinationId) = *GetBerserkGeneLineage(sourceId);
+}
+
 u16 AllocBerserkGeneProfile(void)
 {
     u16 profileId;
@@ -9676,6 +9695,7 @@ u16 AllocBerserkGeneProfile(void)
         {
             memset(profile, 0, sizeof(*profile));
             profile->inUse = TRUE;
+            memset(GetBerserkGeneLineage(profileId), 0, sizeof(struct BerserkGeneLineage));
             return profileId;
         }
     }
@@ -9689,6 +9709,7 @@ void FreeBerserkGeneProfile(u16 profileId)
         return;
 
     memset(&gPokemonStoragePtr->berserkGeneProfiles[profileId], 0, sizeof(gPokemonStoragePtr->berserkGeneProfiles[profileId]));
+    memset(&gSaveBlock3Ptr->berserkGeneLineages[profileId - 1], 0, sizeof(struct BerserkGeneLineage));
 }
 
 // Read-only capacity check (does not allocate). Used to gate Berserk Gene egg production

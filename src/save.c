@@ -81,6 +81,10 @@ struct
 // These will produce an error if a save struct is larger than the space
 // alloted for it in the flash.
 STATIC_ASSERT(sizeof(struct SaveBlock3) <= SAVE_BLOCK_3_CHUNK_SIZE * NUM_SECTORS_PER_SLOT, SaveBlock3FreeSpace);
+STATIC_ASSERT(offsetof(struct SaveBlock3, registeredItemHold) == 48, SaveBlock3RegisteredItemPinned);
+STATIC_ASSERT(offsetof(struct SaveBlock3, berserkGeneLineages) == 52, SaveBlock3LegacyPrefix);
+STATIC_ASSERT(sizeof(struct BerserkGeneContributor) == 6, BerserkGeneContributorSize);
+STATIC_ASSERT(sizeof(struct BerserkGeneLineage) == 48, BerserkGeneLineageSize);
 
 // ChallengeSettings is a packed bitfield block living in SaveBlock3 ahead of
 // registeredItemHold, so growing it shifts that member and silently corrupts
@@ -984,6 +988,13 @@ u8 LoadGameSave(u8 saveType)
         memmove(gPokemonStoragePtr->fusions, gPokemonStoragePtr->berserkGeneProfiles, sizeof(gPokemonStoragePtr->fusions));
         memset(gPokemonStoragePtr->berserkGeneProfiles, 0, sizeof(gPokemonStoragePtr->berserkGeneProfiles));
         gSaveBlock1Ptr->saveVersion = 6;
+    }
+
+    if (gSaveBlock1Ptr->saveVersion < 7)
+    {
+        memset(gSaveBlock3Ptr->berserkGeneLineages, 0, sizeof(gSaveBlock3Ptr->berserkGeneLineages));
+        memset(gSaveBlock3Ptr->pyramidFusionLineages, 0, sizeof(gSaveBlock3Ptr->pyramidFusionLineages));
+        gSaveBlock1Ptr->saveVersion = 7;
     }
 
     // Add version migration steps here:

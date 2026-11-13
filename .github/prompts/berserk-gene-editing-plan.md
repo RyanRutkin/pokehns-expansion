@@ -66,6 +66,55 @@ fusion-specific values, such as a merged weighted level, in the profile. Validat
 and additional-condition checks; do not introduce a separate fixed condition cap unless the
 implementation requires one and its behavior has been decided.
 
+Persistent contributor storage checkpoint (2026-11-13): the user approved appending
+internal lineage metadata to SaveBlock3 rather than moving legacy PokemonStorage fields
+or reducing contributor weight/age precision. Each of the eight active profile IDs owns
+one eight-contributor sidecar; three additional sidecars accompany Battle Pyramid entry
+snapshots. Contributor species, weight, and age remain full 16-bit values.
+
+Compiler measurements corrected the earlier capacity estimate: the unchanged HNS
+SaveBlock3 is **52 bytes**, not the existing test pin's 84 bytes; registeredItemHold
+remains at offset 48. The APCS GNU ABI otherwise pads a six-byte contributor struct
+to eight bytes. Explicit packed, halfword-aligned contributor records occupy six bytes,
+so each lineage occupies 48 bytes. Sidecars start at offset 52; SaveBlock3 now occupies
+**580 bytes**, leaving **1,044 bytes** of its 1,624-byte flash capacity. Static assertions
+pin the legacy member offset, appended boundary, and record sizes. PokemonStorage
+and its legacy item-fusion slots are not moved by this change.
+
+Save version 7 zero-initializes appended lineage tables on older saves. The version-6
+profile migration still preserves pre-version-6 item-fusion slots. Existing method-based
+profiles are retained, with empty lineage metadata until live contributor breeding is wired.
+Allocation/free clear the corresponding sidecar; profile copying includes an independent
+lineage copy. No-gene egg inheritance and Shedinja splits use that shared copy operation.
+Pyramid entry, full save/reload, rollback, and snapshot clearing include lineage metadata.
+New-game initialization clears SaveBlock3 through the existing whole-block reset.
+
+Validation: the HNS test ROM compiled and linked successfully with the enlarged block.
+Each command below passed, including all parameterized cases selected:
+
+- `make -k check BUILD=hns -j8 TESTS='Fusion lineage'`: 5 tests, including allocation,
+  copy/free, and version-5/6 migration.
+- `make -k check BUILD=hns -j8 TESTS='Fusion rebreeding copies'`: 1 test, checking
+  independent lineage inheritance.
+- `make -k check BUILD=hns -j8 TESTS='Fusion facility partial saves'`: 1 test,
+  including Pike and Frontier partial saves.
+- `make -k check BUILD=hns -j8 TESTS='Fusion Shedinja split uses'`: 1 test,
+  including independent lineage copies and ordinary fallback.
+- `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid snapshots'`: 1 test,
+  including three saved lineages, mutation, profile-slot free/reuse, rollback, and reload.
+- `make -k check BUILD=hns -j8 TESTS='Fusion normal save'`: 1 test, preserving
+  party and boxed lineages.
+- `make -k check BUILD=hns -j8 TESTS='SaveBlock3 is backwards compatible'`: 1 test.
+- `make -k check BUILD=hns -j8 TESTS='Fusion Mirror Thief Frontier'`: 2 tests.
+
+Broader validation is not fully green: `make -k check BUILD=hns -j8 TESTS='test/save.c'`
+passed 17 of 20 tests. SaveBlock2 reports 3,892 bytes against its unchanged 3,884-byte
+test pin. The facility partial-save and Mirror Thief partial-save tests fail party-count
+checks in that suite but pass when selected independently; their suite-only cause remains
+unresolved. No unrelated SaveBlock2 or Frontier behavior was changed to mask those results.
+Production linking and manual emulator validation remain outstanding. Milestone 3 remains
+open: persistent compact evolution state and live base-contributor breeding are not yet wired.
+
 Evolution-move availability specification (2026-11-13): after determining
 and pruning target species, collect requirements from every retained source route, alternative
 method, and both evolution stages. Deduplicate explicit moves named by `IF_KNOWS_MOVE`

@@ -6,16 +6,6 @@
 struct FusionPotentialEvolution;
 struct Evolution;
 
-#define MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE 4
-#define MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES (MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE * 2)
-
-struct BerserkGeneContributor
-{
-    u16 species;
-    u16 weight;
-    u16 age;
-};
-
 #define BERSERK_GENE_ROOT_NODE UINT16_MAX
 
 struct BerserkGeneEvolutionNode

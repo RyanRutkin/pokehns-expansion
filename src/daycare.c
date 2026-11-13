@@ -971,7 +971,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
         if (profileId == 0)
             return;
         profile = GetBerserkGeneProfile(profileId);
-        *profile = *source;
+        CopyBerserkGeneProfile(profileId, source - gPokemonStoragePtr->berserkGeneProfiles);
         profile->gender = GetGenderFromSpeciesAndPersonality(GetMonData(egg, MON_DATA_SPECIES),
                                                               GetMonData(egg, MON_DATA_PERSONALITY));
         SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
