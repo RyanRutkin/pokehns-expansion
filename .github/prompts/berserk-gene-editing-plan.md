@@ -117,6 +117,26 @@ Dratini/Poliwag/Eevee/Applin example, eight two-stage contributors, shared targe
 Eevee ties, and two 63-target Milcery pools. The existing eight-entry method-based profile,
 save-layout redesign, and live breeding/evolution changes remain outstanding.
 
+Compact-target groundwork (2026-11-13): pruning now removes a selected species across all
+of its lineage records, rather than randomly deleting individual copies of a shared target.
+It preserves one root per contributor, removes eligible stage-one leaf species first, then
+later-stage-only species. If overlapping stages protect every later-stage species as another
+contributor's sole root, it can remove an otherwise-unprotected branching root and that root's
+descendant records. This keeps the eight-target cap without discarding a contributor's last
+line. Shared retained roots keep the same descendant sets on both parent sides.
+
+A compact graph stores each distinct species once with an eight-bit base-contributor mask
+and an eight-bit first-stage-source-target mask. Eight graph entries occupy 32 bytes, verified
+by a compile-time size assertion and tests, versus 52 bytes for the current method entries
+and their age array. This is only the graph budget: contributor weights/ages, resolved trait
+and move attribution, merged-level thresholds, and evolution selections still need a complete
+profile layout. Compaction rejects inconsistent shared-root descendant sets explicitly instead
+of silently widening evolution options. Neither helper changes live breeding or save storage.
+`make -k check BUILD=hns -j8 TESTS='Fusion target'` passed all 11 tests after these changes,
+covering native alternate methods, pruning, compact graphs, overlapping stages, and all eight
+contributors in a shared four-line example. The previously untested disabled-species guard
+also passed the five pruning tests before this revision. Milestone statuses are unchanged.
+
 Reopen milestone 3 for design, implementation, and validation of base-lineage inheritance;
 milestone 5 remains in progress. Milestones 1 and 2 are complete and milestone 4 is closed.
 Before implementation, assess how the clarified contributors interact with existing bounded

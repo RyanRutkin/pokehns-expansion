@@ -213,12 +213,11 @@ static u16 CountDistinctBerserkGeneTargets(const struct BerserkGeneEvolutionNode
     return distinct;
 }
 
-bool8 PruneBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u16 *count)
+static bool8 ValidateBerserkGeneEvolutionNodes(const struct BerserkGeneEvolutionNode *nodes, u16 count)
 {
     u16 i, latestRoot = BERSERK_GENE_ROOT_NODE;
-    u16 distinct;
 
-    for (i = 0; i < *count; i++)
+    for (i = 0; i < count; i++)
     {
         u16 root = nodes[i].rootIndex;
         assertf(nodes[i].targetSpecies != SPECIES_NONE
@@ -231,12 +230,21 @@ bool8 PruneBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u
         if (root == BERSERK_GENE_ROOT_NODE)
             latestRoot = i;
     }
+    return TRUE;
+}
 
+bool8 PruneBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u16 *count)
+{
+    u16 i, distinct;
+
+    if (!ValidateBerserkGeneEvolutionNodes(nodes, *count))
+        return FALSE;
     distinct = CountDistinctBerserkGeneTargets(nodes, *count);
     while (distinct > MAX_FUSION_POTENTIAL_EVOLUTIONS)
     {
         u16 selected = BERSERK_GENE_ROOT_NODE, choices = 0;
         u16 rootsByContributor[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {0};
+        u8 priority, bestPriority = UINT8_MAX;
 
         for (i = 0; i < *count; i++)
             if (nodes[i].rootIndex == BERSERK_GENE_ROOT_NODE)
@@ -244,50 +252,126 @@ bool8 PruneBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u
 
         for (i = 0; i < *count; i++)
         {
-            if (nodes[i].rootIndex != BERSERK_GENE_ROOT_NODE)
-                continue;
-            if ((i + 1 == *count || nodes[i + 1].rootIndex != i)
-             && rootsByContributor[nodes[i].contributor] > 1)
-            {
-                choices++;
-                if (choices == 1 || Random() % choices == 0)
-                    selected = i;
-            }
-        }
+            u16 j;
+            u16 targetRoots[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {0};
+            bool8 hasRoot = FALSE, hasChildren = FALSE, protected = FALSE;
 
-        if (choices == 0)
-        {
-            for (i = 0; i < *count; i++)
+            for (j = 0; j < i && nodes[j].targetSpecies != nodes[i].targetSpecies; j++);
+            if (j != i)
+                continue;
+            for (j = i; j < *count; j++)
             {
-                if (nodes[i].rootIndex != BERSERK_GENE_ROOT_NODE)
+                if (nodes[j].targetSpecies == nodes[i].targetSpecies
+                 && nodes[j].rootIndex == BERSERK_GENE_ROOT_NODE)
                 {
-                    choices++;
-                    if (choices == 1 || Random() % choices == 0)
-                        selected = i;
+                    hasRoot = TRUE;
+                    targetRoots[nodes[j].contributor]++;
+                    hasChildren |= j + 1 < *count && nodes[j + 1].rootIndex == j;
                 }
             }
+            for (j = 0; j < ARRAY_COUNT(targetRoots); j++)
+                if (targetRoots[j] != 0 && targetRoots[j] == rootsByContributor[j])
+                    protected = TRUE;
+            if (protected)
+                continue;
+
+            // Leaves first, then later-stage targets. Drop a branching root only if all
+            // remaining later-stage species also protect another contributor's root.
+            priority = !hasRoot ? 1 : hasChildren ? 2 : 0;
+            if (priority < bestPriority)
+            {
+                bestPriority = priority;
+                choices = 0;
+            }
+            if (priority == bestPriority && (++choices == 1 || Random() % choices == 0))
+                selected = i;
         }
 
         assertf(selected != BERSERK_GENE_ROOT_NODE,
                 "Unable to prune fusion evolution targets")
             return FALSE;
 
-        for (i = 0; i < *count; i++)
         {
-            if (i != selected && nodes[i].targetSpecies == nodes[selected].targetSpecies)
-                break;
+            u16 target = nodes[selected].targetSpecies;
+            u16 kept = 0, newRoot = BERSERK_GENE_ROOT_NODE;
+            bool8 removeRoot = FALSE;
+
+            for (i = 0; i < *count; i++)
+            {
+                bool8 isRoot = nodes[i].rootIndex == BERSERK_GENE_ROOT_NODE;
+                if (isRoot)
+                {
+                    removeRoot = nodes[i].targetSpecies == target;
+                    newRoot = kept;
+                }
+                if (removeRoot || nodes[i].targetSpecies == target)
+                    continue;
+                nodes[kept] = nodes[i];
+                if (!isRoot)
+                    nodes[kept].rootIndex = newRoot;
+                kept++;
+            }
+            *count = kept;
         }
-        if (i == *count)
-            distinct--;
-        (*count)--;
-        for (i = selected; i < *count; i++)
-            nodes[i] = nodes[i + 1];
-        for (i = 0; i < *count; i++)
+        distinct = CountDistinctBerserkGeneTargets(nodes, *count);
+    }
+    return TRUE;
+}
+
+STATIC_ASSERT(sizeof(struct BerserkGeneEvolutionTarget) == 4, BerserkGeneEvolutionTargetSize);
+STATIC_ASSERT(MAX_FUSION_POTENTIAL_EVOLUTIONS <= 8, BerserkGeneEvolutionTargetMaskSize);
+STATIC_ASSERT(MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES <= 8, BerserkGeneEvolutionContributorMaskSize);
+
+bool8 CompactBerserkGeneEvolutionTargets(const struct BerserkGeneEvolutionNode *nodes, u16 count,
+                                       struct BerserkGeneEvolutionTarget *targets, u8 *targetCount)
+{
+    struct BerserkGeneEvolutionTarget compact[MAX_FUSION_POTENTIAL_EVOLUTIONS] = {0};
+    u16 i;
+    u8 j, compactCount = 0;
+
+    if (!ValidateBerserkGeneEvolutionNodes(nodes, count))
+        return FALSE;
+    assertf(CountDistinctBerserkGeneTargets(nodes, count) <= MAX_FUSION_POTENTIAL_EVOLUTIONS,
+            "Fusion evolution targets must be pruned before compaction")
+        return FALSE;
+    for (i = 0; i < count; i++)
+    {
+        for (j = 0; j < compactCount && compact[j].species != nodes[i].targetSpecies; j++);
+        if (j == compactCount)
+            compact[compactCount++].species = nodes[i].targetSpecies;
+        if (nodes[i].rootIndex == BERSERK_GENE_ROOT_NODE)
+            compact[j].rootContributors |= 1 << nodes[i].contributor;
+        else
         {
-            if (nodes[i].rootIndex != BERSERK_GENE_ROOT_NODE && nodes[i].rootIndex > selected)
-                nodes[i].rootIndex--;
+            u8 source;
+            for (source = 0; source < compactCount
+                         && compact[source].species != nodes[nodes[i].rootIndex].targetSpecies; source++);
+            compact[j].sourceTargets |= 1 << source;
         }
     }
+
+    // Native data gives identical descendants to identical root species. Reject partial
+    // shared lineages rather than widening a contributor's options during compaction.
+    for (i = 0; i < count; i++)
+    {
+        u16 child;
+        u8 source, actual = 0, expected = 0;
+        if (nodes[i].rootIndex != BERSERK_GENE_ROOT_NODE)
+            continue;
+        for (source = 0; source < compactCount && compact[source].species != nodes[i].targetSpecies; source++);
+        for (j = 0; j < compactCount; j++)
+            if (compact[j].sourceTargets & (1 << source))
+                expected |= 1 << j;
+        for (child = i + 1; child < count && nodes[child].rootIndex == i; child++)
+        {
+            for (j = 0; j < compactCount && compact[j].species != nodes[child].targetSpecies; j++);
+            actual |= 1 << j;
+        }
+        assertf(actual == expected, "Inconsistent shared fusion evolution lineage %d", i)
+            return FALSE;
+    }
+    memcpy(targets, compact, sizeof(compact));
+    *targetCount = compactCount;
     return TRUE;
 }
 

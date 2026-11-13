@@ -24,6 +24,13 @@ struct BerserkGeneEvolutionNode
     u8 contributor; // 0-3: first parent, 4-7: second parent
 };
 
+struct BerserkGeneEvolutionTarget
+{
+    u16 species;
+    u8 rootContributors;
+    u8 sourceTargets;
+};
+
 struct RecordMixingDaycareMail
 {
     struct DaycareMail mail[DAYCARE_MON_COUNT];
@@ -63,6 +70,10 @@ u16 CountBerserkGeneBaseEvolutionNodes(u16 species);
 bool8 AppendBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u16 capacity, u16 *count, u16 species, u8 contributor);
 // Root groups must be contiguous. Shared targets can leave more than eight records.
 bool8 PruneBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u16 *count);
+// Use collected/pruned nodes: shared roots must retain identical descendant sets.
+// Contributor bits identify base sources; target bits identify retained first-stage sources.
+bool8 CompactBerserkGeneEvolutionTargets(const struct BerserkGeneEvolutionNode *nodes, u16 count,
+                                       struct BerserkGeneEvolutionTarget *targets, u8 *targetCount);
 // Up to MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES nonzero-weight base species.
 // Ages increase as contributions become older.
 u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count);
