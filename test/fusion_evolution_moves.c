@@ -1,4 +1,5 @@
 #include "global.h"
+#include "daycare.h"
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
 #include "test/test.h"
@@ -34,6 +35,118 @@ static u8 CountMove(const struct LevelUpMove *learnset, u16 move, u8 level)
     }
     EXPECT_EQ(learnset[i].move, LEVEL_UP_MOVE_END);
     return count;
+}
+
+TEST("Fusion evolution moves registry handles both explicit conditions and ignores move types")
+{
+    static const struct EvolutionParam conditions[] = {
+        {IF_KNOWS_MOVE, MOVE_DRAGON_CHEER},
+        {IF_USED_MOVE_X_TIMES, MOVE_RAGE_FIST, 20},
+        {IF_KNOWS_MOVE, MOVE_RAGE_FIST},
+        {IF_KNOWS_MOVE_TYPE, TYPE_FAIRY},
+        {IF_REGION, REGION_HISUI},
+        {CONDITIONS_END},
+    };
+    u16 moves[MAX_LEVEL_UP_MOVES] = {0};
+    u8 count = 0;
+
+    EXPECT(AppendEvolutionRequiredMoves(NULL, moves, &count));
+    EXPECT_EQ(count, 0);
+    EXPECT(AppendEvolutionRequiredMoves(conditions, moves, &count));
+    EXPECT_EQ(count, 2);
+    EXPECT_EQ(moves[0], MOVE_DRAGON_CHEER);
+    EXPECT_EQ(moves[1], MOVE_RAGE_FIST);
+    EXPECT(AppendEvolutionRequiredMoves(conditions, moves, &count));
+    EXPECT_EQ(count, 2);
+    EXPECT_EQ(moves[2], MOVE_NONE);
+}
+
+TEST("Fusion evolution moves registry deduplicates at the full learnset capacity")
+{
+    struct EvolutionParam conditions[MAX_LEVEL_UP_MOVES + 1] = {0};
+    u16 moves[MAX_LEVEL_UP_MOVES] = {0};
+    u8 count = 0, i;
+
+    for (i = 0; i < MAX_LEVEL_UP_MOVES; i++)
+        conditions[i] = (struct EvolutionParam){IF_KNOWS_MOVE, MOVE_POUND + i};
+    conditions[MAX_LEVEL_UP_MOVES].condition = CONDITIONS_END;
+    EXPECT(AppendEvolutionRequiredMoves(conditions, moves, &count));
+    EXPECT_EQ(count, MAX_LEVEL_UP_MOVES);
+    for (i = 0; i < count; i++)
+        EXPECT_EQ(moves[i], MOVE_POUND + i);
+    EXPECT(AppendEvolutionRequiredMoves(conditions, moves, &count));
+    EXPECT_EQ(count, MAX_LEVEL_UP_MOVES);
+    EXPECT(AppendEvolutionRequiredMoves(NULL, moves, &count));
+    EXPECT_EQ(count, MAX_LEVEL_UP_MOVES);
+}
+
+TEST("Fusion evolution moves compact graph registers future and shared lineages")
+{
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {
+        [0] = {SPECIES_MANKEY, 1, 0},
+        [4] = {SPECIES_APPLIN, 1, 0},
+        [7] = {SPECIES_MANKEY, 1, 0},
+    };
+    struct BerserkGeneEvolutionNode nodes[16];
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 moves[MAX_LEVEL_UP_MOVES] = {0};
+    u16 nodeCount = 0;
+    u8 targetCount = 0, count = 0, i;
+    bool8 rageFist = FALSE, dragonCheer = FALSE;
+
+    for (i = 0; i < ARRAY_COUNT(contributors); i++)
+        if (contributors[i].species != SPECIES_NONE)
+            EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &nodeCount, contributors[i].species, i));
+    EXPECT(PruneBerserkGeneEvolutionTargets(nodes, &nodeCount));
+    EXPECT(CompactBerserkGeneEvolutionTargets(nodes, nodeCount, targets, &targetCount));
+    EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, targetCount, contributors, moves, &count));
+    EXPECT_EQ(count, 2);
+    for (i = 0; i < count; i++)
+    {
+        rageFist |= moves[i] == MOVE_RAGE_FIST;
+        dragonCheer |= moves[i] == MOVE_DRAGON_CHEER;
+    }
+    EXPECT(rageFist);
+    EXPECT(dragonCheer);
+    // Removing the retained Hydrapple branch removes only its requirement.
+    for (i = 0; i < targetCount && targets[i].species != SPECIES_HYDRAPPLE; i++);
+    EXPECT(i < targetCount);
+    for (; i + 1 < targetCount; i++)
+        targets[i] = targets[i + 1];
+    targetCount--;
+    EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, targetCount, contributors, moves, &count));
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(moves[0], MOVE_RAGE_FIST);
+}
+
+TEST("Fusion evolution moves compact graph preserves additional conditions and empty requirements")
+{
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {
+        [0] = {SPECIES_QWILFISH_HISUI, 1, 0},
+        [4] = {SPECIES_EEVEE, 1, 0},
+    };
+    struct BerserkGeneEvolutionNode nodes[16];
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 moves[MAX_LEVEL_UP_MOVES] = {0}, nodeCount = 0;
+    u8 targetCount = 0, count = 0;
+
+    EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &nodeCount, SPECIES_QWILFISH_HISUI, 0));
+    EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &nodeCount, SPECIES_EEVEE, 4));
+    EXPECT(PruneBerserkGeneEvolutionTargets(nodes, &nodeCount));
+    EXPECT(CompactBerserkGeneEvolutionTargets(nodes, nodeCount, targets, &targetCount));
+    EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, targetCount, contributors, moves, &count));
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(moves[0], MOVE_BARB_BARRAGE);
+    // The surviving Eevee methods require no explicit move; an empty graph also does not.
+    EXPECT_EQ(targets[0].species, SPECIES_OVERQWIL);
+    for (u8 i = 1; i < targetCount; i++)
+        targets[i - 1] = targets[i];
+    targetCount--;
+    EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, targetCount, contributors, moves, &count));
+    EXPECT_EQ(count, 0);
+    count = UINT8_MAX;
+    EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, 0, contributors, moves, &count));
+    EXPECT_EQ(count, 0);
 }
 
 TEST("Fusion evolution moves preserve natural Rage Fist without changing known moves")

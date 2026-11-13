@@ -426,6 +426,49 @@ const struct Evolution *GetNextBerserkGeneTargetMethod(const struct BerserkGeneE
     return NULL;
 }
 
+bool8 CollectBerserkGeneTargetRequiredMoves(const struct BerserkGeneEvolutionTarget *targets,
+    u8 targetCount, const struct BerserkGeneContributor *contributors, u16 *moves, u8 *count)
+{
+    u16 required[MAX_LEVEL_UP_MOVES];
+    u8 requiredCount = 0, i;
+
+    assertf(targetCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS, "Invalid fusion evolution target count")
+        return FALSE;
+    for (i = 0; i < targetCount; i++)
+    {
+        assertf(targets[i].species != SPECIES_NONE
+             && (targets[i].sourceTargets >> targetCount) == 0
+             && (targets[i].rootContributors != 0 || targets[i].sourceTargets != 0),
+                "Invalid fusion evolution target sources %d", i)
+            return FALSE;
+        for (u8 source = 0; source < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; source++)
+            assertf(!(targets[i].rootContributors & (1 << source))
+                 || (contributors[source].species != SPECIES_NONE && contributors[source].weight != 0),
+                    "Missing fusion base contributor %d", source)
+                return FALSE;
+    }
+    for (i = 0; i < targetCount; i++)
+    {
+        struct BerserkGeneEvolutionMethodCursor cursor = {0};
+        const struct Evolution *evolution;
+        u16 seenSources = 0;
+
+        while ((evolution = GetNextBerserkGeneTargetMethod(targets, targetCount, contributors, i,
+                                                         UINT8_MAX, UINT8_MAX, &cursor)) != NULL)
+        {
+            seenSources |= 1 << cursor.sourceIndex;
+            if (!AppendEvolutionRequiredMoves(evolution->params, required, &requiredCount))
+                return FALSE;
+        }
+        assertf(seenSources == (targets[i].rootContributors | (targets[i].sourceTargets << 8)),
+                "Fusion target %d has a missing native evolution route", targets[i].species)
+            return FALSE;
+    }
+    memcpy(moves, required, sizeof(*moves) * requiredCount);
+    *count = requiredCount;
+    return TRUE;
+}
+
 bool8 GetBerserkGeneMergedEvolutionLevel(const struct BerserkGeneContributor *contributors,
     const u8 *levels, u8 parentShareA, u8 *level)
 {

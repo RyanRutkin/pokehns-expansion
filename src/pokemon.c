@@ -6586,6 +6586,39 @@ static bool8 SampleBerserkGeneMoves(const struct BerserkGeneProfile *profile,
     return TRUE;
 }
 
+bool8 AppendEvolutionRequiredMoves(const struct EvolutionParam *params, u16 *moves, u8 *count)
+{
+    u16 pending[MAX_LEVEL_UP_MOVES];
+    u8 pendingCount = 0;
+    u16 i;
+
+    assertf(*count <= MAX_LEVEL_UP_MOVES, "Invalid required evolution move count")
+        return FALSE;
+    if (params == NULL)
+        return TRUE;
+    for (i = 0; params[i].condition != CONDITIONS_END; i++)
+    {
+        u8 j;
+        if (params[i].condition != IF_KNOWS_MOVE && params[i].condition != IF_USED_MOVE_X_TIMES)
+            continue;
+        assertf(params[i].arg1 != MOVE_NONE && params[i].arg1 < MOVES_COUNT_ALL,
+                "Invalid fusion evolution move %d", params[i].arg1)
+            return FALSE;
+        for (j = 0; j < *count && moves[j] != params[i].arg1; j++);
+        if (j != *count)
+            continue;
+        for (j = 0; j < pendingCount && pending[j] != params[i].arg1; j++);
+        if (j != pendingCount)
+            continue;
+        assertf(*count + pendingCount < MAX_LEVEL_UP_MOVES, "Too many required fusion evolution moves")
+            return FALSE;
+        pending[pendingCount++] = params[i].arg1;
+    }
+    memcpy(moves + *count, pending, sizeof(*moves) * pendingCount);
+    *count += pendingCount;
+    return TRUE;
+}
+
 static bool8 CollectBerserkGeneEvolutionMoves(const struct BerserkGeneProfile *profile, u16 *moves, u8 *count)
 {
     u8 i;
@@ -6598,27 +6631,11 @@ static bool8 CollectBerserkGeneEvolutionMoves(const struct BerserkGeneProfile *p
     {
         u8 id = profile->potentialEvolutions[i].conditionSetId;
         const struct EvolutionParam *params = GetEvolutionConditionSet(id);
-        u16 j;
 
         assertf(id == 0 || params != NULL, "Invalid fusion evolution condition set %d", id)
             return FALSE;
-        if (params == NULL)
-            continue;
-        for (j = 0; params[j].condition != CONDITIONS_END; j++)
-        {
-            u8 k;
-            if (params[j].condition != IF_KNOWS_MOVE && params[j].condition != IF_USED_MOVE_X_TIMES)
-                continue;
-            assertf(params[j].arg1 != MOVE_NONE && params[j].arg1 < MOVES_COUNT_ALL,
-                    "Invalid fusion evolution move %d", params[j].arg1)
-                return FALSE;
-            for (k = 0; k < *count && moves[k] != params[j].arg1; k++);
-            if (k != *count)
-                continue;
-            assertf(*count < MAX_LEVEL_UP_MOVES, "Too many required fusion evolution moves")
-                return FALSE;
-            moves[(*count)++] = params[j].arg1;
-        }
+        if (!AppendEvolutionRequiredMoves(params, moves, count))
+            return FALSE;
     }
     return TRUE;
 }

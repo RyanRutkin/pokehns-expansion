@@ -211,6 +211,32 @@ Future compact-profile integration must collect all native alternative-method re
 using the source-aware iterator; that profile conversion and live base-contributor breeding
 remain outstanding. Milestones 1-2 are complete, 3 and 5 remain in progress, and 4 is closed.
 
+Compact-graph evolution-move checkpoint (2026-11-13): extracted a shared explicit-condition
+collector, `AppendEvolutionRequiredMoves`, used by the existing live method-based profile
+collector and the new compact-graph collector. It recognizes only `IF_KNOWS_MOVE` and
+`IF_USED_MOVE_X_TIMES`, deduplicates across conditions/methods/routes, and checks the existing
+20-move capacity. Each append validates its pending additions before modifying the output.
+Move-type and accompanying non-move conditions are not registered or changed.
+
+`CollectBerserkGeneTargetRequiredMoves` walks every retained compact target's native source
+routes and alternative methods, including future stages. It checks that every stored route
+has a native method, rather than treating missing routes as empty requirements, and publishes
+the completed registry only on success. Shared lineages do not duplicate required moves.
+Removing a retained branch removes its requirements on the next collection. This helper is
+ready for compact-profile conversion but is not yet wired to persistent profiles; current live
+protection continues using stored method condition sets through the shared collector.
+No save-layout change, new condition cap, or move-catalog scan was introduced.
+
+Validation: `make -k check BUILD=hns -j8 TESTS='Fusion evolution'` passed 13 tests,
+including seven evolution-move tests. New cases cover the Mankey/Applin graph with duplicate
+Mankey contributors (Rage Fist and Dragon Cheer), removal of Hydrapple's requirement,
+Barb Barrage with the Hisui condition, empty/no-move requirements, explicit move-type
+exclusion, and deduplication at the full 20-move capacity. Existing live fallback and natural
+move retention tests still pass under both Modern Moves settings.
+`TESTS='Fusion target'` passed 17 tests and `TESTS='Fusion weighted pruning'` passed five
+using the same command. Profile conversion and live base-contributor breeding remain pending;
+milestone statuses are unchanged.
+
 The existing code does not yet implement these rules: it stores each method as a node, only
 merges exactly two roots from opposite parent sides, and uses the historical
 continuation-preserving pruning rule below. That historical rule is superseded where it

@@ -85,6 +85,9 @@ bool8 CompactBerserkGeneEvolutionTargets(const struct BerserkGeneEvolutionNode *
 const struct Evolution *GetNextBerserkGeneTargetMethod(const struct BerserkGeneEvolutionTarget *targets,
     u8 targetCount, const struct BerserkGeneContributor *contributors, u8 targetIndex,
     u8 contributorMask, u8 sourceTargetMask, struct BerserkGeneEvolutionMethodCursor *cursor);
+// Collect requirements from all retained routes, including future stages and alternative methods.
+bool8 CollectBerserkGeneTargetRequiredMoves(const struct BerserkGeneEvolutionTarget *targets,
+    u8 targetCount, const struct BerserkGeneContributor *contributors, u16 *moves, u8 *count);
 // Zero levels exclude nonparticipating contributors. Round the participating weighted average up.
 bool8 GetBerserkGeneMergedEvolutionLevel(const struct BerserkGeneContributor *contributors,
     const u8 *levels, u8 parentShareA, u8 *level);
