@@ -716,6 +716,55 @@ bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGen
     return TRUE;
 }
 
+bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
+    struct BerserkGeneEvolutionTarget *targets, u8 *targetCount)
+{
+    struct BerserkGeneEvolutionNode *nodes;
+    u32 capacity = 0;
+    u16 count = 0;
+    u8 i;
+    bool8 success = TRUE;
+
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+    {
+        const struct BerserkGeneContributor *contributor = &lineage->contributors[i];
+        assertf((contributor->species == SPECIES_NONE && contributor->weight == 0 && contributor->age == 0)
+             || (contributor->species != SPECIES_NONE && contributor->species < NUM_SPECIES
+                 && contributor->weight != 0),
+                "Invalid fusion graph contributor %d", i)
+            return FALSE;
+        if (contributor->species != SPECIES_NONE)
+            capacity += CountBerserkGeneBaseEvolutionNodes(contributor->species);
+    }
+    assertf(capacity < BERSERK_GENE_ROOT_NODE, "Fusion graph workspace exceeds index capacity")
+        return FALSE;
+    if (capacity == 0)
+    {
+        memset(targets, 0, sizeof(*targets) * MAX_FUSION_POTENTIAL_EVOLUTIONS);
+        *targetCount = 0;
+        return TRUE;
+    }
+    nodes = Alloc(capacity * sizeof(*nodes));
+    assertf(nodes != NULL, "Unable to allocate fusion evolution graph")
+        return FALSE;
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+    {
+        if (lineage->contributors[i].species == SPECIES_NONE)
+            continue;
+        if (!AppendBerserkGeneEvolutionTargets(nodes, capacity, &count,
+                                              lineage->contributors[i].species, i))
+        {
+            success = FALSE;
+            break;
+        }
+    }
+    if (success)
+        success = PruneBerserkGeneEvolutionTargets(nodes, &count)
+               && CompactBerserkGeneEvolutionTargets(nodes, count, targets, targetCount);
+    Free(nodes);
+    return success;
+}
+
 // Current species data has at most 72 literal evolution entries for one species (Alcremie).
 // The persistent profile remains capped at eight selected lineage nodes.
 #define MAX_BERSERK_GENE_EVOLUTION_CANDIDATES 72

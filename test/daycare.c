@@ -789,6 +789,9 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
 {
     struct Pokemon mon;
     struct BerserkGeneLineage result;
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 requiredMoves[MAX_LEVEL_UP_MOVES];
+    u8 targetCount, requiredCount;
     struct DayCare *daycare = &gSaveBlock1Ptr->daycare;
     u16 ids[2] = {0};
     u8 mode = 0, side;
@@ -828,6 +831,19 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
     {
         EXPECT_EQ(result.contributors[1].species, SPECIES_POLIWAG);
         EXPECT_EQ(result.contributors[5].species, SPECIES_APPLIN);
+    }
+    EXPECT(BuildBerserkGeneLineageTargets(&result, targets, &targetCount));
+    EXPECT(targetCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS);
+    EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, targetCount, result.contributors,
+                                               requiredMoves, &requiredCount));
+    for (u8 contributor = 0; contributor < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; contributor++)
+    {
+        bool8 retained = FALSE;
+        if (result.contributors[contributor].species == SPECIES_NONE)
+            continue;
+        for (u8 target = 0; target < targetCount; target++)
+            retained |= (targets[target].rootContributors & (1 << contributor)) != 0;
+        EXPECT(retained);
     }
     for (side = 0; side < DAYCARE_MON_COUNT; side++)
     {
@@ -932,6 +948,68 @@ TEST("Fusion base contributors retain exact ratios or round bounded weights")
     EXPECT(rounded[0].weight >= rounded[1].weight);
     EXPECT(rounded[1].weight >= rounded[2].weight);
     EXPECT_NE(rounded[2].weight, 0);
+}
+
+TEST("Fusion target builder sizes large shared lineages from native species data")
+{
+    struct BerserkGeneLineage lineage = {0}, expected;
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 requiredMoves[MAX_LEVEL_UP_MOVES];
+    u8 count, requiredCount, i;
+
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+        lineage.contributors[i] = (struct BerserkGeneContributor){SPECIES_MILCERY, i + 1, i};
+    expected = lineage;
+    EXPECT(BuildBerserkGeneLineageTargets(&lineage, targets, &count));
+    EXPECT_EQ(count, MAX_FUSION_POTENTIAL_EVOLUTIONS);
+    for (i = 0; i < count; i++)
+    {
+        EXPECT_EQ(targets[i].rootContributors, UINT8_MAX);
+        EXPECT_EQ(targets[i].sourceTargets, 0);
+        for (u8 j = 0; j < i; j++)
+            EXPECT_NE(targets[i].species, targets[j].species);
+    }
+    EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, count, lineage.contributors,
+                                               requiredMoves, &requiredCount));
+    EXPECT_EQ(requiredCount, 0);
+    EXPECT_EQ(memcmp(&lineage, &expected, sizeof(lineage)), 0);
+}
+
+TEST("Fusion target builder retains explicit moves for future native routes")
+{
+    struct BerserkGeneLineage lineage = {0};
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 requiredMoves[MAX_LEVEL_UP_MOVES];
+    u8 count, requiredCount, i;
+    bool8 rageFist = FALSE, dragonCheer = FALSE;
+
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_MANKEY, 1, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_APPLIN, 1, 0};
+    EXPECT(BuildBerserkGeneLineageTargets(&lineage, targets, &count));
+    EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, count, lineage.contributors,
+                                               requiredMoves, &requiredCount));
+    for (i = 0; i < requiredCount; i++)
+    {
+        rageFist |= requiredMoves[i] == MOVE_RAGE_FIST;
+        dragonCheer |= requiredMoves[i] == MOVE_DRAGON_CHEER;
+    }
+    EXPECT(rageFist);
+    EXPECT(dragonCheer);
+}
+
+TEST("Fusion target builder clears an empty evolutionary graph")
+{
+    struct BerserkGeneLineage lineage = {0};
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    struct BerserkGeneEvolutionTarget empty[MAX_FUSION_POTENTIAL_EVOLUTIONS] = {0};
+    u8 count = UINT8_MAX;
+
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_DITTO, 1, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_SMEARGLE, 1, 0};
+    memset(targets, 0xFF, sizeof(targets));
+    EXPECT(BuildBerserkGeneLineageTargets(&lineage, targets, &count));
+    EXPECT_EQ(count, 0);
+    EXPECT_EQ(memcmp(targets, empty, sizeof(targets)), 0);
 }
 
 TEST("Fusion target pruning preserves the four contributor example")

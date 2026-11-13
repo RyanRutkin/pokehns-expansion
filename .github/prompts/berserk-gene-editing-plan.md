@@ -313,6 +313,29 @@ leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
 
+Lineage-to-target construction checkpoint (2026-11-13): `BuildBerserkGeneLineageTargets`
+now connects the retained contributor sidecar to native two-stage target collection,
+whole-species pruning, and compact source-mask construction. It sizes scratch storage
+from the actual native source data across all eight contributor slots rather than a fixed
+per-species guess. Scratch lives on the heap, is freed on every post-allocation path,
+and is not persisted. Invalid contributors, index-capacity overflow, and allocation
+failure assert explicitly; failed construction does not publish a partial graph. A lineage
+with no evolution targets returns a fully zeroed graph and count zero without allocating.
+
+The offspring-lineage fixture now executes collection, pruning, compaction, and required
+move registration together for ordinary parents, evolved fusion parents, and shared species
+on opposite parent sides. Every contributing lineage in those fixtures retains a root.
+Additional tests cover eight Milcery sources (504 native target records before pruning),
+shared source identity, unchanged contributor metadata, an empty graph, and the
+Mankey/Applin future-stage Rage Fist/Dragon Cheer requirements.
+
+Validation: `make -k check BUILD=hns -j8 TESTS='Fusion target'` passed 20 tests;
+`make -k check BUILD=hns -j8 TESTS='Fusion base contributors'` passed 10 tests.
+The HNS test ROM compiled and linked. No new persistent storage mechanism or layout
+was introduced. The graph builder remains groundwork, not live-profile conversion:
+current method-based construction, trait attribution, evolution state, naming, and
+movepool projection still require coherent replacement. Milestone 3 remains open.
+
 Stored-parent contributor groundwork (2026-11-13): `CollectBerserkGeneParentContributors`
 reads an ordinary parent's base species through `GetEggSpecies`, or a fusion parent's
 saved lineage rather than its nominal/evolved species. For fusion parents it normalizes

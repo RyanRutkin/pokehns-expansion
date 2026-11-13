@@ -88,5 +88,7 @@ u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8
 bool8 CollectBerserkGeneParentContributors(struct BoxPokemon *mon,
     struct BerserkGeneContributor *contributors, u8 *count);
 bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage);
+bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
+    struct BerserkGeneEvolutionTarget *targets, u8 *targetCount);
 
 #endif // GUARD_DAYCARE_H
