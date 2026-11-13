@@ -1,8 +1,93 @@
-# Berserk Gene Editing — Implementation Plan (finalized)
+# Berserk Gene Editing — Implementation Plan
 
-Status: IMPLEMENTATION IN PROGRESS; milestone 1 is complete at the 2026-11-10 same-target checkpoint below.
+Status: IMPLEMENTATION IN PROGRESS; see the current specification and milestone status below.
 This file consolidates `berserk-gene-editing-prompt-1.md` and `beserk-gene-editing-prompt-1-answers.md`
 plus the resulting plan and decisions. Resume implementation from here when prompted.
+
+## Current breeding specification and status (2026-11-12)
+
+The user clarified that a newly bred fusion's contributors are the **base Pokemon of the
+parents' evolutionary lineages**, not the parents' current evolved species. This applies to
+ordinary parents and to rebreeding parents with existing fusion profiles. For example, breeding
+a Dratini+Poliwag fusion that has evolved toward Dragonite with an Eevee+Applin fusion that
+has evolved toward Jolteon, with a Berserk Gene involved, has Dratini, Poliwag, Eevee, and
+Applin as its contributing Pokemon. Ninjask and Shedinja both trace back to Nincada for
+breeding; a Ninjask+Shedinja pairing is therefore Nincada+Nincada breeding.
+
+The current implementation does **not** yet satisfy this specification: it records current
+parent species and, for fusion parents, blends their effective traits and uses bounded move
+sources and stored active evolution candidates. The earlier completed-rebreeding checkpoint
+and its passing tests describe that implementation, not validation of the clarified rule.
+Where historical descriptions below conflict with this specification, this section takes
+precedence. A focused, uncommitted characterization test demonstrates the current
+Nincada+Ninjask split result; it is not an assertion of the desired behavior.
+
+For the revision, the user chose at most four retained base contributors per immediate parent
+side, or eight in total across both sides. If a side exceeds its limit, prune the oldest
+contributors first; for equal ages, prune contributors with the fewest evolutionary nodes
+first; break any remaining ties randomly. Duplicate base species on a side are represented
+once, but retain the combined weight of all matching contributors. Use bounded integer
+precision with deterministic rounding if exact duplicate weights no longer fit after repeated
+rebreeding; do not silently discard multiplicity.
+
+The two sides retain their existing 62/38 or 50/50 shares, divided equally among the
+contributors on each side before combining the weights of duplicates. New evolution options
+start fresh from the retained base contributors' evolution lines, not the parents' remaining
+stored options. A newborn fusion's default name includes all retained contributors, using the
+existing side/chunk naming approach.
+
+The user clarified that unconditional level-only evolutions from multiple contributors combine
+into one averaged-level evolution option per stage, including when those contributors share
+an immediate parent side. Average participating levels using contributor weights, including
+parent-side shares and duplicate weights. The other retained stage-one lines enter the pseudo-fusion; their
+stage-one options are consumed and their retained stage-two descendants remain available.
+At stage two the selected option is combined with the remaining lines' pseudo-fusion.
+For example, Dratini+Poliwag and Eevee+Applin contributors can combine Dragonair and
+Poliwhirl into the first level evolution, while retaining Dragonite, Poliwrath, Politoed,
+and Hydrapple among the subsequent options when their respective lines were retained.
+
+Evolution capacity is **eight target-species nodes total across both stages**, not eight
+methods or conditions. Preserve source-lineage identity where identical target species can
+arise from different lineages. Prune target lines, not individual methods: first prune
+stage-one options without stage-two descendants; try to preserve at least one evolution line
+from each base contributor where possible and at least one line from each immediate parent
+side where possible. The user-provided example of a possible eight-node result is Dragonair,
+Dragonite, Poliwhirl, Poliwrath, Politoed, Espeon (randomly chosen from Eevee's options),
+Dipplin, and Hydrapple. Espeon represents the retained Eevee line; Flapple and Appletun were
+pruned as stage-one options without descendants.
+
+Retaining a target retains all of its applicable alternative evolution methods and additional
+conditions. Look these up from the existing species evolution data using the retained source
+lineage and target, rather than counting or pruning each method as a separate node. Preserve
+fusion-specific values, such as a merged weighted level, in the profile. Validate item, trade,
+and additional-condition checks; do not introduce a separate fixed condition cap unless the
+implementation requires one and its behavior has been decided.
+
+The existing code does not yet implement these rules: it stores each method as a node, only
+merges exactly two roots from opposite parent sides, and uses the historical
+continuation-preserving pruning rule below. That historical rule is superseded where it
+conflicts with the current specification. Profile storage is also copied into three Pyramid
+snapshots, so account for all copies when revising the save layout.
+
+Revision groundwork (2026-11-12): `make -k check BUILD=hns -j8
+TESTS='Fusion Politoed alternative methods'` passed a real-species-data characterization:
+using a King's Rock and trading while holding one both target Politoed, trading without it
+fails, and the held item is consumed only when the trade evolution executes. This still uses
+the current method-per-node representation and does not validate the proposed species-node
+design. `make -k check BUILD=hns -j8 TESTS='PokemonStorage is backwards compatible'` passed
+with the current 35,660-byte size pin. The nine 3,968-byte storage sectors hold 35,712 bytes,
+leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine table slots
+and three Pyramid snapshots, so the revision must budget any profile expansion across all
+12 copies; compacting existing fields or another verified layout may be needed.
+
+Reopen milestone 3 for design, implementation, and validation of base-lineage inheritance;
+milestone 5 remains in progress. Milestones 1 and 2 are complete and milestone 4 is closed.
+Before implementation, assess how the clarified contributors interact with existing bounded
+profile storage, contributor weighting and pruning, evolution candidates, and trait and move
+inheritance. Resolve any consequential behavior not specified by the user rather than
+assuming that the prior bounded approximation satisfies the clarified requirement.
+The milestone count is unchanged; link compatibility, external profile storage, and full
+fusion battle recording remain deferred.
 
 ## Resume checkpoint (2026-11-09)
 
@@ -809,7 +894,7 @@ validation has been completed.
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
 | 2. Remaining display/cry consumers | Complete (2026-11-12); manual visual/listening validation remains outstanding | Full-summary scene regression passed headless and non-headless; contests classified species-only by user decision. |
-| 3. Rebreeding trait audit | Complete (2026-11-12); focused automated regressions passed | Verify remaining non-lineage inherited overrides, including fusion parents; add targeted regression coverage and fix gaps. |
+| 3. Base-lineage breeding and rebreeding | Reopened (2026-11-12); implementation and validation pending | Derive new gene-bred profiles from retained base contributors, preserving the selected per-side limits and weighting; rebuild evolution options and verify traits, moves, evolution, and lifecycle behavior. |
 | 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
 | 5. Final lifecycle validation and manual-testable checkpoint | In progress | Verify profile cleanup/reuse, normal save/reload, the temporary fusion-recording safeguard, and the offline feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. Link compatibility is deferred as noted below. |
 | Link compatibility | Deferred until after initial MVP | Complete and verify link restrictions or profile transfer, including coordinated cancellation and multiplayer testing. Until then, do not use fusion link actions. |

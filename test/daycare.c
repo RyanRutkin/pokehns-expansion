@@ -691,6 +691,33 @@ TEST("Fusion Shedinja split-only entries are excluded from breeding evolution ca
     EXPECT(sawMetapod);
 }
 
+TEST("Fusion Shedinja split retains an independent Ninjask donor")
+{
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneProfile shedinja;
+    u16 gene = ITEM_BERSERK_GENE;
+
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_NINCADA, 50, 255, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&gPlayerParty[1], SPECIES_NINJASK, 50, 1, OTID_STRUCT_PLAYER_ID);
+    SetMonData(&gPlayerParty[0], MON_DATA_HELD_ITEM, &gene);
+    SetMonData(&gPlayerParty[1], MON_DATA_HELD_ITEM, &gene);
+    gPlayerPartyCount = 2;
+    StorePokemonInDaycare(&gPlayerParty[0], &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&gPlayerParty[0], &gSaveBlock1Ptr->daycare.mons[1]);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+    GiveEggFromDaycare();
+
+    profile = GetBerserkGeneProfile(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
+    EXPECT(profile != NULL);
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_NINCADA);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_NINJASK);
+    EXPECT(PrepareBerserkGeneShedinjaProfile(profile, SPECIES_NINJASK,
+        FUSION_EVOLUTION_CHOICE_NONE, SPECIES_NINCADA, &shedinja));
+    EXPECT_EQ(shedinja.parentSpeciesA, SPECIES_SHEDINJA);
+    EXPECT_EQ(shedinja.parentSpeciesB, SPECIES_NINJASK);
+}
+
 TEST("(Daycare) Matching unconditional level evolutions are stored as a paired fusion phase")
 {
     u16 profileId;

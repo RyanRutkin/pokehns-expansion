@@ -98,6 +98,64 @@ static struct BerserkGeneProfile *SetChoiceProfile(struct Pokemon *mon, bool8 ph
     return profile;
 }
 
+TEST("Fusion Politoed alternative methods preserve trade and item conditions")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    const struct Evolution *evolutions = GetSpeciesEvolutions(SPECIES_POLIWHIRL);
+    u16 profileId, heldItem = ITEM_NONE;
+    u8 i, tradeCount = 0, itemCount = 0, choice;
+    u8 oldEvoLimit = gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit;
+    bool32 canStop = TRUE;
+
+    CreateMon(&mon, SPECIES_POLIWHIRL, 40, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+    profile->parentSpeciesA = SPECIES_POLIWHIRL;
+    profile->parentSpeciesB = SPECIES_DRAGONAIR;
+    profile->evolutionFlags = BERSERK_GENE_PHASE_2 << BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+    profile->potentialEvolutions[0] = (struct FusionPotentialEvolution){
+        SPECIES_POLIWHIRL, 25, EVO_LEVEL | EVO_POTENTIAL_SELECTED, 0
+    };
+    profile->potentialEvolutionCount = 1;
+    for (i = 0; evolutions[i].method != EVOLUTIONS_END; i++)
+    {
+        u8 conditionId;
+        if (evolutions[i].targetSpecies != SPECIES_POLITOED)
+            continue;
+        EXPECT(profile->potentialEvolutionCount < MAX_FUSION_POTENTIAL_EVOLUTIONS);
+        conditionId = GetEvolutionConditionSetId(evolutions[i].params);
+        EXPECT(evolutions[i].params == NULL || conditionId != 0);
+        profile->potentialEvolutions[profile->potentialEvolutionCount++] =
+            (struct FusionPotentialEvolution){SPECIES_POLITOED, evolutions[i].param,
+                evolutions[i].method | EVO_POTENTIAL_PHASE_2, conditionId};
+        tradeCount += evolutions[i].method == EVO_TRADE;
+        itemCount += evolutions[i].method == EVO_ITEM;
+    }
+    EXPECT_EQ(tradeCount, 1);
+    EXPECT_EQ(itemCount, 1);
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit = 0;
+    SetMonData(&mon, MON_DATA_HELD_ITEM, &heldItem);
+    EXPECT_EQ(GetEvolutionTargetSpeciesWithChoice(&mon, EVO_MODE_TRADE, 0, NULL,
+        &canStop, CHECK_EVO, &choice), SPECIES_NONE);
+    EXPECT_EQ(GetEvolutionTargetSpeciesWithChoice(&mon, EVO_MODE_ITEM_CHECK, ITEM_WATER_STONE, NULL,
+        &canStop, CHECK_EVO, &choice), SPECIES_NONE);
+    EXPECT_EQ(GetEvolutionTargetSpeciesWithChoice(&mon, EVO_MODE_ITEM_CHECK, ITEM_KINGS_ROCK, NULL,
+        &canStop, CHECK_EVO, &choice), SPECIES_POLITOED);
+    heldItem = ITEM_KINGS_ROCK;
+    SetMonData(&mon, MON_DATA_HELD_ITEM, &heldItem);
+    EXPECT_EQ(GetEvolutionTargetSpeciesWithChoice(&mon, EVO_MODE_TRADE, 0, NULL,
+        &canStop, CHECK_EVO, &choice), SPECIES_POLITOED);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_HELD_ITEM), ITEM_KINGS_ROCK);
+    EXPECT_EQ(GetEvolutionTargetSpeciesWithChoice(&mon, EVO_MODE_TRADE, 0, NULL,
+        &canStop, DO_EVO, &choice), SPECIES_POLITOED);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_HELD_ITEM), ITEM_NONE);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit = oldEvoLimit;
+}
+
 TEST("Fusion Shedinja split uses independent branches and ordinary fallback")
 {
     bool8 donorOnly = FALSE, fullProfiles = FALSE, noBall = FALSE, fullParty = FALSE, ordinary = FALSE;
