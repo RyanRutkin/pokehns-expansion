@@ -84,5 +84,9 @@ bool8 GetBerserkGeneMergedEvolutionLevel(const struct BerserkGeneContributor *co
 // Up to MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES nonzero-weight base species.
 // Ages increase as contributions become older.
 u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count);
+// Output has room for eight candidates; successful selection retains at most four.
+bool8 CollectBerserkGeneParentContributors(struct BoxPokemon *mon,
+    struct BerserkGeneContributor *contributors, u8 *count);
+bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage);
 
 #endif // GUARD_DAYCARE_H

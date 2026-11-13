@@ -680,6 +680,162 @@ TEST("Fusion base contributors count target species instead of evolution methods
     EXPECT_EQ(CountBerserkGeneBaseEvolutionNodes(SPECIES_DRAGONITE), 0);
 }
 
+TEST("Fusion base contributors collect ordinary evolved parents from their base lineage")
+{
+    struct Pokemon mon;
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    u16 species = SPECIES_DRAGONITE, expected = SPECIES_DRATINI;
+    u8 count;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { species = SPECIES_SHEDINJA; expected = SPECIES_NINCADA; }
+    PARAMETRIZE { species = SPECIES_HYDRAPPLE; expected = SPECIES_APPLIN; }
+    CreateMon(&mon, species, 50, 1, OTID_STRUCT_PLAYER_ID);
+    EXPECT(CollectBerserkGeneParentContributors(&mon.box, contributors, &count));
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(contributors[0].species, expected);
+    EXPECT_EQ(contributors[0].weight, 1);
+    EXPECT_EQ(contributors[0].age, 0);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_SPECIES), species);
+}
+
+TEST("Fusion base contributors collect stored ancestry with normalized parent shares")
+{
+    struct Pokemon mon;
+    struct BerserkGeneLineage expected = {0};
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    struct BerserkGeneProfile *profile;
+    u16 id;
+    u8 mode = 0, shareA, count;
+    u32 total;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { mode = 1; }
+    PARAMETRIZE { mode = 2; }
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_DRAGONITE, 50, 1, OTID_STRUCT_PLAYER_ID);
+    id = AllocBerserkGeneProfile();
+    EXPECT_NE(id, 0);
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
+    profile = GetBerserkGeneProfile(id);
+    profile->parentSpeciesA = SPECIES_DRAGONITE;
+    profile->parentSpeciesB = SPECIES_POLITOED;
+    profile->inheritanceFlags = mode == 2 ? BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT : 0;
+    profile->evolutionFlags = mode == 1 ? BERSERK_GENE_GENE_HOLDER_PARENT_B : 0;
+    expected.contributors[0] = (struct BerserkGeneContributor){SPECIES_DRATINI, 3, 7};
+    expected.contributors[1] = (struct BerserkGeneContributor){SPECIES_POLIWAG, 1, 2};
+    expected.contributors[4] = (struct BerserkGeneContributor){SPECIES_EEVEE, 7, 5};
+    expected.contributors[5] = (struct BerserkGeneContributor){SPECIES_APPLIN, 3, UINT16_MAX};
+    *GetBerserkGeneLineage(id) = expected;
+
+    EXPECT(CollectBerserkGeneParentContributors(&mon.box, contributors, &count));
+    EXPECT_EQ(count, 4);
+    EXPECT_EQ(contributors[0].species, SPECIES_DRATINI);
+    EXPECT_EQ(contributors[1].species, SPECIES_POLIWAG);
+    EXPECT_EQ(contributors[2].species, SPECIES_EEVEE);
+    EXPECT_EQ(contributors[3].species, SPECIES_APPLIN);
+    EXPECT_EQ(contributors[0].age, 8);
+    EXPECT_EQ(contributors[1].age, 3);
+    EXPECT_EQ(contributors[2].age, 6);
+    EXPECT_EQ(contributors[3].age, UINT16_MAX);
+    shareA = mode == 2 ? 50 : mode == 1 ? 38 : 62;
+    total = contributors[0].weight + contributors[1].weight + contributors[2].weight + contributors[3].weight;
+    EXPECT_EQ((contributors[0].weight + contributors[1].weight) * 100, total * shareA);
+    EXPECT_EQ(contributors[0].weight, contributors[1].weight * 3);
+    EXPECT_EQ(contributors[2].weight * 3, contributors[3].weight * 7);
+    EXPECT_EQ(memcmp(GetBerserkGeneLineage(id), &expected, sizeof(expected)), 0);
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_DRAGONITE);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
+TEST("Fusion base contributors merge stored sides before pruning and bounded rounding")
+{
+    struct Pokemon mon;
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    struct BerserkGeneLineage *lineage;
+    u16 id;
+    u8 count, i;
+    u32 total = 0;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_DRAGONITE, 50, 1, OTID_STRUCT_PLAYER_ID);
+    id = AllocBerserkGeneProfile();
+    EXPECT_NE(id, 0);
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
+    lineage = GetBerserkGeneLineage(id);
+    lineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_DRATINI, UINT16_MAX, 10};
+    lineage->contributors[1] = (struct BerserkGeneContributor){SPECIES_POLIWAG, 1, 1};
+    lineage->contributors[2] = (struct BerserkGeneContributor){SPECIES_NINCADA, 2, 20};
+    lineage->contributors[4] = (struct BerserkGeneContributor){SPECIES_DRATINI, 1, 0};
+    lineage->contributors[5] = (struct BerserkGeneContributor){SPECIES_EEVEE, UINT16_MAX - 1, 2};
+    lineage->contributors[6] = (struct BerserkGeneContributor){SPECIES_APPLIN, 3, 3};
+    EXPECT(CollectBerserkGeneParentContributors(&mon.box, contributors, &count));
+    EXPECT_EQ(count, 4);
+    for (i = 0; i < count; i++)
+    {
+        EXPECT_NE(contributors[i].species, SPECIES_NINCADA);
+        EXPECT_NE(contributors[i].weight, 0);
+        total += contributors[i].weight;
+    }
+    EXPECT_EQ(total, UINT16_MAX);
+    EXPECT_EQ(contributors[0].species, SPECIES_DRATINI);
+    EXPECT_EQ(contributors[0].age, 1);
+    EXPECT(contributors[0].weight > contributors[2].weight);
+    EXPECT_EQ(lineage->contributors[0].age, 10);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
+TEST("Fusion base contributors build offspring sides from evolved fusion parents")
+{
+    struct Pokemon mon;
+    struct BerserkGeneLineage result;
+    struct DayCare *daycare = &gSaveBlock1Ptr->daycare;
+    u16 ids[2] = {0};
+    u8 mode = 0, side;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { mode = 1; }
+    PARAMETRIZE { mode = 2; }
+    ResetPokemonStorageSystem();
+    for (side = 0; side < DAYCARE_MON_COUNT; side++)
+    {
+        CreateMon(&mon, side == 0 ? SPECIES_DRAGONITE : SPECIES_HYDRAPPLE, 50, side + 1, OTID_STRUCT_PLAYER_ID);
+        if (mode != 0)
+        {
+            struct BerserkGeneLineage *stored;
+            ids[side] = AllocBerserkGeneProfile();
+            EXPECT_NE(ids[side], 0);
+            SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &ids[side]);
+            GetBerserkGeneProfile(ids[side])->inheritanceFlags = BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
+            stored = GetBerserkGeneLineage(ids[side]);
+            stored->contributors[0] = (struct BerserkGeneContributor){
+                side == 0 || mode == 2 ? SPECIES_DRATINI : SPECIES_EEVEE, 1, 0};
+            stored->contributors[4] = (struct BerserkGeneContributor){
+                side == 0 ? SPECIES_POLIWAG : SPECIES_APPLIN, 1, 0};
+        }
+        daycare->mons[side].mon = mon.box;
+    }
+    memset(&result, 0xFF, sizeof(result));
+    EXPECT(BuildBerserkGeneBreedingLineage(daycare, &result));
+    EXPECT_EQ(result.contributors[0].species, SPECIES_DRATINI);
+    EXPECT_EQ(result.contributors[4].species, mode == 0 ? SPECIES_APPLIN
+              : mode == 2 ? SPECIES_DRATINI : SPECIES_EEVEE);
+    EXPECT_EQ(result.contributors[0].weight, result.contributors[4].weight);
+    EXPECT_EQ(result.contributors[0].age, mode == 0 ? 0 : 1);
+    EXPECT_EQ(result.contributors[2].species, SPECIES_NONE);
+    EXPECT_EQ(result.contributors[6].species, SPECIES_NONE);
+    if (mode != 0)
+    {
+        EXPECT_EQ(result.contributors[1].species, SPECIES_POLIWAG);
+        EXPECT_EQ(result.contributors[5].species, SPECIES_APPLIN);
+    }
+    for (side = 0; side < DAYCARE_MON_COUNT; side++)
+    {
+        ClearBoxMonBerserkGeneProfile(&daycare->mons[side].mon);
+        ZeroBoxMonData(&daycare->mons[side].mon);
+    }
+}
+
 TEST("Fusion base contributors merge weights and keep the newest duplicate age")
 {
     struct BerserkGeneContributor contributors[] = {

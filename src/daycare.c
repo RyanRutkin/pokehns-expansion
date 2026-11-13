@@ -507,15 +507,70 @@ bool8 GetBerserkGeneMergedEvolutionLevel(const struct BerserkGeneContributor *co
     return TRUE;
 }
 
-u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count)
+static void NormalizeBerserkGeneContributorWeights(struct BerserkGeneContributor *contributors,
+    u64 *weights, u8 count)
 {
-    u32 weights[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
-    u16 evolutionCounts[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
-    u8 i, j;
-    u32 total = 0, divisor = 0;
+    u64 total = 0, divisor = 0;
+    u8 i;
 
     for (i = 0; i < count; i++)
-        weights[i] = contributors[i].weight;
+    {
+        u64 a = divisor, b = weights[i];
+        while (b != 0)
+        {
+            u64 remainder = a % b;
+            a = b;
+            b = remainder;
+        }
+        divisor = a;
+        total += weights[i];
+    }
+    if (total > UINT16_MAX && divisor > 1)
+    {
+        total = 0;
+        for (i = 0; i < count; i++)
+        {
+            weights[i] /= divisor;
+            total += weights[i];
+        }
+    }
+    if (total <= UINT16_MAX)
+    {
+        for (i = 0; i < count; i++)
+            contributors[i].weight = weights[i];
+    }
+    else
+    {
+        u64 remainders[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+        u32 assigned = count;
+        for (i = 0; i < count; i++)
+        {
+            u64 scaled = weights[i] * (UINT16_MAX - count);
+            contributors[i].weight = 1 + scaled / total;
+            remainders[i] = scaled % total;
+            assigned += contributors[i].weight - 1;
+        }
+        while (assigned < UINT16_MAX)
+        {
+            u8 largest = 0;
+            for (i = 1; i < count; i++)
+            {
+                if (remainders[i] > remainders[largest])
+                    largest = i;
+            }
+            contributors[largest].weight++;
+            remainders[largest] = 0;
+            assigned++;
+        }
+    }
+}
+
+static u8 SelectWeightedBerserkGeneContributors(struct BerserkGeneContributor *contributors,
+    u64 *weights, u8 count)
+{
+    u16 evolutionCounts[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    u8 i, j;
+
     for (i = 0; i < count; i++)
     {
         for (j = i + 1; j < count; )
@@ -567,57 +622,98 @@ u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8
         }
     }
 
+    NormalizeBerserkGeneContributorWeights(contributors, weights, count);
+    return count;
+}
+
+u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count)
+{
+    u64 weights[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    u8 i;
+
+    assertf(count <= MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES, "Too many fusion contributors %d", count)
+        return 0;
     for (i = 0; i < count; i++)
     {
-        u32 a = divisor, b = weights[i];
-        while (b != 0)
-        {
-            u32 remainder = a % b;
-            a = b;
-            b = remainder;
-        }
-        divisor = a;
-        total += weights[i];
+        assertf(contributors[i].species != SPECIES_NONE
+             && contributors[i].species < NUM_SPECIES && contributors[i].weight != 0,
+                "Invalid fusion contributor %d", i)
+            return 0;
+        weights[i] = contributors[i].weight;
     }
-    if (total > UINT16_MAX && divisor > 1)
+    return SelectWeightedBerserkGeneContributors(contributors, weights, count);
+}
+
+bool8 CollectBerserkGeneParentContributors(struct BoxPokemon *mon,
+    struct BerserkGeneContributor *contributors, u8 *count)
+{
+    u16 profileId = GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    const struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
+    const struct BerserkGeneLineage *lineage;
+    u32 totals[2] = {0};
+    u64 weights[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    u8 shareA, i;
+
+    *count = 0;
+    memset(contributors, 0, sizeof(*contributors) * MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES);
+    assertf(profileId == 0 || profile != NULL, "Invalid fusion parent profile %d", profileId)
+        return FALSE;
+    if (profile == NULL)
     {
-        total = 0;
-        for (i = 0; i < count; i++)
-        {
-            weights[i] /= divisor;
-            total += weights[i];
-        }
+        u16 species = GetBoxMonData(mon, MON_DATA_SPECIES);
+        assertf(species != SPECIES_NONE && species < NUM_SPECIES, "Invalid breeding species %d", species)
+            return FALSE;
+        contributors[0] = (struct BerserkGeneContributor){GetEggSpecies(species), 1, 0};
+        *count = 1;
+        return TRUE;
     }
-    if (total <= UINT16_MAX)
+
+    lineage = GetBerserkGeneLineage(profileId);
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
     {
-        for (i = 0; i < count; i++)
-            contributors[i].weight = weights[i];
+        const struct BerserkGeneContributor *source = &lineage->contributors[i];
+        assertf((source->species == SPECIES_NONE && source->weight == 0 && source->age == 0)
+             || (source->species != SPECIES_NONE && source->species < NUM_SPECIES && source->weight != 0),
+                "Invalid stored fusion contributor %d", i)
+            return FALSE;
+        totals[i / MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE] += source->weight;
     }
-    else
+    assertf(totals[0] != 0 && totals[1] != 0, "Missing fusion parent lineage %d", profileId)
+        return FALSE;
+    shareA = (profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT) ? 50
+           : (profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) ? 38 : 62;
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
     {
-        u32 remainders[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE];
-        u32 assigned = count;
-        for (i = 0; i < count; i++)
-        {
-            u64 scaled = (u64)weights[i] * (UINT16_MAX - count);
-            contributors[i].weight = 1 + scaled / total;
-            remainders[i] = scaled % total;
-            assigned += contributors[i].weight - 1;
-        }
-        while (assigned < UINT16_MAX)
-        {
-            u8 largest = 0;
-            for (i = 1; i < count; i++)
-            {
-                if (remainders[i] > remainders[largest])
-                    largest = i;
-            }
-            contributors[largest].weight++;
-            remainders[largest] = 0;
-            assigned++;
-        }
+        const struct BerserkGeneContributor *source = &lineage->contributors[i];
+        u8 side = i / MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+        if (source->weight == 0)
+            continue;
+        contributors[*count] = *source;
+        if (contributors[*count].age < UINT16_MAX)
+            contributors[*count].age++;
+        // Cross-multiply whole-side totals to retain the parent's actual side shares.
+        weights[*count] = (u64)source->weight * (side == 0 ? shareA : 100 - shareA) * totals[side ^ 1];
+        (*count)++;
     }
-    return count;
+    *count = SelectWeightedBerserkGeneContributors(contributors, weights, *count);
+    return *count != 0;
+}
+
+bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage)
+{
+    struct BerserkGeneLineage result = {0};
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    u8 side, count;
+
+    for (side = 0; side < DAYCARE_MON_COUNT; side++)
+    {
+        if (!CollectBerserkGeneParentContributors(&daycare->mons[side].mon, contributors, &count))
+            return FALSE;
+        memcpy(&result.contributors[side * MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE],
+               contributors, count * sizeof(*contributors));
+    }
+    *lineage = result;
+    return TRUE;
 }
 
 // Current species data has at most 72 literal evolution entries for one species (Alcremie).

@@ -6,6 +6,16 @@ plus the resulting plan and decisions. Resume implementation from here when prom
 
 ## Current breeding specification and status (2026-11-12)
 
+Storage constraint (user decision, 2026-11-13): use only storage methods already
+leveraged by this ROM, both for the MVP and afterward. Do not introduce a separate
+external-file backend or any other new storage mechanism. This supersedes every
+earlier commitment below to external storage or a mandatory post-MVP storage migration.
+The approved SaveBlock3 lineage sidecars remain within the existing save machinery.
+Any future capacity increase must use existing ROM storage mechanisms, with a fresh
+capacity, save-consistency, and compatibility audit. Existing dedicated flash sectors
+are not assumed available: preserve their current features unless a change is explicitly
+approved. The current eight-profile limit remains; no larger limit is promised.
+
 The user clarified that a newly bred fusion's contributors are the **base Pokemon of the
 parents' evolutionary lineages**, not the parents' current evolved species. This applies to
 ordinary parents and to rebreeding parents with existing fusion profiles. For example, breeding
@@ -302,6 +312,33 @@ with the current 35,660-byte size pin. The nine 3,968-byte storage sectors hold 
 leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine table slots
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
+
+Stored-parent contributor groundwork (2026-11-13): `CollectBerserkGeneParentContributors`
+reads an ordinary parent's base species through `GetEggSpecies`, or a fusion parent's
+saved lineage rather than its nominal/evolved species. For fusion parents it normalizes
+each whole source side before applying that parent's original 62/38 or 50/50 shares.
+Wide intermediate weights preserve duplicate multiplicity through merging and pruning;
+the shared selector reduces exact ratios or applies bounded positive rounding only after
+selection. Contributor ages advance by one generation, saturating at UINT16_MAX rather
+than wrapping old contributors into the newest age. Empty/invalid fusion lineage asserts
+explicitly; no evolved-species fallback silently fabricates missing ancestry.
+
+`BuildBerserkGeneBreedingLineage` collects each immediate parent independently into its
+four-slot offspring side, leaving unused entries zero. Identical species across the two
+offspring sides stay separate so the new breeding's parent shares can be applied later.
+The builder publishes its result only after both parent collections succeed and does not
+mutate the parents. It uses existing internal sidecar storage only.
+
+Validation: `make -k check BUILD=hns -j8 TESTS='Fusion base contributors'` passed
+10 tests, including ordinary evolved parents, the Dratini/Poliwag + Eevee/Applin
+example, shared species on opposite offspring sides, all parent-share modes, bounded
+rounding, age saturation, and unchanged parent metadata. `make -k check BUILD=hns
+-j8 TESTS='Fusion rebreeding'` passed all 11 existing gameplay regressions.
+These helpers are **not yet wired into live profile construction**: current profiles can
+still have empty lineage sidecars, and compact evolution state, trait attribution, naming,
+and movepool projection must be integrated coherently before replacing the live pipeline.
+Milestone 3 remains open; the passing rebreeding tests characterize existing behavior,
+not completion of the revised base-contributor specification.
 
 Contributor-selection groundwork (2026-11-12): a standalone helper now merges duplicate
 species, preserves the newest duplicate age, combines weights, and prunes oldest contributors
@@ -1127,8 +1164,8 @@ Verification:
 ## MVP profile capacity (2026-11-12)
 
 The user set the internal MVP limit to **8 active fusion profiles**, plus the reserved slot.
-External storage remains deferred until the user can experiment with the MVP, and is planned
-before release. No compatibility with previous fusion saves is required. Older capacity and
+The earlier external-storage roadmap is superseded by the 2026-11-13 storage constraint
+above. No compatibility with previous fusion saves is required. Older capacity and
 save-size figures below are historical and do not describe the current limit.
 
 The user approved a bounded rebreeding move-source design: up to four species sources per parent
@@ -1188,8 +1225,8 @@ defeated fusion's stored EV yields. Resolve ownership/link safety before changin
 ## Remaining milestone tracker (agreed 2026-11-10)
 
 The current goal is a working, manually testable implementation using the internal capped
-profile store. Keep external storage migration separate; do not begin it before that version
-is available for manual testing. Automated builds/tests alone do not establish that manual
+profile store. Any later capacity work must use storage mechanisms already leveraged
+by this ROM. Automated builds/tests alone do not establish that manual
 validation has been completed.
 
 | Milestone | Status | Completion criteria |
@@ -1200,7 +1237,7 @@ validation has been completed.
 | 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
 | 5. Final lifecycle validation and manual-testable checkpoint | In progress | Verify profile cleanup/reuse, normal save/reload, the temporary fusion-recording safeguard, and the offline feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. Link compatibility is deferred as noted below. |
 | Link compatibility | Deferred until after initial MVP | Complete and verify link restrictions or profile transfer, including coordinated cancellation and multiplayer testing. Until then, do not use fusion link actions. |
-| External profile storage | Deferred until after initial MVP, planned before release | Replace the temporary eight-profile internal capacity with external storage after the user can experiment with the MVP. |
+| Profile capacity expansion | Not scheduled; existing storage methods only | Retain the eight-profile limit unless an audited design using storage mechanisms already leveraged by the ROM is approved. No new external-storage backend, including post-MVP. |
 | Fusion battle recording support | Deferred until after initial MVP | Enable reliable recording and playback with the fusion profiles captured at battle time. Until then, disable recording fusion battles while retaining ordinary battle recordings. |
 | Pyramid fusion rollback | In progress for MVP (decision revised 2026-11-12) | Restore fusion entry state, including profile, species and moves, on win, loss and retirement, including after pause/reload. Preserve ordinary Pyramid healing and held-item behavior. |
 
@@ -1209,8 +1246,9 @@ validation has been completed.
 - **Link compatibility:** defer safe fusion trades and battles, profile transfer or complete
   restrictions, and multiplayer validation until after the initial MVP. Existing guards are
   incomplete; do not use fusion link actions.
-- **External profile storage:** defer implementation until after the user can experiment with
-  the initial MVP, but plan it before release. The MVP uses eight active internal profiles.
+- **Profile storage:** use only storage methods already leveraged by the ROM, including
+  after MVP. A new external-storage backend is not planned. Eight active profiles remain
+  the current limit; any expansion requires a separately approved existing-storage design.
 - **Fusion battle recordings:** temporarily disable recording battles involving fusion Pokémon
   for the MVP; ordinary battle recordings should remain available. This restriction is
   implemented and has focused automated coverage; full regression and manual validation remain.
@@ -2878,7 +2916,11 @@ accepted with this choice:
   outside the storage module are forbidden so the backing store can later move to an external save
   area with minimal behavioral-code churn.
 
-### Confirmed future storage migration
+### Historical storage migration proposal (superseded 2026-11-13)
+The proposal below is retained as historical context, not an authorized roadmap.
+The current storage constraint above forbids introducing new storage methods, including
+post-MVP; a mandatory external-storage migration is no longer planned.
+
 External/special save storage is planned for a later phase. Risks of deferring are accepted for now
 because Phase 1 needs a small, testable storage backend before the breeding pipeline exists, but
 the implementation must avoid baking in the internal table as the permanent architecture. The later
