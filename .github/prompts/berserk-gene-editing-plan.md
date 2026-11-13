@@ -66,6 +66,108 @@ fusion-specific values, such as a merged weighted level, in the profile. Validat
 and additional-condition checks; do not introduce a separate fixed condition cap unless the
 implementation requires one and its behavior has been decided.
 
+Evolution-move availability specification (2026-11-13): after determining
+and pruning target species, collect requirements from every retained source route, alternative
+method, and both evolution stages. Deduplicate explicit moves named by `IF_KNOWS_MOVE`
+and `IF_USED_MOVE_X_TIMES`. `IF_KNOWS_MOVE_TYPE` is explicitly excluded from move-pool
+protection: do not add a required-type registry or a qualifying-move guarantee. Preserve
+every original evolution condition, including move-type checks, use counts, and other
+accompanying requirements.
+
+Track availability in the final level-up, TM, or tutor pools; egg-only access does not count.
+Use a small deduplicated registry with availability flags, not flags implying that the Pokemon
+currently knows the move. Protect required explicit moves during existing move-selection
+passes. Do not add a full move-catalog scan
+solely for this check; use targeted missing-requirement lookups where sampling skips candidates.
+After pruning, insert missing explicit moves into the level-up learnset at level 40.
+Reserve capacity or replace unprotected entries so a full 20-entry learnset cannot silently
+discard fallbacks. Re-sort the result and preserve its terminator. Apply the guarantee on
+every fused-learnset rebuild, including evolution, rebreeding, reload, and either Modern Moves
+setting, and keep level-40 fallbacks accessible through the move relearner above level 40.
+TM/tutor availability here means compatibility, not a guarantee that the teaching item or
+service is currently reachable. This specification does not authorize resuming gameplay
+implementation; milestone statuses remain unchanged.
+
+Post-MVP feature documentation must explain that evolution-move protection covers
+`IF_KNOWS_MOVE` and `IF_USED_MOVE_X_TIMES`, but not `IF_KNOWS_MOVE_TYPE`. If a future
+retained evolution requires knowing a move of a particular type, pruning can leave it without
+a qualifying move; no automatic protection or fallback is provided for that condition.
+No current species evolution entry uses it; Eevee evolves into Sylveon using a Shiny Stone
+in this repository.
+
+Weighted move-pruning specification (2026-11-13; agreed, not implemented): apply weighted
+selection to level-up and egg pools, while preserving TM/tutor pools as the full unpruned
+union. Evolution-required move protection and level-40 repair take precedence over ordinary
+selection priorities; egg-only access still cannot satisfy the evolution-move guarantee.
+
+Each ordinary candidate has weight 1, plus 1 if its type matches either offspring type,
+plus 1 if its damaging category matches the offspring's stronger base attacking stat.
+Matching both type slots earns only one type bonus. Compare resolved base Attack and
+Special Attack: favor physical moves when Attack is greater, special moves when Special
+Attack is greater, and neither on a tie. Status moves receive no attacking-category bonus,
+but can receive the type bonus. Bonuses increase retention likelihood, not immunity to pruning.
+
+For each contributor's allocated sample, classify non-damaging moves using the Status
+category, not zero base power (which also occurs on fixed-damage attacks). Set the Status
+quota to the nearest integer to the sample's Status percentage times its allocated output
+count; round exact halves up. The remainder is the damaging quota. Count protected moves
+toward their applicable quota; mandatory protection overrides the percentage when they
+conflict. Fill shortages from the other category. Preserve existing parent-side shares and
+the agreed contributor allocation; these priorities act within those allocations.
+
+Select without replacement using additive weights and deterministic local randomness derived
+from stable Pokemon/profile data, never consuming gameplay RNG. Repeated reads, menu openings,
+and save/reload must not reroll a learnset. Inspect only contributing learnsets, not the whole
+move catalog. Duplicate moves must be deduplicated and treated as a single move entry,
+not separate candidates or extra selection tickets. Compute each sample's Status percentage
+from its unique moves. Preserve source attribution for shared moves without duplicating the
+move in the final pool; level-up duplicates retain the earliest applicable learning level.
+Backfill available unselected unique candidates when overlapping samples leave spare capacity.
+Small quotas, shared moves, and mandatory requirements
+can make exact Status percentages unattainable; target the per-sample quotas without sacrificing
+protection or duplicating final entries. Test both the measurable weighting bias and resulting
+counts, as well as determinism across reads/reload and rebuilds after evolution or a Modern
+Moves change.
+
+Keep level-up entries in stable ascending-level order, preserving source/sample order for
+equal levels and removing type-based ordering priority. Individually sorted source lists cannot
+simply be concatenated: level-up and relearner scans depend on globally ascending levels.
+Use a stable sort or ordered merge and preserve the terminator. Egg/TM/tutor ordering has
+no gameplay priority requirement. Post-MVP feature documentation must describe these weights,
+Status quotas, protection precedence, and approximation limits. This clarification authorizes
+recording the rules only, not resuming implementation; milestone statuses remain unchanged.
+
+Evolution-move protection checkpoint (2026-11-13): implemented for the current method-based
+profiles in the shared party/boxed fused level-up learnset builder. Each rebuild deduplicates
+explicit move requirements from every stored node's condition set, including stage-two nodes
+and requirements accompanied by other conditions. The transient registry avoids increasing
+save storage. Required natural level-up entries are seeded at their earliest active-source
+level before sampling; a required move absent from both natural level-up and the unpruned
+TM/tutor union is seeded at level 40. Egg access is deliberately not consulted.
+
+Sampling reserves capacity for the seeded entries and proportionally reduces ordinary
+parent-side quotas. A final availability audit repairs any missing, non-teachable required
+move at level 40, replacing only an unprotected entry if full. Sorting and the terminator
+remain unchanged, as do the Pokemon's known moves, profile data, and evolution conditions.
+The registry is bounded by the existing 20-move level-up capacity and explicitly asserts on
+invalid condition data or excessive distinct requirements instead of silently dropping them.
+No full move-catalog scan is added; only registered moves are probed in active source lists.
+The existing move relearner reads this shared boxed learnset and includes entries at or below
+the Pokemon's level, so these fallbacks remain accessible after level 40.
+
+Validation: `make -k check BUILD=hns -j8 TESTS='Fusion evolution moves'` passed three
+parameterized tests under both Modern Moves settings, covering natural Rage Fist retention,
+deduplicated Rage Fist/Dragon Cheer/Barb Barrage fallbacks against a normally full 20-move
+pool, both later evolution phases, a requirement with an additional region condition,
+party/boxed rebuilding, unchanged profiles/known moves, and TM/tutor access without fallback.
+`TESTS='Fusion level-up'` passed one existing test and `TESTS='Fusion pseudo-side'` passed
+two existing tests using the same command. The first capacity fixture assumed Charizard
+and Alakazam produced 20 unique sampled moves; it produced 18 instead. The corrected
+Mewtwo/Heracross fixture verifies the actual 20-entry baseline before checking protection.
+Future compact-profile integration must collect all native alternative-method requirements
+using the source-aware iterator; that profile conversion and live base-contributor breeding
+remain outstanding. Milestones 1-2 are complete, 3 and 5 remain in progress, and 4 is closed.
+
 The existing code does not yet implement these rules: it stores each method as a node, only
 merges exactly two roots from opposite parent sides, and uses the historical
 continuation-preserving pruning rule below. That historical rule is superseded where it

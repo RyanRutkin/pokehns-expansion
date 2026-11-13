@@ -6408,6 +6408,123 @@ static void SampleBerserkGeneLevelUpMoves(const u16 *species, u8 sourceCount, u1
     }
 }
 
+static bool8 CollectBerserkGeneEvolutionMoves(const struct BerserkGeneProfile *profile, u16 *moves, u8 *count)
+{
+    u8 i;
+
+    *count = 0;
+    assertf(profile->potentialEvolutionCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS,
+            "Invalid fusion evolution count")
+        return FALSE;
+    for (i = 0; i < profile->potentialEvolutionCount; i++)
+    {
+        u8 id = profile->potentialEvolutions[i].conditionSetId;
+        const struct EvolutionParam *params = GetEvolutionConditionSet(id);
+        u16 j;
+
+        assertf(id == 0 || params != NULL, "Invalid fusion evolution condition set %d", id)
+            return FALSE;
+        if (params == NULL)
+            continue;
+        for (j = 0; params[j].condition != CONDITIONS_END; j++)
+        {
+            u8 k;
+            if (params[j].condition != IF_KNOWS_MOVE && params[j].condition != IF_USED_MOVE_X_TIMES)
+                continue;
+            assertf(params[j].arg1 != MOVE_NONE && params[j].arg1 < MOVES_COUNT_ALL,
+                    "Invalid fusion evolution move %d", params[j].arg1)
+                return FALSE;
+            for (k = 0; k < *count && moves[k] != params[j].arg1; k++);
+            if (k != *count)
+                continue;
+            assertf(*count < MAX_LEVEL_UP_MOVES, "Too many required fusion evolution moves")
+                return FALSE;
+            moves[(*count)++] = params[j].arg1;
+        }
+    }
+    return TRUE;
+}
+
+static void ProtectBerserkGeneEvolutionMoves(const u16 *moves, u8 requiredCount, bool8 *teachable,
+    const u16 *speciesA, u8 countA, const u16 *speciesB, u8 countB, u8 *count)
+{
+    u8 i;
+
+    for (i = 0; i < requiredCount; i++)
+    {
+        struct LevelUpMove entry = {.move = moves[i], .level = 40};
+        bool8 hasLevel = FALSE;
+        u8 parent, source;
+
+        teachable[i] = FALSE;
+        // Probe only registered moves in the active source pools, not the move catalog.
+        for (parent = 0; parent < 2; parent++)
+        {
+            const u16 *species = parent == 0 ? speciesA : speciesB;
+            u8 sourceCount = parent == 0 ? countA : countB;
+            for (source = 0; source < sourceCount; source++)
+            {
+                const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species[source]);
+                const u16 *teachableMoves = GetSpeciesTeachableLearnset(species[source]);
+                u16 j;
+                for (j = 0; j < MAX_LEVEL_UP_MOVES && learnset[j].move != LEVEL_UP_MOVE_END; j++)
+                {
+                    if (learnset[j].move == moves[i] && (!hasLevel || learnset[j].level < entry.level))
+                    {
+                        entry = learnset[j];
+                        hasLevel = TRUE;
+                    }
+                }
+                if (!teachable[i])
+                    for (j = 0; teachableMoves[j] != MOVE_UNAVAILABLE; j++)
+                        if (teachableMoves[j] == moves[i])
+                        {
+                            teachable[i] = TRUE;
+                            break;
+                        }
+            }
+        }
+        // Teachable pools are an unpruned union; egg-only moves deliberately do not qualify.
+        // Seed natural level moves (or level-40 fallbacks) before sampling can fill the buffer.
+        if (hasLevel || !teachable[i])
+            AddBerserkGeneLearnsetMove(&entry, count);
+    }
+}
+
+static bool8 RepairBerserkGeneEvolutionMoves(const u16 *moves, u8 requiredCount,
+                                           const bool8 *teachable, u8 *count)
+{
+    u8 i;
+
+    for (i = 0; i < requiredCount; i++)
+    {
+        u8 j;
+        struct LevelUpMove fallback = {.move = moves[i], .level = 40};
+        if (teachable[i])
+            continue;
+        for (j = 0; j < *count && sBerserkGeneLevelUpMoves[j].move != moves[i]; j++);
+        if (j != *count)
+            continue;
+        if (*count < MAX_LEVEL_UP_MOVES)
+            AddBerserkGeneLearnsetMove(&fallback, count);
+        else
+        {
+            // Never sacrifice another registered evolution move to repair a missing one.
+            for (j = *count; j > 0; j--)
+            {
+                u8 k;
+                for (k = 0; k < requiredCount && moves[k] != sBerserkGeneLevelUpMoves[j - 1].move; k++);
+                if (k == requiredCount)
+                    break;
+            }
+            assertf(j != 0, "No room for required fusion evolution move %d", moves[i])
+                return FALSE;
+            sBerserkGeneLevelUpMoves[j - 1] = fallback;
+        }
+    }
+    return TRUE;
+}
+
 static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u16 profileId,
                                                                   enum Type type1, enum Type type2)
 {
@@ -6417,6 +6534,9 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
     u8 sourceCountA, sourceCountB;
     u16 countA, countB;
     u16 takeA, takeB;
+    u16 requiredMoves[MAX_LEVEL_UP_MOVES];
+    bool8 teachableEvolutionMoves[MAX_LEVEL_UP_MOVES];
+    u8 requiredCount;
     u8 count = 0;
     u16 i;
 
@@ -6445,8 +6565,20 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
     takeA = min(takeA, countA);
     takeB = min(takeB, countB);
 
+    if (!CollectBerserkGeneEvolutionMoves(profile, requiredMoves, &requiredCount))
+        return NULL;
+    ProtectBerserkGeneEvolutionMoves(requiredMoves, requiredCount, teachableEvolutionMoves,
+                                    speciesA, sourceCountA, speciesB, sourceCountB, &count);
+    if (count != 0 && takeA + takeB > MAX_LEVEL_UP_MOVES - count)
+    {
+        u16 available = MAX_LEVEL_UP_MOVES - count;
+        takeA = ((u32)takeA * available + (takeA + takeB) / 2) / (takeA + takeB);
+        takeB = available - takeA;
+    }
     SampleBerserkGeneLevelUpMoves(speciesA, sourceCountA, takeA, &count);
     SampleBerserkGeneLevelUpMoves(speciesB, sourceCountB, takeB, &count);
+    if (!RepairBerserkGeneEvolutionMoves(requiredMoves, requiredCount, teachableEvolutionMoves, &count))
+        return NULL;
 
     // Keep learnset ordering level-first, then favor moves matching the current fusion typing
     // within a shared level. This preserves the assumptions in level-up and move-relearner scans.
