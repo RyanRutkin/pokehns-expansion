@@ -5,6 +5,16 @@
 
 struct FusionPotentialEvolution;
 
+#define MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE 4
+#define MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES (MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE * 2)
+
+struct BerserkGeneContributor
+{
+    u16 species;
+    u16 weight;
+    u16 age;
+};
+
 struct RecordMixingDaycareMail
 {
     struct DaycareMail mail[DAYCARE_MON_COUNT];
@@ -39,5 +49,9 @@ bool8 SpeciesCanLearnEggMove(u16 species, enum Move move);
 void StorePokemonInDaycare(struct Pokemon *mon, struct DaycareMon *daycareMon);
 u8 GetEggMoves(struct Pokemon *pokemon, u16 *eggMoves);
 void PruneBerserkGeneLineage(struct FusionPotentialEvolution *nodes, u8 *ages, u8 *rootIds, u16 *count);
+u16 CountBerserkGeneBaseEvolutionNodes(u16 species);
+// Up to MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES nonzero-weight base species.
+// Ages increase as contributions become older.
+u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count);
 
 #endif // GUARD_DAYCARE_H

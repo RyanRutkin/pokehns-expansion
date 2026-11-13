@@ -125,6 +125,158 @@ static u8 GetBreedingEvYield(struct BerserkGeneProfile *profile, u16 species, u8
     }
 }
 
+static bool8 IsFirstBerserkGeneEvolutionTarget(const struct Evolution *evolutions, u16 index)
+{
+    u16 i;
+    u16 target = SanitizeSpeciesId(evolutions[index].targetSpecies);
+
+    if (evolutions[index].method == EVO_SPLIT_FROM_EVO
+     || target == SPECIES_NONE || !IsSpeciesEnabled(target))
+        return FALSE;
+    for (i = 0; i < index; i++)
+    {
+        if (evolutions[i].method != EVO_SPLIT_FROM_EVO
+         && SanitizeSpeciesId(evolutions[i].targetSpecies) == target)
+            return FALSE;
+    }
+    return TRUE;
+}
+
+u16 CountBerserkGeneBaseEvolutionNodes(u16 species)
+{
+    const struct Evolution *roots = GetSpeciesEvolutions(species);
+    u16 count = 0;
+    u16 i, j;
+
+    for (i = 0; roots[i].method != EVOLUTIONS_END; i++)
+    {
+        const struct Evolution *descendants;
+        if (!IsFirstBerserkGeneEvolutionTarget(roots, i))
+            continue;
+        count++;
+        descendants = GetSpeciesEvolutions(roots[i].targetSpecies);
+        for (j = 0; descendants[j].method != EVOLUTIONS_END; j++)
+        {
+            if (IsFirstBerserkGeneEvolutionTarget(descendants, j))
+                count++;
+        }
+    }
+    return count;
+}
+
+u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count)
+{
+    u32 weights[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    u16 evolutionCounts[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    u8 i, j;
+    u32 total = 0, divisor = 0;
+
+    for (i = 0; i < count; i++)
+        weights[i] = contributors[i].weight;
+    for (i = 0; i < count; i++)
+    {
+        for (j = i + 1; j < count; )
+        {
+            if (contributors[i].species == contributors[j].species)
+            {
+                u8 k;
+                weights[i] += weights[j];
+                contributors[i].age = min(contributors[i].age, contributors[j].age);
+                count--;
+                for (k = j; k < count; k++)
+                {
+                    contributors[k] = contributors[k + 1];
+                    weights[k] = weights[k + 1];
+                }
+            }
+            else
+                j++;
+        }
+        evolutionCounts[i] = CountBerserkGeneBaseEvolutionNodes(contributors[i].species);
+    }
+
+    while (count > MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE)
+    {
+        u8 candidates[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+        u8 candidateCount = 0;
+        u8 oldest = 0;
+        u16 oldestAge = 0, fewestNodes = 0;
+
+        for (i = 0; i < count; i++)
+        {
+            if (candidateCount == 0 || contributors[i].age > oldestAge
+             || (contributors[i].age == oldestAge && evolutionCounts[i] < fewestNodes))
+            {
+                oldestAge = contributors[i].age;
+                fewestNodes = evolutionCounts[i];
+                candidateCount = 0;
+            }
+            if (contributors[i].age == oldestAge && evolutionCounts[i] == fewestNodes)
+                candidates[candidateCount++] = i;
+        }
+        oldest = candidates[candidateCount == 1 ? 0 : Random() % candidateCount];
+        count--;
+        for (i = oldest; i < count; i++)
+        {
+            contributors[i] = contributors[i + 1];
+            weights[i] = weights[i + 1];
+            evolutionCounts[i] = evolutionCounts[i + 1];
+        }
+    }
+
+    for (i = 0; i < count; i++)
+    {
+        u32 a = divisor, b = weights[i];
+        while (b != 0)
+        {
+            u32 remainder = a % b;
+            a = b;
+            b = remainder;
+        }
+        divisor = a;
+        total += weights[i];
+    }
+    if (total > UINT16_MAX && divisor > 1)
+    {
+        total = 0;
+        for (i = 0; i < count; i++)
+        {
+            weights[i] /= divisor;
+            total += weights[i];
+        }
+    }
+    if (total <= UINT16_MAX)
+    {
+        for (i = 0; i < count; i++)
+            contributors[i].weight = weights[i];
+    }
+    else
+    {
+        u32 remainders[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE];
+        u32 assigned = count;
+        for (i = 0; i < count; i++)
+        {
+            u64 scaled = (u64)weights[i] * (UINT16_MAX - count);
+            contributors[i].weight = 1 + scaled / total;
+            remainders[i] = scaled % total;
+            assigned += contributors[i].weight - 1;
+        }
+        while (assigned < UINT16_MAX)
+        {
+            u8 largest = 0;
+            for (i = 1; i < count; i++)
+            {
+                if (remainders[i] > remainders[largest])
+                    largest = i;
+            }
+            contributors[largest].weight++;
+            remainders[largest] = 0;
+            assigned++;
+        }
+    }
+    return count;
+}
+
 // Current species data has at most 72 literal evolution entries for one species (Alcremie).
 // The persistent profile remains capped at eight selected lineage nodes.
 #define MAX_BERSERK_GENE_EVOLUTION_CANDIDATES 72

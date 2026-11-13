@@ -28,7 +28,8 @@ contributors first; for equal ages, prune contributors with the fewest evolution
 first; break any remaining ties randomly. Duplicate base species on a side are represented
 once, but retain the combined weight of all matching contributors. Use bounded integer
 precision with deterministic rounding if exact duplicate weights no longer fit after repeated
-rebreeding; do not silently discard multiplicity.
+rebreeding; do not silently discard multiplicity. When duplicates of different ages merge,
+keep only the newest contribution's age; discard the older ages.
 
 The two sides retain their existing 62/38 or 50/50 shares, divided equally among the
 contributors on each side before combining the weights of duplicates. New evolution options
@@ -79,6 +80,19 @@ with the current 35,660-byte size pin. The nine 3,968-byte storage sectors hold 
 leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine table slots
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
+
+Contributor-selection groundwork (2026-11-12): a standalone helper now merges duplicate
+species, preserves the newest duplicate age, combines weights, and prunes oldest contributors
+first, then those with fewer distinct evolution targets, with random ties. It preserves exact
+weight ratios where they fit and otherwise rounds to bounded positive weights. Its two-stage
+target count excludes split-only evolutions and counts alternative methods for one target once.
+`make -k check BUILD=hns -j8 TESTS='Fusion base contributors'` passed five focused tests.
+`make -k check BUILD=hns -j8 TESTS='Fusion rebreeding'` passed eleven existing tests,
+which characterize the unchanged, still-outdated gameplay behavior.
+This helper is **not wired into breeding or persistent profiles**; gameplay remains unchanged.
+The profile table's unused ID-zero slot could potentially be reclaimed, but layout changes also
+move the unrelated legacy item-fusion slots. Account for the existing version-6 save migration
+and preserve those slots when designing any new layout; do not silently corrupt them.
 
 Reopen milestone 3 for design, implementation, and validation of base-lineage inheritance;
 milestone 5 remains in progress. Milestones 1 and 2 are complete and milestone 4 is closed.

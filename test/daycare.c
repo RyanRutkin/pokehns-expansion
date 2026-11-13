@@ -6,6 +6,7 @@
 #include "malloc.h"
 #include "party_menu.h"
 #include "pokemon_storage_system.h"
+#include "random.h"
 #include "regions.h"
 #include "test/overworld_script.h"
 #include "test/test.h"
@@ -656,6 +657,114 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
     EXPECT(sawRattataLine);
     EXPECT(sawPidgeyLine);
     EXPECT(sawPidgeotContinuation);
+}
+
+TEST("Fusion base contributors count target species instead of evolution methods")
+{
+    EXPECT_EQ(CountBerserkGeneBaseEvolutionNodes(SPECIES_DRATINI), 2);
+    EXPECT_EQ(CountBerserkGeneBaseEvolutionNodes(SPECIES_POLIWAG), 3);
+    EXPECT_EQ(CountBerserkGeneBaseEvolutionNodes(SPECIES_EEVEE), 8);
+    EXPECT_EQ(CountBerserkGeneBaseEvolutionNodes(SPECIES_APPLIN), 4);
+    EXPECT_EQ(CountBerserkGeneBaseEvolutionNodes(SPECIES_NINCADA), 1);
+    EXPECT_EQ(CountBerserkGeneBaseEvolutionNodes(SPECIES_DRAGONITE), 0);
+}
+
+TEST("Fusion base contributors merge weights and keep the newest duplicate age")
+{
+    struct BerserkGeneContributor contributors[] = {
+        {SPECIES_DRATINI, 3, 8},
+        {SPECIES_POLIWAG, 2, 4},
+        {SPECIES_DRATINI, 5, 1},
+    };
+    u8 count = SelectBerserkGeneContributors(contributors, ARRAY_COUNT(contributors));
+
+    EXPECT_EQ(count, 2);
+    EXPECT_EQ(contributors[0].species, SPECIES_DRATINI);
+    EXPECT_EQ(contributors[0].weight, 8);
+    EXPECT_EQ(contributors[0].age, 1);
+    EXPECT_EQ(contributors[1].species, SPECIES_POLIWAG);
+    EXPECT_EQ(contributors[1].weight, 2);
+}
+
+TEST("Fusion base contributors prune age then distinct evolutionary node count")
+{
+    struct BerserkGeneContributor contributors[] = {
+        {SPECIES_EEVEE, 1, 10},
+        {SPECIES_APPLIN, 1, 10},
+        {SPECIES_DRATINI, 1, 1},
+        {SPECIES_POLIWAG, 1, 2},
+        {SPECIES_NINCADA, 1, 3},
+    };
+    u8 i;
+
+    EXPECT_EQ(SelectBerserkGeneContributors(contributors, ARRAY_COUNT(contributors)), 4);
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE; i++)
+        EXPECT_NE(contributors[i].species, SPECIES_APPLIN);
+
+    contributors[0] = (struct BerserkGeneContributor){SPECIES_EEVEE, 1, 11};
+    contributors[1] = (struct BerserkGeneContributor){SPECIES_APPLIN, 1, 10};
+    contributors[2] = (struct BerserkGeneContributor){SPECIES_DRATINI, 1, 1};
+    contributors[3] = (struct BerserkGeneContributor){SPECIES_POLIWAG, 1, 2};
+    contributors[4] = (struct BerserkGeneContributor){SPECIES_NINCADA, 1, 3};
+    EXPECT_EQ(SelectBerserkGeneContributors(contributors, ARRAY_COUNT(contributors)), 4);
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE; i++)
+        EXPECT_NE(contributors[i].species, SPECIES_EEVEE);
+}
+
+TEST("Fusion base contributors break equal pruning priorities randomly")
+{
+    rng_value_t oldRng = gRngValue;
+    bool8 removedDratini = FALSE, removedCharmander = FALSE;
+    u8 seed, i;
+
+    for (seed = 0; seed < 32; seed++)
+    {
+        struct BerserkGeneContributor contributors[] = {
+            {SPECIES_DRATINI, 1, 10},
+            {SPECIES_CHARMANDER, 1, 10},
+            {SPECIES_APPLIN, 1, 1},
+            {SPECIES_POLIWAG, 1, 1},
+            {SPECIES_EEVEE, 1, 1},
+        };
+        bool8 hasDratini = FALSE, hasCharmander = FALSE;
+
+        SeedRng(seed);
+        EXPECT_EQ(SelectBerserkGeneContributors(contributors, ARRAY_COUNT(contributors)), 4);
+        for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE; i++)
+        {
+            hasDratini |= contributors[i].species == SPECIES_DRATINI;
+            hasCharmander |= contributors[i].species == SPECIES_CHARMANDER;
+        }
+        EXPECT(hasDratini != hasCharmander);
+        removedDratini |= !hasDratini;
+        removedCharmander |= !hasCharmander;
+    }
+    gRngValue = oldRng;
+    EXPECT(removedDratini);
+    EXPECT(removedCharmander);
+}
+
+TEST("Fusion base contributors retain exact ratios or round bounded weights")
+{
+    struct BerserkGeneContributor exact[] = {
+        {SPECIES_DRATINI, UINT16_MAX, 0},
+        {SPECIES_POLIWAG, UINT16_MAX, 0},
+        {SPECIES_DRATINI, UINT16_MAX, 0},
+    };
+    struct BerserkGeneContributor rounded[] = {
+        {SPECIES_DRATINI, UINT16_MAX, 0},
+        {SPECIES_POLIWAG, UINT16_MAX - 1, 0},
+        {SPECIES_EEVEE, UINT16_MAX - 2, 0},
+    };
+
+    EXPECT_EQ(SelectBerserkGeneContributors(exact, ARRAY_COUNT(exact)), 2);
+    EXPECT_EQ(exact[0].weight, 2);
+    EXPECT_EQ(exact[1].weight, 1);
+    EXPECT_EQ(SelectBerserkGeneContributors(rounded, ARRAY_COUNT(rounded)), 3);
+    EXPECT_EQ((u32)rounded[0].weight + rounded[1].weight + rounded[2].weight, UINT16_MAX);
+    EXPECT(rounded[0].weight >= rounded[1].weight);
+    EXPECT(rounded[1].weight >= rounded[2].weight);
+    EXPECT_NE(rounded[2].weight, 0);
 }
 
 TEST("Fusion Shedinja split-only entries are excluded from breeding evolution candidates")
