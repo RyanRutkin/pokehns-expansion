@@ -4,6 +4,7 @@
 #include "constants/daycare.h"
 
 struct FusionPotentialEvolution;
+struct Evolution;
 
 #define MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE 4
 #define MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES (MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE * 2)
@@ -29,6 +30,12 @@ struct BerserkGeneEvolutionTarget
     u16 species;
     u8 rootContributors;
     u8 sourceTargets;
+};
+
+struct BerserkGeneEvolutionMethodCursor
+{
+    u16 methodIndex;
+    u8 sourceIndex; // 0-7: base contributors; 8-15: first-stage targets
 };
 
 struct RecordMixingDaycareMail
@@ -74,6 +81,13 @@ bool8 PruneBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u
 // Contributor bits identify base sources; target bits identify retained first-stage sources.
 bool8 CompactBerserkGeneEvolutionTargets(const struct BerserkGeneEvolutionNode *nodes, u16 count,
                                        struct BerserkGeneEvolutionTarget *targets, u8 *targetCount);
+// Zero-initialize the cursor for each target. Masks select the currently eligible source routes.
+const struct Evolution *GetNextBerserkGeneTargetMethod(const struct BerserkGeneEvolutionTarget *targets,
+    u8 targetCount, const struct BerserkGeneContributor *contributors, u8 targetIndex,
+    u8 contributorMask, u8 sourceTargetMask, struct BerserkGeneEvolutionMethodCursor *cursor);
+// Zero levels exclude nonparticipating contributors. Round the participating weighted average up.
+bool8 GetBerserkGeneMergedEvolutionLevel(const struct BerserkGeneContributor *contributors,
+    const u8 *levels, u8 parentShareA, u8 *level);
 // Up to MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES nonzero-weight base species.
 // Ages increase as contributions become older.
 u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count);

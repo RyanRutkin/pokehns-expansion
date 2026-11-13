@@ -375,6 +375,95 @@ bool8 CompactBerserkGeneEvolutionTargets(const struct BerserkGeneEvolutionNode *
     return TRUE;
 }
 
+const struct Evolution *GetNextBerserkGeneTargetMethod(const struct BerserkGeneEvolutionTarget *targets,
+    u8 targetCount, const struct BerserkGeneContributor *contributors, u8 targetIndex,
+    u8 contributorMask, u8 sourceTargetMask, struct BerserkGeneEvolutionMethodCursor *cursor)
+{
+    const struct BerserkGeneEvolutionTarget *target;
+
+    assertf(targetCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS && targetIndex < targetCount
+         && cursor->sourceIndex <= MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES + targetCount,
+            "Invalid fusion evolution method cursor or target")
+        return NULL;
+    target = &targets[targetIndex];
+    assertf(target->species != SPECIES_NONE
+         && (target->sourceTargets >> targetCount) == 0,
+            "Invalid fusion evolution target sources")
+        return NULL;
+
+    while (cursor->sourceIndex < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES + targetCount)
+    {
+        u8 source = cursor->sourceIndex;
+        u16 species = SPECIES_NONE;
+        const struct Evolution *evolution;
+
+        if (source < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES)
+        {
+            if (target->rootContributors & contributorMask & (1 << source))
+            {
+                assertf(contributors[source].species != SPECIES_NONE && contributors[source].weight != 0,
+                        "Missing fusion base contributor %d", source)
+                    return NULL;
+                species = contributors[source].species;
+            }
+        }
+        else
+        {
+            source -= MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES;
+            if (target->sourceTargets & sourceTargetMask & (1 << source))
+                species = targets[source].species;
+        }
+
+        if (species != SPECIES_NONE)
+        {
+            while ((evolution = GetNextSpeciesEvolutionForTarget(species, target->species, &cursor->methodIndex)) != NULL)
+                if (evolution->method != EVO_SPLIT_FROM_EVO)
+                    return evolution;
+        }
+        cursor->sourceIndex++;
+        cursor->methodIndex = 0;
+    }
+    return NULL;
+}
+
+bool8 GetBerserkGeneMergedEvolutionLevel(const struct BerserkGeneContributor *contributors,
+    const u8 *levels, u8 parentShareA, u8 *level)
+{
+    u32 totals[2] = {0}, participating[2] = {0}, weightedLevels[2] = {0};
+    u64 numerator, denominator;
+    u8 i;
+
+    assertf(parentShareA > 0 && parentShareA < 100, "Invalid fusion parent share")
+        return FALSE;
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+    {
+        u8 side = i / MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+        assertf((contributors[i].species == SPECIES_NONE && contributors[i].weight == 0 && levels[i] == 0)
+             || (contributors[i].species != SPECIES_NONE && contributors[i].weight != 0
+                 && levels[i] <= MAX_LEVEL),
+                "Invalid fusion level contributor %d", i)
+            return FALSE;
+        totals[side] += contributors[i].weight;
+        if (levels[i] != 0)
+        {
+            participating[side] += contributors[i].weight;
+            weightedLevels[side] += (u32)levels[i] * contributors[i].weight;
+        }
+    }
+    assertf(totals[0] != 0 && totals[1] != 0, "Missing fusion parent contributors")
+        return FALSE;
+    if (participating[0] == 0 && participating[1] == 0)
+        return FALSE;
+
+    // Normalize each whole parent side before excluding nonparticipating contributors.
+    numerator = (u64)parentShareA * weightedLevels[0] * totals[1]
+              + (u64)(100 - parentShareA) * weightedLevels[1] * totals[0];
+    denominator = (u64)parentShareA * participating[0] * totals[1]
+                + (u64)(100 - parentShareA) * participating[1] * totals[0];
+    *level = (numerator + denominator - 1) / denominator;
+    return TRUE;
+}
+
 u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count)
 {
     u32 weights[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];

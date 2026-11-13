@@ -137,6 +137,31 @@ covering native alternate methods, pruning, compact graphs, overlapping stages, 
 contributors in a shared four-line example. The previously untested disabled-species guard
 also passed the five pruning tests before this revision. Milestone statuses are unchanged.
 
+Compact-method and merged-level groundwork (2026-11-13): the compact graph now has a
+streaming native-method iterator. Base-contributor and first-stage-target masks gate eligible
+routes; the cursor preserves source identity while returning each native method and its
+original additional-condition pointer, without introducing a method/condition capacity.
+Split-only methods remain excluded. Shared target species can be queried separately for
+each contributor, and exhausted or inactive routes yield no method.
+
+A weighted-level helper normalizes contributor multiplicity within each whole parent side,
+applies that side's 62/38 or 50/50 share, then averages only participating level evolutions.
+It preserves the existing round-up convention, uses 64-bit intermediate arithmetic, and
+leaves the output unchanged when no contributor participates. Nonparticipating contributors
+still count toward the parent-side normalization; unequal side totals must not change the
+chosen parent-side share. The four-line example's unconditional Dragonair/Poliwhirl roots
+merge at level 28. Selecting participating targets, rejecting conditional levels from merged
+options, and applying either stage's transition still belong to the forthcoming live resolver.
+
+`make -k check BUILD=hns -j8 TESTS='Fusion target'` passed all 17 focused tests. Coverage
+includes shared-source identity, inactive routes, both Dipplin item methods, whole-side
+normalization, duplicate weights, one-sided participants, no participants, and maximum
+16-bit weights. The Politoed condition characterization now streams methods from the compact
+graph into the existing method-based test profile and still verifies item/trade eligibility
+and held-item consumption; its selector is now `Fusion target methods preserve Politoed`.
+This is a test-only bridge, not production profile conversion. Persistent storage and live
+breeding/evolution remain unchanged; milestone 3 stays open and milestone 5 stays in progress.
+
 Reopen milestone 3 for design, implementation, and validation of base-lineage inheritance;
 milestone 5 remains in progress. Milestones 1 and 2 are complete and milestone 4 is closed.
 Before implementation, assess how the clarified contributors interact with existing bounded

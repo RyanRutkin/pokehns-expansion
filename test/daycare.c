@@ -1088,6 +1088,180 @@ TEST("Fusion target compaction handles no evolutionary targets")
     }
 }
 
+TEST("Fusion target methods stream native alternatives from compact sources")
+{
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {
+        [0] = {SPECIES_POLIWAG, 1, 0},
+        [4] = {SPECIES_APPLIN, 1, 0},
+    };
+    struct BerserkGeneEvolutionNode nodes[16];
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u16 count = 0;
+    u8 targetCount = 0, i, tested = 0;
+
+    EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &count, SPECIES_POLIWAG, 0));
+    EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &count, SPECIES_APPLIN, 4));
+    EXPECT(CompactBerserkGeneEvolutionTargets(nodes, count, targets, &targetCount));
+    for (i = 0; i < targetCount; i++)
+    {
+        struct BerserkGeneEvolutionMethodCursor cursor = {0};
+        const struct Evolution *evolution, *native;
+        u16 nativeIndex = 0, sourceSpecies;
+        u8 methods = 0;
+
+        if (targets[i].species != SPECIES_POLITOED && targets[i].species != SPECIES_DIPPLIN)
+            continue;
+        tested++;
+        sourceSpecies = targets[i].species == SPECIES_POLITOED ? SPECIES_POLIWHIRL : SPECIES_APPLIN;
+        while ((evolution = GetNextBerserkGeneTargetMethod(targets, targetCount, contributors, i,
+                                                         0xFF, 0xFF, &cursor)) != NULL)
+        {
+            native = GetNextSpeciesEvolutionForTarget(sourceSpecies, targets[i].species, &nativeIndex);
+            EXPECT_EQ(evolution, native);
+            EXPECT_EQ(evolution->params, native->params);
+            EXPECT_EQ(cursor.sourceIndex, targets[i].species == SPECIES_DIPPLIN ? 4 : 8);
+            methods++;
+        }
+        EXPECT_EQ(methods, 2);
+        EXPECT_EQ(GetNextSpeciesEvolutionForTarget(sourceSpecies, targets[i].species, &nativeIndex), NULL);
+        EXPECT_EQ(GetNextBerserkGeneTargetMethod(targets, targetCount, contributors, i,
+                                               0xFF, 0xFF, &cursor), NULL);
+        cursor = (struct BerserkGeneEvolutionMethodCursor){0};
+        EXPECT_EQ(GetNextBerserkGeneTargetMethod(targets, targetCount, contributors, i, 0, 0, &cursor), NULL);
+    }
+    EXPECT_EQ(tested, 2);
+}
+
+TEST("Fusion target methods retain contributor identity for shared targets")
+{
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {
+        [0] = {SPECIES_BULBASAUR, 2, 0},
+        [4] = {SPECIES_BULBASAUR, 1, 0},
+    };
+    struct BerserkGeneEvolutionTarget targets[] = {
+        {SPECIES_IVYSAUR, (1 << 0) | (1 << 4), 0},
+        {SPECIES_VENUSAUR, 0, 1 << 0},
+    };
+    struct BerserkGeneEvolutionMethodCursor cursor = {0};
+    const struct Evolution *first, *second;
+
+    first = GetNextBerserkGeneTargetMethod(targets, ARRAY_COUNT(targets), contributors, 0, 0xFF, 0, &cursor);
+    EXPECT(first != NULL);
+    EXPECT_EQ(first->method, EVO_LEVEL);
+    EXPECT_EQ(cursor.sourceIndex, 0);
+    second = GetNextBerserkGeneTargetMethod(targets, ARRAY_COUNT(targets), contributors, 0, 0xFF, 0, &cursor);
+    EXPECT_EQ(second, first);
+    EXPECT_EQ(cursor.sourceIndex, 4);
+    EXPECT_EQ(GetNextBerserkGeneTargetMethod(targets, ARRAY_COUNT(targets), contributors, 0, 0xFF, 0, &cursor), NULL);
+    cursor = (struct BerserkGeneEvolutionMethodCursor){0};
+    EXPECT_EQ(GetNextBerserkGeneTargetMethod(targets, ARRAY_COUNT(targets), contributors, 0, 1 << 4, 0, &cursor), first);
+    EXPECT_EQ(cursor.sourceIndex, 4);
+    cursor = (struct BerserkGeneEvolutionMethodCursor){0};
+    EXPECT_EQ(GetNextBerserkGeneTargetMethod(targets, ARRAY_COUNT(targets), contributors, 1, 0xFF, 0, &cursor), NULL);
+    cursor = (struct BerserkGeneEvolutionMethodCursor){0};
+    EXPECT(GetNextBerserkGeneTargetMethod(targets, ARRAY_COUNT(targets), contributors, 1, 0, 1, &cursor) != NULL);
+    EXPECT_EQ(cursor.sourceIndex, 8);
+}
+
+TEST("Fusion target merged levels weight participants within whole parent sides")
+{
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {
+        [0] = {SPECIES_DRATINI, 1, 0},
+        [1] = {SPECIES_POLIWAG, 1, 0},
+        [4] = {SPECIES_EEVEE, 1, 0},
+        [5] = {SPECIES_APPLIN, 1, 0},
+    };
+    u8 levels[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {30, 25, 0, 0, 0, 0, 0, 0};
+    u8 level = 0;
+
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 62, &level));
+    EXPECT_EQ(level, 28);
+    levels[4] = 50;
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 62, &level));
+    EXPECT_EQ(level, 33); // (62 * 27.5 + 19 * 50) / 81
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 50, &level));
+    EXPECT_EQ(level, 35);
+    contributors[0].weight = 2;
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 62, &level));
+    EXPECT_EQ(level, 34);
+    levels[0] = levels[1] = 0;
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 38, &level));
+    EXPECT_EQ(level, 50);
+    levels[4] = 0;
+    level = 77;
+    EXPECT(!GetBerserkGeneMergedEvolutionLevel(contributors, levels, 62, &level));
+    EXPECT_EQ(level, 77);
+}
+
+TEST("Fusion target merged levels use unconditional native methods in the four line graph")
+{
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {
+        [0] = {SPECIES_DRATINI, 1, 0},
+        [1] = {SPECIES_POLIWAG, 1, 0},
+        [4] = {SPECIES_EEVEE, 1, 0},
+        [5] = {SPECIES_APPLIN, 1, 0},
+    };
+    struct BerserkGeneEvolutionNode nodes[32];
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 levels[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {0};
+    rng_value_t oldRng = gRngValue;
+    u16 count = 0;
+    u8 targetCount = 0, i, level = 0, participants = 0;
+
+    for (i = 0; i < ARRAY_COUNT(contributors); i++)
+        if (contributors[i].species != SPECIES_NONE)
+            EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &count, contributors[i].species, i));
+    EXPECT(PruneBerserkGeneEvolutionTargets(nodes, &count));
+    EXPECT(CompactBerserkGeneEvolutionTargets(nodes, count, targets, &targetCount));
+    for (i = 0; i < targetCount; i++)
+    {
+        struct BerserkGeneEvolutionMethodCursor cursor = {0};
+        const struct Evolution *evolution;
+        while ((evolution = GetNextBerserkGeneTargetMethod(targets, targetCount, contributors, i,
+                                                         0xFF, 0, &cursor)) != NULL)
+        {
+            if (evolution->method != EVO_LEVEL || evolution->params != NULL)
+                continue;
+            EXPECT(cursor.sourceIndex < ARRAY_COUNT(levels));
+            EXPECT_EQ(levels[cursor.sourceIndex], 0);
+            levels[cursor.sourceIndex] = evolution->param;
+            participants |= 1 << cursor.sourceIndex;
+        }
+    }
+    EXPECT_EQ(participants, (1 << 0) | (1 << 1));
+    EXPECT_EQ(levels[0], 30);
+    EXPECT_EQ(levels[1], 25);
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 62, &level));
+    EXPECT_EQ(level, 28);
+    gRngValue = oldRng;
+}
+
+TEST("Fusion target merged levels normalize side totals and handle maximum weights")
+{
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {
+        [0] = {SPECIES_DRATINI, 1, 0},
+        [4] = {SPECIES_POLIWAG, UINT16_MAX, 0},
+    };
+    u8 levels[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {[0] = 30, [4] = 25};
+    u8 level = 0, i;
+
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 62, &level));
+    EXPECT_EQ(level, 29);
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 38, &level));
+    EXPECT_EQ(level, 27);
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 50, &level));
+    EXPECT_EQ(level, 28);
+    for (i = 0; i < ARRAY_COUNT(contributors); i++)
+    {
+        contributors[i] = (struct BerserkGeneContributor){SPECIES_DRATINI, UINT16_MAX, 0};
+        levels[i] = i < MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE ? MAX_LEVEL : 1;
+    }
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 62, &level));
+    EXPECT_EQ(level, 63);
+    EXPECT(GetBerserkGeneMergedEvolutionLevel(contributors, levels, 38, &level));
+    EXPECT_EQ(level, 39);
+}
+
 TEST("Fusion Shedinja split-only entries are excluded from breeding evolution candidates")
 {
     struct BerserkGeneProfile *profile;

@@ -1,6 +1,7 @@
 #include "global.h"
 #include "battle.h"
 #include "battle_pyramid.h"
+#include "daycare.h"
 #include "evolution_scene.h"
 #include "event_data.h"
 #include "gba/m4a_internal.h"
@@ -98,12 +99,20 @@ static struct BerserkGeneProfile *SetChoiceProfile(struct Pokemon *mon, bool8 ph
     return profile;
 }
 
-TEST("Fusion Politoed alternative methods preserve trade and item conditions")
+TEST("Fusion target methods preserve Politoed trade and item conditions")
 {
     struct Pokemon mon;
     struct BerserkGeneProfile *profile;
+    struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {
+        [0] = {SPECIES_POLIWAG, 1, 0},
+        [4] = {SPECIES_DRATINI, 1, 0},
+    };
+    struct BerserkGeneEvolutionNode nodes[8];
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    struct BerserkGeneEvolutionMethodCursor cursor = {0};
     const struct Evolution *evolution;
-    u16 profileId, heldItem = ITEM_NONE, index = 0;
+    u16 profileId, heldItem = ITEM_NONE, nodeCount = 0;
+    u8 targetCount = 0, target;
     u8 tradeCount = 0, itemCount = 0, choice;
     u8 oldEvoLimit = gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit;
     bool32 canStop = TRUE;
@@ -120,7 +129,13 @@ TEST("Fusion Politoed alternative methods preserve trade and item conditions")
         SPECIES_POLIWHIRL, 25, EVO_LEVEL | EVO_POTENTIAL_SELECTED, 0
     };
     profile->potentialEvolutionCount = 1;
-    while ((evolution = GetNextSpeciesEvolutionForTarget(SPECIES_POLIWHIRL, SPECIES_POLITOED, &index)) != NULL)
+    EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &nodeCount, SPECIES_POLIWAG, 0));
+    EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &nodeCount, SPECIES_DRATINI, 4));
+    EXPECT(CompactBerserkGeneEvolutionTargets(nodes, nodeCount, targets, &targetCount));
+    for (target = 0; target < targetCount && targets[target].species != SPECIES_POLITOED; target++);
+    EXPECT(target < targetCount);
+    while ((evolution = GetNextBerserkGeneTargetMethod(targets, targetCount, contributors, target,
+                                                     0, 1, &cursor)) != NULL)
     {
         u8 conditionId;
         EXPECT(profile->potentialEvolutionCount < MAX_FUSION_POTENTIAL_EVOLUTIONS);
