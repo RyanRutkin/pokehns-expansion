@@ -1586,11 +1586,6 @@ TEST("Fusion pseudo-side movepools include every retained branch after each evol
         if (count > 0)
         {
             EXPECT(levelMoves[count - 1].level <= levelMoves[count].level);
-            if (levelMoves[count - 1].level == levelMoves[count].level
-             && (GetMoveType(levelMoves[count].move) == GetMonType(&mon, 0)
-                 || GetMoveType(levelMoves[count].move) == GetMonType(&mon, 1)))
-                EXPECT(GetMoveType(levelMoves[count - 1].move) == GetMonType(&mon, 0)
-                    || GetMoveType(levelMoves[count - 1].move) == GetMonType(&mon, 1));
         }
         for (source = 0; source < ARRAY_COUNT(sources); source++)
         {

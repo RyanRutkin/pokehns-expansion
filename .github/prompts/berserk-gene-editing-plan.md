@@ -95,7 +95,7 @@ a qualifying move; no automatic protection or fallback is provided for that cond
 No current species evolution entry uses it; Eevee evolves into Sylveon using a Shiny Stone
 in this repository.
 
-Weighted move-pruning specification (2026-11-13; agreed, not implemented): apply weighted
+Weighted move-pruning specification (2026-11-13; implemented for current profiles): apply weighted
 selection to level-up and egg pools, while preserving TM/tutor pools as the full unpruned
 union. Evolution-required move protection and level-40 repair take precedence over ordinary
 selection priorities; egg-only access still cannot satisfy the evolution-move guarantee.
@@ -136,6 +136,49 @@ Use a stable sort or ordered merge and preserve the terminator. Egg/TM/tutor ord
 no gameplay priority requirement. Post-MVP feature documentation must describe these weights,
 Status quotas, protection precedence, and approximation limits. This clarification authorizes
 recording the rules only, not resuming implementation; milestone statuses remain unchanged.
+
+Weighted move-pruning checkpoint (2026-11-13): replaced evenly spaced level-up and egg
+sampling with a shared weighted-without-replacement selector. It builds a transient unique
+candidate union from the active source learnsets, caches each move's additive weight and
+Status category, and derives a local RNG state from the Pokemon's personality with distinct
+level-up/egg salts. Neither profile IDs nor gameplay RNG affect the random seed. The existing
+source lists, parent-side allocations, resolved typing, and base stats supply the remaining
+selection inputs. Rebuilding an unchanged profile gives unchanged moves.
+
+Each sample's count and Status percentage use unique moves. A shared candidate is attributed
+to its first source in stable parent/source order for selection and quota accounting, rather
+than receiving another ticket in every source. Its learning level is the earliest across all
+active sources. This ownership can prevent a later source from satisfying its original quota;
+round-robin backfill selects remaining unique candidates with weighted/category-aware draws.
+Percentages and side counts can therefore shift in overlapping pools, but no move is duplicated.
+Evolution-protected natural entries and fallbacks are selected first and count against their
+source allocation where applicable; protection can override category and source quotas.
+The final evolution-move repair remains in place. Level-up output is reconstructed in source
+order, then stably sorted only by level. Egg type-based ordering is removed; the TM/tutor
+union is unchanged. This supersedes the earlier protection checkpoint's proportional reduction
+of ordinary quotas and the historical type-based level tie-ordering.
+
+Candidate storage is allocated only for the contributing entries and freed before returning,
+avoiding permanent save/RAM expansion or a move-catalog scan. Invalid capacities and failed
+allocation are asserted explicitly. Selection scans cached candidates for each of at most
+20 level-up or 18 egg output slots. Broader profiling and production/manual validation remain
+for the final checkpoint, not this targeted development run.
+
+Validation used `make -k check BUILD=hns -j8` with these exact selectors:
+- `TESTS='Fusion weighted pruning'`: five tests passed. Across 256 valid personalities,
+  type, physical, and special priorities each increased their corresponding retained move
+  totals by more than 100 versus the comparison profile; the egg type-bias test also passed.
+  Tests verify exact Status quotas in suitable pools, earliest duplicate levels, unique shared
+  backfill, protected damage moves overriding all-Status samples, party/boxed reconstruction,
+  repeated-read determinism, and unchanged gameplay RNG.
+- `TESTS='Fusion evolution moves'`: three tests passed under both Modern Moves settings.
+- `TESTS='Fusion pseudo-side'`: two existing tests passed, including both Modern Moves
+  settings and evolving multi-source pools; removed the superseded type-based tie-order assertion.
+- `TESTS='Fusion level-up'`: one existing test passed.
+- `TESTS='Fusion egg and teachable'`: one existing test passed.
+
+Compact-profile conversion and base-contributor breeding remain outstanding. Milestones
+1-2 are complete, 3 and 5 remain in progress, and 4 is closed.
 
 Evolution-move protection checkpoint (2026-11-13): implemented for the current method-based
 profiles in the shared party/boxed fused level-up learnset builder. Each rebuild deduplicates

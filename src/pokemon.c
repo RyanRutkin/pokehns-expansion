@@ -6357,12 +6357,6 @@ static u16 CountLevelUpMoves(const struct LevelUpMove *learnset)
     return count;
 }
 
-static bool8 IsBerserkGeneMoveTypeRelevant(enum Type type1, enum Type type2, enum Move move)
-{
-    enum Type moveType = GetMoveType(move);
-    return moveType == type1 || moveType == type2;
-}
-
 static void AddBerserkGeneLearnsetMove(const struct LevelUpMove *move, u8 *count)
 {
     u8 i;
@@ -6390,22 +6384,206 @@ static u16 CountBerserkGeneLevelUpMoves(const u16 *species, u8 sourceCount)
     return count;
 }
 
-static void SampleBerserkGeneLevelUpMoves(const u16 *species, u8 sourceCount, u16 take, u8 *count)
+struct BerserkGeneMoveCandidate
 {
-    u16 counts[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-    u16 quotas[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-    u8 i;
+    struct LevelUpMove entry;
+    u8 source;
+    u8 weight;
+    bool8 status;
+    bool8 selected;
+};
 
-    for (i = 0; i < sourceCount; i++)
-        counts[i] = CountLevelUpMoves(GetSpeciesLevelUpLearnset(species[i]));
-    GetBerserkGeneMoveQuotas(counts, sourceCount, take, quotas);
-    for (i = 0; i < sourceCount; i++)
+static u8 GetBerserkGeneMoveWeight(const struct BerserkGeneProfile *profile, u8 type1, u8 type2, u16 move)
+{
+    enum DamageCategory category = GetMoveCategory(move);
+    u8 weight = 1;
+
+    if (GetMoveType(move) == type1 || GetMoveType(move) == type2)
+        weight++;
+    if ((profile->baseStats[STAT_ATK] > profile->baseStats[STAT_SPATK] && category == DAMAGE_CATEGORY_PHYSICAL)
+     || (profile->baseStats[STAT_SPATK] > profile->baseStats[STAT_ATK] && category == DAMAGE_CATEGORY_SPECIAL))
+        weight++;
+    return weight;
+}
+
+static u16 SelectBerserkGeneMove(struct BerserkGeneMoveCandidate *candidates, u16 count, u8 source,
+    s8 status, rng_value_t *rng)
+{
+    u16 i, total = 0, ticket;
+
+    for (i = 0; i < count; i++)
+        if (!candidates[i].selected && candidates[i].source == source
+         && (status < 0 || candidates[i].status == status))
+            total += candidates[i].weight;
+    if (total == 0)
+        return UINT16_MAX;
+    ticket = LocalRandom32(rng) % total;
+    for (i = 0; i < count; i++)
     {
-        const struct LevelUpMove *learnset = GetSpeciesLevelUpLearnset(species[i]);
-        u16 j;
-        for (j = 0; j < quotas[i]; j++)
-            AddBerserkGeneLearnsetMove(&learnset[(j * counts[i]) / quotas[i]], count);
+        u8 weight;
+        if (candidates[i].selected || candidates[i].source != source
+         || (status >= 0 && candidates[i].status != status))
+            continue;
+        weight = candidates[i].weight;
+        if (ticket < weight)
+            return i;
+        ticket -= weight;
     }
+    return UINT16_MAX;
+}
+
+static bool8 SampleBerserkGeneMoves(const struct BerserkGeneProfile *profile,
+    const u16 *speciesA, u8 sourceCountA, const u16 *speciesB, u8 sourceCountB,
+    u16 takeA, u16 takeB, bool8 egg, u8 type1, u8 type2, u32 personality,
+    struct LevelUpMove *output, u8 *outputCount, u8 capacity)
+{
+    u16 counts[2 * MAX_FUSION_POTENTIAL_EVOLUTIONS] = {0};
+    u16 statuses[2 * MAX_FUSION_POTENTIAL_EVOLUTIONS] = {0};
+    u16 quotas[2 * MAX_FUSION_POTENTIAL_EVOLUTIONS] = {0};
+    u16 candidateCount = 0, allocation = 0, i, j;
+    u8 source, sourceCount = sourceCountA + sourceCountB;
+    struct BerserkGeneMoveCandidate *candidates;
+    struct LevelUpMove protectedMoves[MAX_LEVEL_UP_MOVES];
+    u8 protectedCount = *outputCount, selectedCount = protectedCount;
+    rng_value_t rng = LocalRandomSeed(personality ^ (egg ? 0x454747 : 0x4C564C));
+
+    assertf(sourceCountA <= MAX_FUSION_POTENTIAL_EVOLUTIONS
+         && sourceCountB <= MAX_FUSION_POTENTIAL_EVOLUTIONS
+         && protectedCount <= capacity && capacity <= MAX_LEVEL_UP_MOVES,
+            "Invalid fusion move sample capacity")
+        return FALSE;
+    for (source = 0; source < sourceCount; source++)
+    {
+        u16 species = source < sourceCountA ? speciesA[source] : speciesB[source - sourceCountA];
+        if (egg)
+        {
+            const u16 *moves = GetSpeciesEggMoves(species);
+            for (i = 0; moves[i] != MOVE_UNAVAILABLE; i++)
+                allocation++;
+        }
+        else
+            allocation += CountLevelUpMoves(GetSpeciesLevelUpLearnset(species));
+    }
+    if (allocation == 0)
+        return TRUE;
+    candidates = AllocZeroed(sizeof(*candidates) * allocation);
+    assertf(candidates != NULL, "Unable to allocate fusion move candidates")
+        return FALSE;
+    memcpy(protectedMoves, output, sizeof(*output) * protectedCount);
+    for (source = 0; source < sourceCount; source++)
+    {
+        u16 species = source < sourceCountA ? speciesA[source] : speciesB[source - sourceCountA];
+        const struct LevelUpMove *levelMoves = egg ? NULL : GetSpeciesLevelUpLearnset(species);
+        const u16 *eggMoves = egg ? GetSpeciesEggMoves(species) : NULL;
+        u16 length = 0;
+        if (egg)
+            while (eggMoves[length] != MOVE_UNAVAILABLE)
+                length++;
+        else
+            length = CountLevelUpMoves(levelMoves);
+        for (i = 0; i < length; i++)
+        {
+            struct LevelUpMove entry = egg ? (struct LevelUpMove){.move = eggMoves[i], .level = 0} : levelMoves[i];
+            // Count unique moves within each sample, but give shared moves only one ticket.
+            for (j = 0; j < i; j++)
+                if ((egg ? eggMoves[j] : levelMoves[j].move) == entry.move)
+                    break;
+            if (j != i)
+            {
+                for (j = 0; j < candidateCount && candidates[j].entry.move != entry.move; j++);
+                if (entry.level < candidates[j].entry.level)
+                    candidates[j].entry.level = entry.level;
+                continue;
+            }
+            counts[source]++;
+            if (GetMoveCategory(entry.move) == DAMAGE_CATEGORY_STATUS)
+                statuses[source]++;
+            for (j = 0; j < candidateCount && candidates[j].entry.move != entry.move; j++);
+            if (j == candidateCount)
+            {
+                candidates[j].entry = entry;
+                candidates[j].source = source;
+                candidates[j].weight = GetBerserkGeneMoveWeight(profile, type1, type2, entry.move);
+                candidates[j].status = GetMoveCategory(entry.move) == DAMAGE_CATEGORY_STATUS;
+                candidateCount++;
+            }
+            else if (entry.level < candidates[j].entry.level)
+                candidates[j].entry.level = entry.level;
+        }
+    }
+    GetBerserkGeneMoveQuotas(counts, sourceCountA, takeA, quotas);
+    GetBerserkGeneMoveQuotas(counts + sourceCountA, sourceCountB, takeB, quotas + sourceCountA);
+    for (i = 0; i < candidateCount; i++)
+        for (j = 0; j < protectedCount; j++)
+            if (candidates[i].entry.move == protectedMoves[j].move)
+            {
+                candidates[i].selected = TRUE;
+                break;
+            }
+    for (source = 0; source < sourceCount; source++)
+    {
+        u16 chosen = 0, chosenStatus = 0;
+        u16 statusQuota = counts[source] == 0 ? 0 : (statuses[source] * quotas[source] + counts[source] / 2) / counts[source];
+        for (i = 0; i < candidateCount; i++)
+            if (candidates[i].source == source && candidates[i].selected)
+            {
+                chosen++;
+                chosenStatus += candidates[i].status;
+            }
+        while (chosen < quotas[source] && selectedCount < capacity)
+        {
+            s8 status = chosenStatus < statusQuota;
+            i = SelectBerserkGeneMove(candidates, candidateCount, source, status, &rng);
+            if (i == UINT16_MAX)
+                i = SelectBerserkGeneMove(candidates, candidateCount, source, -1, &rng);
+            if (i == UINT16_MAX)
+                break;
+            candidates[i].selected = TRUE;
+            chosen++;
+            selectedCount++;
+            chosenStatus += candidates[i].status;
+        }
+    }
+    // Shared moves can exhaust one source's allocation; backfill unique candidates round-robin.
+    while (selectedCount < min(capacity, takeA + takeB))
+    {
+        bool8 added = FALSE;
+        for (source = 0; source < sourceCount && selectedCount < min(capacity, takeA + takeB); source++)
+        {
+            u16 chosen = 0, chosenStatus = 0, statusQuota;
+            for (i = 0; i < candidateCount; i++)
+                if (candidates[i].source == source && candidates[i].selected)
+                {
+                    chosen++;
+                    chosenStatus += candidates[i].status;
+                }
+            if (counts[source] == 0)
+                continue;
+            statusQuota = (statuses[source] * (chosen + 1) + counts[source] / 2) / counts[source];
+            i = SelectBerserkGeneMove(candidates, candidateCount, source, chosenStatus < statusQuota, &rng);
+            if (i == UINT16_MAX)
+                i = SelectBerserkGeneMove(candidates, candidateCount, source, -1, &rng);
+            if (i == UINT16_MAX)
+                continue;
+            candidates[i].selected = TRUE;
+            selectedCount++;
+            added = TRUE;
+        }
+        if (!added)
+            break;
+    }
+    *outputCount = 0;
+    for (i = 0; i < candidateCount; i++)
+        if (candidates[i].selected)
+            output[(*outputCount)++] = candidates[i].entry;
+    for (j = 0; j < protectedCount; j++)
+    {
+        for (i = 0; i < *outputCount && output[i].move != protectedMoves[j].move; i++);
+        if (i == *outputCount)
+            output[(*outputCount)++] = protectedMoves[j];
+    }
+    Free(candidates);
+    return TRUE;
 }
 
 static bool8 CollectBerserkGeneEvolutionMoves(const struct BerserkGeneProfile *profile, u16 *moves, u8 *count)
@@ -6526,7 +6704,7 @@ static bool8 RepairBerserkGeneEvolutionMoves(const u16 *moves, u8 requiredCount,
 }
 
 static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u16 profileId,
-                                                                  enum Type type1, enum Type type2)
+                                                                  enum Type type1, enum Type type2, u32 personality)
 {
     struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
     u16 speciesA[MAX_FUSION_POTENTIAL_EVOLUTIONS];
@@ -6569,30 +6747,21 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
         return NULL;
     ProtectBerserkGeneEvolutionMoves(requiredMoves, requiredCount, teachableEvolutionMoves,
                                     speciesA, sourceCountA, speciesB, sourceCountB, &count);
-    if (count != 0 && takeA + takeB > MAX_LEVEL_UP_MOVES - count)
-    {
-        u16 available = MAX_LEVEL_UP_MOVES - count;
-        takeA = ((u32)takeA * available + (takeA + takeB) / 2) / (takeA + takeB);
-        takeB = available - takeA;
-    }
-    SampleBerserkGeneLevelUpMoves(speciesA, sourceCountA, takeA, &count);
-    SampleBerserkGeneLevelUpMoves(speciesB, sourceCountB, takeB, &count);
+    if (!SampleBerserkGeneMoves(profile, speciesA, sourceCountA, speciesB, sourceCountB,
+        takeA, takeB, FALSE, type1, type2, personality, sBerserkGeneLevelUpMoves, &count, MAX_LEVEL_UP_MOVES))
+        return NULL;
     if (!RepairBerserkGeneEvolutionMoves(requiredMoves, requiredCount, teachableEvolutionMoves, &count))
         return NULL;
 
-    // Keep learnset ordering level-first, then favor moves matching the current fusion typing
-    // within a shared level. This preserves the assumptions in level-up and move-relearner scans.
+    // Level-up and relearner scans require globally ascending levels.
     for (i = 1; i < count; i++)
     {
         struct LevelUpMove entry = sBerserkGeneLevelUpMoves[i];
         u16 j = i;
-        bool8 entryRelevant = IsBerserkGeneMoveTypeRelevant(type1, type2, entry.move);
         while (j > 0)
         {
             struct LevelUpMove *previous = &sBerserkGeneLevelUpMoves[j - 1];
-            bool8 previousRelevant = IsBerserkGeneMoveTypeRelevant(type1, type2, previous->move);
-            if (previous->level < entry.level
-             || (previous->level == entry.level && (previousRelevant || !entryRelevant)))
+            if (previous->level <= entry.level)
                 break;
             sBerserkGeneLevelUpMoves[j] = *previous;
             j--;
@@ -6608,13 +6777,15 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
 const struct LevelUpMove *GetMonLevelUpLearnset(struct Pokemon *mon)
 {
     return BuildBerserkGeneLevelUpLearnset(GetMonData(mon, MON_DATA_SPECIES),
-        GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID), GetMonType(mon, 0), GetMonType(mon, 1));
+        GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID), GetMonType(mon, 0), GetMonType(mon, 1),
+        GetMonData(mon, MON_DATA_PERSONALITY));
 }
 
 const struct LevelUpMove *GetBoxMonLevelUpLearnset(struct BoxPokemon *boxMon)
 {
     return BuildBerserkGeneLevelUpLearnset(GetBoxMonData(boxMon, MON_DATA_SPECIES),
-        GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID), GetBoxMonType(boxMon, 0), GetBoxMonType(boxMon, 1));
+        GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID), GetBoxMonType(boxMon, 0), GetBoxMonType(boxMon, 1),
+        GetBoxMonData(boxMon, MON_DATA_PERSONALITY));
 }
 static u16 CountMoveList(const u16 *moves)
 {
@@ -6687,25 +6858,6 @@ const u16 *GetMonTeachableLearnset(struct Pokemon *mon)
     return GetBoxMonTeachableLearnset(&mon->box);
 }
 
-static void SampleBerserkGeneEggMoves(const u16 *species, u8 sourceCount, u16 take, u16 *count)
-{
-    u16 counts[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-    u16 quotas[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-    u8 i;
-
-    for (i = 0; i < sourceCount; i++)
-        counts[i] = CountMoveList(GetSpeciesEggMoves(species[i]));
-    GetBerserkGeneMoveQuotas(counts, sourceCount, take, quotas);
-    for (i = 0; i < sourceCount; i++)
-    {
-        const u16 *learnset = GetSpeciesEggMoves(species[i]);
-        u16 j;
-        for (j = 0; j < quotas[i]; j++)
-            AppendUniqueMove(sBerserkGeneEggMoves, learnset[(j * counts[i]) / quotas[i]],
-                count, EGG_MOVES_ARRAY_COUNT - 1);
-    }
-}
-
 const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon)
 {
     u16 profileId = GetBoxMonData(boxMon, MON_DATA_BERSERK_GENE_PROFILE_ID);
@@ -6714,7 +6866,8 @@ const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon)
     u16 speciesA[MAX_FUSION_POTENTIAL_EVOLUTIONS];
     u16 speciesB[MAX_FUSION_POTENTIAL_EVOLUTIONS];
     u8 sourceCountA, sourceCountB;
-    u16 count = 0, i;
+    struct LevelUpMove selected[EGG_MOVES_ARRAY_COUNT - 1];
+    u8 count = 0, i;
     u16 takeA, takeB;
 
     if (profile == NULL || profile->parentSpeciesA == SPECIES_NONE || profile->parentSpeciesB == SPECIES_NONE)
@@ -6726,25 +6879,12 @@ const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon)
         ? (EGG_MOVES_ARRAY_COUNT - 1 + 1) / 2
         : ((profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) ? 7 : 11);
     takeB = EGG_MOVES_ARRAY_COUNT - 1 - takeA;
-    SampleBerserkGeneEggMoves(speciesA, sourceCountA, takeA, &count);
-    SampleBerserkGeneEggMoves(speciesB, sourceCountB, takeB, &count);
-
-    for (i = 1; i < count; i++)
-    {
-        u16 move = sBerserkGeneEggMoves[i];
-        bool8 moveRelevant = GetMoveType(move) == GetBoxMonType(boxMon, 0) || GetMoveType(move) == GetBoxMonType(boxMon, 1);
-        u16 j = i;
-        while (j > 0)
-        {
-            bool8 previousRelevant = GetMoveType(sBerserkGeneEggMoves[j - 1]) == GetBoxMonType(boxMon, 0)
-                || GetMoveType(sBerserkGeneEggMoves[j - 1]) == GetBoxMonType(boxMon, 1);
-            if (previousRelevant || !moveRelevant)
-                break;
-            sBerserkGeneEggMoves[j] = sBerserkGeneEggMoves[j - 1];
-            j--;
-        }
-        sBerserkGeneEggMoves[j] = move;
-    }
+    if (!SampleBerserkGeneMoves(profile, speciesA, sourceCountA, speciesB, sourceCountB,
+        takeA, takeB, TRUE, GetBoxMonType(boxMon, 0), GetBoxMonType(boxMon, 1),
+        GetBoxMonData(boxMon, MON_DATA_PERSONALITY), selected, &count, EGG_MOVES_ARRAY_COUNT - 1))
+        return NULL;
+    for (i = 0; i < count; i++)
+        sBerserkGeneEggMoves[i] = selected[i].move;
     sBerserkGeneEggMoves[count] = MOVE_UNAVAILABLE;
     return sBerserkGeneEggMoves;
 }
