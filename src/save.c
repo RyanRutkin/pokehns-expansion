@@ -84,7 +84,12 @@ STATIC_ASSERT(sizeof(struct SaveBlock3) <= SAVE_BLOCK_3_CHUNK_SIZE * NUM_SECTORS
 STATIC_ASSERT(offsetof(struct SaveBlock3, registeredItemHold) == 48, SaveBlock3RegisteredItemPinned);
 STATIC_ASSERT(offsetof(struct SaveBlock3, berserkGeneLineages) == 52, SaveBlock3LegacyPrefix);
 STATIC_ASSERT(sizeof(struct BerserkGeneContributor) == 6, BerserkGeneContributorSize);
-STATIC_ASSERT(sizeof(struct BerserkGeneLineage) == 48, BerserkGeneLineageSize);
+STATIC_ASSERT(sizeof(struct BerserkGeneEvolutionTarget) == 4, BerserkGeneTargetSize);
+STATIC_ASSERT(offsetof(struct BerserkGeneLineage, targets) == 48, BerserkGeneLineageContributorPrefix);
+STATIC_ASSERT(sizeof(struct BerserkGeneLineage) == 84, BerserkGeneLineageSize);
+STATIC_ASSERT(offsetof(struct SaveBlock3, pyramidFusionLineages)
+    == offsetof(struct SaveBlock3, berserkGeneLineages)
+     + sizeof(struct BerserkGeneLineage) * MAX_BERSERK_GENE_PROFILES, BerserkGeneLineagesContiguous);
 
 // ChallengeSettings is a packed bitfield block living in SaveBlock3 ahead of
 // registeredItemHold, so growing it shifts that member and silently corrupts
@@ -994,7 +999,22 @@ u8 LoadGameSave(u8 saveType)
     {
         memset(gSaveBlock3Ptr->berserkGeneLineages, 0, sizeof(gSaveBlock3Ptr->berserkGeneLineages));
         memset(gSaveBlock3Ptr->pyramidFusionLineages, 0, sizeof(gSaveBlock3Ptr->pyramidFusionLineages));
-        gSaveBlock1Ptr->saveVersion = 7;
+        gSaveBlock1Ptr->saveVersion = 8;
+    }
+
+    if (gSaveBlock1Ptr->saveVersion < 8)
+    {
+        u8 *lineages = (u8 *)gSaveBlock3Ptr + offsetof(struct SaveBlock3, berserkGeneLineages);
+        s32 i;
+
+        // Version 7 stored eleven contiguous 48-byte contributor-only records.
+        for (i = MAX_BERSERK_GENE_PROFILES + FRONTIER_PARTY_SIZE - 1; i >= 0; i--)
+        {
+            u8 *destination = lineages + i * sizeof(struct BerserkGeneLineage);
+            memmove(destination, lineages + i * 48, 48);
+            memset(destination + 48, 0, sizeof(struct BerserkGeneLineage) - 48);
+        }
+        gSaveBlock1Ptr->saveVersion = 8;
     }
 
     // Add version migration steps here:

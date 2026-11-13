@@ -347,9 +347,18 @@ struct __attribute__((packed, aligned(2))) BerserkGeneContributor
     u16 age;
 };
 
+struct BerserkGeneEvolutionTarget
+{
+    u16 species;
+    u8 rootContributors;
+    u8 sourceTargets;
+};
+
 struct BerserkGeneLineage
 {
     struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
+    struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 targetCount;
 };
 
 struct SaveBlock3

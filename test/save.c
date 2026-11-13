@@ -58,7 +58,7 @@ static void SnapshotPyramidEntry(void)
 // Please note that this simple check is not 100% foolproof, but should be able to catch most unintended shifts.
 #define T_SAVEBLOCK1_SIZE 15840
 #define T_SAVEBLOCK2_SIZE 3884
-#define T_SAVEBLOCK3_SIZE 580
+#define T_SAVEBLOCK3_SIZE 976
 #define T_POKEMONSTORAGE_SIZE 35660
 
 TEST("SaveBlock1 is backwards compatible")
@@ -118,6 +118,10 @@ TEST("Fusion normal save and reload preserves party and boxed profiles")
     expected[1] = *profile;
     expectedLineages[0].contributors[0] = (struct BerserkGeneContributor){SPECIES_PICHU, 1234, 45};
     expectedLineages[1].contributors[4] = (struct BerserkGeneContributor){SPECIES_EEVEE, 4321, 12};
+    expectedLineages[0].targets[0] = (struct BerserkGeneEvolutionTarget){SPECIES_PIKACHU, 1, 0};
+    expectedLineages[0].targetCount = 1;
+    expectedLineages[1].targets[0] = (struct BerserkGeneEvolutionTarget){SPECIES_JOLTEON, 1 << 4, 0};
+    expectedLineages[1].targetCount = 1;
     *GetBerserkGeneLineage(partyId) = expectedLineages[0];
     *GetBerserkGeneLineage(boxedId) = expectedLineages[1];
     gSaveBlock1Ptr->saveVersionMagic = SAVE_VERSION_MAGIC;
@@ -160,6 +164,9 @@ TEST("Fusion lineage allocation copy and free preserve independent metadata")
     EXPECT_EQ(GetBerserkGeneLineage(MAX_BERSERK_GENE_PROFILES + 1), NULL);
     expected.contributors[0] = (struct BerserkGeneContributor){SPECIES_DRATINI, UINT16_MAX, UINT16_MAX};
     expected.contributors[7] = (struct BerserkGeneContributor){SPECIES_APPLIN, 2, 9};
+    expected.targets[0] = (struct BerserkGeneEvolutionTarget){SPECIES_DIPPLIN, 1 << 7, 0};
+    expected.targets[1] = (struct BerserkGeneEvolutionTarget){SPECIES_HYDRAPPLE, 0, 1};
+    expected.targetCount = 2;
     *GetBerserkGeneLineage(source) = expected;
     CopyBerserkGeneProfile(destination, source);
     EXPECT_EQ(memcmp(GetBerserkGeneLineage(destination), &expected, sizeof(expected)), 0);
@@ -218,6 +225,44 @@ TEST("Fusion lineage migration preserves legacy items and initializes appended m
     ZeroMonData(&gPokemonStoragePtr->fusions[0]);
 }
 
+TEST("Fusion lineage version 7 expansion preserves all contributor and Pyramid records")
+{
+    struct BerserkGeneLineage *expected = AllocZeroed(sizeof(*expected)
+        * (MAX_BERSERK_GENE_PROFILES + FRONTIER_PARTY_SIZE));
+    u8 *records = (u8 *)gSaveBlock3Ptr + offsetof(struct SaveBlock3, berserkGeneLineages);
+    u32 i;
+
+    EXPECT(gFlashMemoryPresent);
+    Save_ResetSaveCounters();
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->registeredItemHold = ITEM_BICYCLE;
+    for (i = 0; i < MAX_BERSERK_GENE_PROFILES + FRONTIER_PARTY_SIZE; i++)
+    {
+        expected[i].contributors[0] = (struct BerserkGeneContributor){SPECIES_DRATINI, i + 1, i + 10};
+        expected[i].contributors[7] = (struct BerserkGeneContributor){SPECIES_APPLIN, UINT16_MAX - i, UINT16_MAX};
+        memcpy(records + i * 48, expected[i].contributors, 48);
+    }
+    gSaveBlock1Ptr->saveVersionMagic = SAVE_VERSION_MAGIC;
+    gSaveBlock1Ptr->saveVersion = 7;
+    EXPECT_EQ(TrySavingData(SAVE_NORMAL), SAVE_STATUS_OK);
+    memset(records, 0xFF, sizeof(struct BerserkGeneLineage)
+        * (MAX_BERSERK_GENE_PROFILES + FRONTIER_PARTY_SIZE));
+    EXPECT_EQ(LoadGameSave(SAVE_NORMAL), SAVE_STATUS_OK);
+    EXPECT_EQ(gSaveBlock1Ptr->saveVersion, SAVE_VERSION);
+    EXPECT_EQ(gSaveBlock3Ptr->registeredItemHold, ITEM_BICYCLE);
+    for (i = 0; i < MAX_BERSERK_GENE_PROFILES; i++)
+        EXPECT_EQ(memcmp(&gSaveBlock3Ptr->berserkGeneLineages[i], &expected[i], sizeof(*expected)), 0);
+    for (i = 0; i < FRONTIER_PARTY_SIZE; i++)
+        EXPECT_EQ(memcmp(&gSaveBlock3Ptr->pyramidFusionLineages[i],
+                        &expected[MAX_BERSERK_GENE_PROFILES + i], sizeof(*expected)), 0);
+    EXPECT_EQ(TrySavingData(SAVE_NORMAL), SAVE_STATUS_OK);
+    EXPECT_EQ(LoadGameSave(SAVE_NORMAL), SAVE_STATUS_OK);
+    for (i = 0; i < MAX_BERSERK_GENE_PROFILES; i++)
+        EXPECT_EQ(memcmp(&gSaveBlock3Ptr->berserkGeneLineages[i], &expected[i], sizeof(*expected)), 0);
+    Free(expected);
+}
+
 TEST("Fusion facility partial saves preserve full party and unchanged profiles")
 {
     bool8 pike = FALSE;
@@ -244,6 +289,8 @@ TEST("Fusion facility partial saves preserve full party and unchanged profiles")
     GetBerserkGeneProfile(profileId)->parentSpeciesB = SPECIES_PIKACHU;
     *expected = *GetBerserkGeneProfile(profileId);
     expectedLineage.contributors[7] = (struct BerserkGeneContributor){SPECIES_APPLIN, 321, 10};
+    expectedLineage.targets[0] = (struct BerserkGeneEvolutionTarget){SPECIES_DIPPLIN, 1 << 7, 0};
+    expectedLineage.targetCount = 1;
     *GetBerserkGeneLineage(profileId) = expectedLineage;
     gSaveBlock1Ptr->saveVersionMagic = SAVE_VERSION_MAGIC;
     gSaveBlock1Ptr->saveVersion = SAVE_VERSION;
@@ -476,6 +523,8 @@ TEST("Fusion Pyramid snapshots restore three entry profiles after full save relo
         GetBerserkGeneProfile(ids[i])->parentSpeciesB = SPECIES_PIKACHU + i;
         expected[i] = *GetBerserkGeneProfile(ids[i]);
         expectedLineages[i].contributors[i] = (struct BerserkGeneContributor){SPECIES_EEVEE, 1000 + i, 10 + i};
+        expectedLineages[i].targets[0] = (struct BerserkGeneEvolutionTarget){SPECIES_JOLTEON, 1 << i, 0};
+        expectedLineages[i].targetCount = 1;
         *GetBerserkGeneLineage(ids[i]) = expectedLineages[i];
         mons[i] = gPlayerParty[i].box;
         gSaveBlock2Ptr->frontier.selectedPartyMons[i] = i + 1;
@@ -493,6 +542,7 @@ TEST("Fusion Pyramid snapshots restore three entry profiles after full save relo
         SetMonMoveSlot(&gPlayerParty[i], MOVE_SURF, 0);
         GetBerserkGeneProfile(ids[i])->parentSpeciesA = changedSpecies;
         GetBerserkGeneLineage(ids[i])->contributors[i].age = UINT16_MAX;
+        GetBerserkGeneLineage(ids[i])->targets[0].species = SPECIES_FLAREON;
     }
     EXPECT_EQ(TrySavingData(SAVE_NORMAL), SAVE_STATUS_OK);
     memset(gPokemonStoragePtr->pyramidFusionSnapshots, 0, sizeof(gPokemonStoragePtr->pyramidFusionSnapshots));

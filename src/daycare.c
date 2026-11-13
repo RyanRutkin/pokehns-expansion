@@ -765,6 +765,21 @@ bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
     return success;
 }
 
+bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage)
+{
+    struct BerserkGeneLineage result = {0};
+    u16 requiredMoves[MAX_LEVEL_UP_MOVES];
+    u8 requiredCount;
+
+    if (!BuildBerserkGeneBreedingLineage(daycare, &result)
+     || !BuildBerserkGeneLineageTargets(&result, result.targets, &result.targetCount)
+     || !CollectBerserkGeneTargetRequiredMoves(result.targets, result.targetCount,
+                                             result.contributors, requiredMoves, &requiredCount))
+        return FALSE;
+    *lineage = result;
+    return TRUE;
+}
+
 // Current species data has at most 72 literal evolution entries for one species (Alcremie).
 // The persistent profile remains capped at eight selected lineage nodes.
 #define MAX_BERSERK_GENE_EVOLUTION_CANDIDATES 72

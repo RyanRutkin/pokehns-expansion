@@ -15,13 +15,6 @@ struct BerserkGeneEvolutionNode
     u8 contributor; // 0-3: first parent, 4-7: second parent
 };
 
-struct BerserkGeneEvolutionTarget
-{
-    u16 species;
-    u8 rootContributors;
-    u8 sourceTargets;
-};
-
 struct BerserkGeneEvolutionMethodCursor
 {
     u16 methodIndex;
@@ -90,5 +83,6 @@ bool8 CollectBerserkGeneParentContributors(struct BoxPokemon *mon,
 bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage);
 bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
     struct BerserkGeneEvolutionTarget *targets, u8 *targetCount);
+bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage);
 
 #endif // GUARD_DAYCARE_H

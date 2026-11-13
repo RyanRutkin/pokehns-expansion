@@ -313,6 +313,47 @@ leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
 
+Persistent compact-target checkpoint (2026-11-13): each internal lineage sidecar now
+contains its eight compact target records and target count, in addition to its contributor
+array. The target type lives with the global save data so the same representation is used
+by builders, storage, and snapshots. Each sidecar is **84 bytes**: 48 contributor bytes,
+32 graph bytes, one count byte, and ABI padding. SaveBlock3 is **976 / 1,624 bytes**,
+leaving **648 bytes**. These figures supersede the earlier contributor-only checkpoint.
+The main profile table and its eight-profile allocation limit remain unchanged.
+
+`PrepareBerserkGeneBreedingLineage` builds contributors and their pruned graph together,
+then validates native routes and explicit evolution-move registry capacity before publishing
+the sidecar result. Native condition pointers and required-move lists are not persisted;
+they remain reconstructible from the retained graph. Graph consumption and evolution
+selection state are not implemented yet. Existing profile/lineage copies, allocation/free,
+and Pyramid snapshots include the graph through whole-sidecar operations.
+
+Save version 8 accounts for the changed sidecar stride. Version-7 contributor-only records
+are expanded in reverse order, preserving all eight live records and three Pyramid records
+while zero-initializing graphs. Older saves initialize the entire new sidecar layout.
+The registered item and all preceding SaveBlock3 fields stay at their pinned offsets.
+This is an internal-layout migration, not a new storage mechanism.
+
+Validation: all commands below passed with the HNS test ROM compiled and linked:
+
+- `make -k check BUILD=hns -j8 TESTS='Fusion lineage'`: 6 tests, including version-7
+  expansion, all contributor/Pyramid records, repeated reload, and lifecycle copying.
+- `make -k check BUILD=hns -j8 TESTS='Fusion base contributors'`: 10 tests,
+  now preparing stored graphs together with contributor lineage.
+- `make -k check BUILD=hns -j8 TESTS='Fusion target'`: 20 tests.
+- `make -k check BUILD=hns -j8 TESTS='Fusion normal save'`: 1 test, including
+  party and boxed compact graphs.
+- `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid snapshots'`: 1 test,
+  including graph mutation, profile-slot reuse, full reload, and entry rollback.
+- `make -k check BUILD=hns -j8 TESTS='Fusion facility partial saves'`: 1 test,
+  preserving unchanged profile/graph data under the existing partial-save behavior.
+- `make -k check BUILD=hns -j8 TESTS='SaveBlock3 is backwards compatible'`: 1 test.
+
+Live breeding still uses the method-based profile pipeline; preparation and persistence
+are verified groundwork only. Compact evolution state and downstream trait, naming,
+and movepool consumers must be wired before activating this representation. Milestone 3
+remains open; earlier broader-suite validation limitations remain unresolved.
+
 Lineage-to-target construction checkpoint (2026-11-13): `BuildBerserkGeneLineageTargets`
 now connects the retained contributor sidecar to native two-stage target collection,
 whole-species pruning, and compact source-mask construction. It sizes scratch storage

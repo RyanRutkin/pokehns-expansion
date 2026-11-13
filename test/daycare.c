@@ -819,7 +819,7 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
         daycare->mons[side].mon = mon.box;
     }
     memset(&result, 0xFF, sizeof(result));
-    EXPECT(BuildBerserkGeneBreedingLineage(daycare, &result));
+    EXPECT(PrepareBerserkGeneBreedingLineage(daycare, &result));
     EXPECT_EQ(result.contributors[0].species, SPECIES_DRATINI);
     EXPECT_EQ(result.contributors[4].species, mode == 0 ? SPECIES_APPLIN
               : mode == 2 ? SPECIES_DRATINI : SPECIES_EEVEE);
@@ -832,7 +832,8 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
         EXPECT_EQ(result.contributors[1].species, SPECIES_POLIWAG);
         EXPECT_EQ(result.contributors[5].species, SPECIES_APPLIN);
     }
-    EXPECT(BuildBerserkGeneLineageTargets(&result, targets, &targetCount));
+    memcpy(targets, result.targets, sizeof(targets));
+    targetCount = result.targetCount;
     EXPECT(targetCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS);
     EXPECT(CollectBerserkGeneTargetRequiredMoves(targets, targetCount, result.contributors,
                                                requiredMoves, &requiredCount));
