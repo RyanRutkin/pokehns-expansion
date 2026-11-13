@@ -940,6 +940,8 @@ const u16 *GetMonEggMoveLearnset(struct Pokemon *mon);
 const u16 *GetBoxMonEggMoveLearnset(struct BoxPokemon *boxMon);
 const u16 *GetSpeciesEggMoves(u16 species);
 const struct Evolution *GetSpeciesEvolutions(u16 species);
+// Start *index at zero; each match advances it past that method.
+const struct Evolution *GetNextSpeciesEvolutionForTarget(u16 species, u16 targetSpecies, u16 *index);
 const struct FusionPotentialEvolution *GetMonPotentialEvolutions(struct Pokemon *mon, u8 *outCount);
 void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpecies);
 // Preparation rolls traits on a copy; discard it to cancel. Commit consumes no RNG.

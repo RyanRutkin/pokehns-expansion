@@ -30,6 +30,7 @@
 #include "constants/party_menu.h"
 #include "constants/region_map_sections.h"
 #include "nuzlocke.h"
+#include "assertf.h"
 
 #define IS_DITTO(species) (gSpeciesInfo[species].eggGroups[0] == EGG_GROUP_DITTO || gSpeciesInfo[species].eggGroups[1] == EGG_GROUP_DITTO)
 
@@ -128,15 +129,15 @@ static u8 GetBreedingEvYield(struct BerserkGeneProfile *profile, u16 species, u8
 static bool8 IsFirstBerserkGeneEvolutionTarget(const struct Evolution *evolutions, u16 index)
 {
     u16 i;
-    u16 target = SanitizeSpeciesId(evolutions[index].targetSpecies);
+    u16 target = evolutions[index].targetSpecies;
 
     if (evolutions[index].method == EVO_SPLIT_FROM_EVO
-     || target == SPECIES_NONE || !IsSpeciesEnabled(target))
+     || target == SPECIES_NONE || target >= NUM_SPECIES || !IsSpeciesEnabled(target))
         return FALSE;
     for (i = 0; i < index; i++)
     {
         if (evolutions[i].method != EVO_SPLIT_FROM_EVO
-         && SanitizeSpeciesId(evolutions[i].targetSpecies) == target)
+         && evolutions[i].targetSpecies == target)
             return FALSE;
     }
     return TRUE;
@@ -162,6 +163,132 @@ u16 CountBerserkGeneBaseEvolutionNodes(u16 species)
         }
     }
     return count;
+}
+
+bool8 AppendBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u16 capacity, u16 *count, u16 species, u8 contributor)
+{
+    const struct Evolution *roots = GetSpeciesEvolutions(species);
+    u16 i, j;
+
+    assertf(contributor < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES
+         && *count <= capacity
+         && (u32)*count + CountBerserkGeneBaseEvolutionNodes(species) <= capacity,
+            "Fusion evolution workspace too small or invalid contributor")
+        return FALSE;
+
+    for (i = 0; roots[i].method != EVOLUTIONS_END; i++)
+    {
+        const struct Evolution *descendants;
+        u16 rootIndex;
+        if (!IsFirstBerserkGeneEvolutionTarget(roots, i))
+            continue;
+        rootIndex = *count;
+        nodes[(*count)++] = (struct BerserkGeneEvolutionNode){
+            roots[i].targetSpecies, BERSERK_GENE_ROOT_NODE, contributor
+        };
+        descendants = GetSpeciesEvolutions(roots[i].targetSpecies);
+        for (j = 0; descendants[j].method != EVOLUTIONS_END; j++)
+        {
+            if (IsFirstBerserkGeneEvolutionTarget(descendants, j))
+                nodes[(*count)++] = (struct BerserkGeneEvolutionNode){
+                    descendants[j].targetSpecies, rootIndex, contributor
+                };
+        }
+    }
+    return TRUE;
+}
+
+static u16 CountDistinctBerserkGeneTargets(const struct BerserkGeneEvolutionNode *nodes, u16 count)
+{
+    u16 i, j, distinct = 0;
+
+    for (i = 0; i < count; i++)
+    {
+        for (j = 0; j < i; j++)
+            if (nodes[j].targetSpecies == nodes[i].targetSpecies)
+                break;
+        if (j == i)
+            distinct++;
+    }
+    return distinct;
+}
+
+bool8 PruneBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u16 *count)
+{
+    u16 i, latestRoot = BERSERK_GENE_ROOT_NODE;
+    u16 distinct;
+
+    for (i = 0; i < *count; i++)
+    {
+        u16 root = nodes[i].rootIndex;
+        assertf(nodes[i].targetSpecies != SPECIES_NONE
+             && nodes[i].contributor < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES
+             && (root == BERSERK_GENE_ROOT_NODE
+              || (root == latestRoot && root < i
+                  && nodes[root].contributor == nodes[i].contributor)),
+                "Invalid fusion evolution node %d", i)
+            return FALSE;
+        if (root == BERSERK_GENE_ROOT_NODE)
+            latestRoot = i;
+    }
+
+    distinct = CountDistinctBerserkGeneTargets(nodes, *count);
+    while (distinct > MAX_FUSION_POTENTIAL_EVOLUTIONS)
+    {
+        u16 selected = BERSERK_GENE_ROOT_NODE, choices = 0;
+        u16 rootsByContributor[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {0};
+
+        for (i = 0; i < *count; i++)
+            if (nodes[i].rootIndex == BERSERK_GENE_ROOT_NODE)
+                rootsByContributor[nodes[i].contributor]++;
+
+        for (i = 0; i < *count; i++)
+        {
+            if (nodes[i].rootIndex != BERSERK_GENE_ROOT_NODE)
+                continue;
+            if ((i + 1 == *count || nodes[i + 1].rootIndex != i)
+             && rootsByContributor[nodes[i].contributor] > 1)
+            {
+                choices++;
+                if (choices == 1 || Random() % choices == 0)
+                    selected = i;
+            }
+        }
+
+        if (choices == 0)
+        {
+            for (i = 0; i < *count; i++)
+            {
+                if (nodes[i].rootIndex != BERSERK_GENE_ROOT_NODE)
+                {
+                    choices++;
+                    if (choices == 1 || Random() % choices == 0)
+                        selected = i;
+                }
+            }
+        }
+
+        assertf(selected != BERSERK_GENE_ROOT_NODE,
+                "Unable to prune fusion evolution targets")
+            return FALSE;
+
+        for (i = 0; i < *count; i++)
+        {
+            if (i != selected && nodes[i].targetSpecies == nodes[selected].targetSpecies)
+                break;
+        }
+        if (i == *count)
+            distinct--;
+        (*count)--;
+        for (i = selected; i < *count; i++)
+            nodes[i] = nodes[i + 1];
+        for (i = 0; i < *count; i++)
+        {
+            if (nodes[i].rootIndex != BERSERK_GENE_ROOT_NODE && nodes[i].rootIndex > selected)
+                nodes[i].rootIndex--;
+        }
+    }
+    return TRUE;
 }
 
 u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count)
@@ -1136,7 +1263,6 @@ static void ClearDaycareMonMail(struct DaycareMail *mail);
 static void SetInitialEggData(struct Pokemon *mon, u16 species, struct DayCare *daycare);
 static void DaycarePrintMonInfo(u8 windowId, u32 daycareSlotId, u8 y);
 static u8 ModifyBreedingScoreForOvalCharm(u8 score);
-static u16 GetEggSpecies(u16 species);
 
 // RAM buffers used to assist with BuildEggMoveset()
 EWRAM_DATA static u16 sHatchedEggLevelUpMoves[EGG_LVL_UP_MOVES_ARRAY_COUNT] = {0};
@@ -1599,7 +1725,7 @@ static void UNUSED ClearAllDaycareData(struct DayCare *daycare)
 // Determines what the species of an Egg would be based on the given species.
 // It determines this by working backwards through the evolution chain of the
 // given species.
-static u16 GetEggSpecies(u16 species)
+u16 GetEggSpecies(u16 species)
 {
     int i, j, k;
     bool8 found;

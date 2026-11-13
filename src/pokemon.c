@@ -6175,6 +6175,19 @@ const struct Evolution *GetSpeciesEvolutions(u16 species)
     return evolutions;
 }
 
+const struct Evolution *GetNextSpeciesEvolutionForTarget(u16 species, u16 targetSpecies, u16 *index)
+{
+    const struct Evolution *evolutions = GetSpeciesEvolutions(species);
+
+    while (evolutions[*index].method != EVOLUTIONS_END)
+    {
+        const struct Evolution *evolution = &evolutions[(*index)++];
+        if (evolution->targetSpecies == targetSpecies)
+            return evolution;
+    }
+    return NULL;
+}
+
 EWRAM_DATA static struct LevelUpMove sBerserkGeneLevelUpMoves[MAX_LEVEL_UP_MOVES + 1] = {0};
 EWRAM_DATA static u16 sBerserkGeneEggMoves[EGG_MOVES_ARRAY_COUNT] = {0};
 // A pseudo-fusion can contribute several species, so bound the union by the entire move catalog.

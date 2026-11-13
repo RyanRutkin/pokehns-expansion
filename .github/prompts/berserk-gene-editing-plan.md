@@ -55,7 +55,9 @@ from each base contributor where possible and at least one line from each immedi
 side where possible. The user-provided example of a possible eight-node result is Dragonair,
 Dragonite, Poliwhirl, Poliwrath, Politoed, Espeon (randomly chosen from Eevee's options),
 Dipplin, and Hydrapple. Espeon represents the retained Eevee line; Flapple and Appletun were
-pruned as stage-one options without descendants.
+pruned as stage-one options without descendants. When preserving all contributors requires
+more than eight nodes, prioritize retaining one stage-one node per contributor over retaining
+later-stage nodes.
 
 Retaining a target retains all of its applicable alternative evolution methods and additional
 conditions. Look these up from the existing species evolution data using the retained source
@@ -93,6 +95,27 @@ This helper is **not wired into breeding or persistent profiles**; gameplay rema
 The profile table's unused ID-zero slot could potentially be reclaimed, but layout changes also
 move the unrelated legacy item-fusion slots. Account for the existing version-6 save migration
 and preserve those slots when designing any new layout; do not silently corrupt them.
+
+Target-method groundwork (2026-11-12): the existing daycare `GetEggSpecies` lookup is now
+available to the revised breeding code. `make -k check BUILD=hns -j8
+TESTS='Fusion base contributors'` passed six tests, including the base lineages of Ninjask,
+Shedinja, Dragonite, Politoed, Jolteon, and Hydrapple. A new
+`GetNextSpeciesEvolutionForTarget` iterator retrieves native methods for a source/target pair;
+the Politoed characterization now uses it, and an additional test verifies both Dipplin item
+methods. `TESTS='Fusion target methods'` and `TESTS='Fusion Politoed alternative methods'`
+each passed one test, and `TESTS='Fusion evolution'` passed six using the same build command.
+These lookups do not yet change the fusion profile representation or breeding behavior.
+
+Target-pruning groundwork (2026-11-13): a standalone collector builds root-contiguous,
+two-stage target records from native species data without duplicating alternative methods.
+Pruning counts distinct target species, removes eligible stage-one leaves first, and preserves
+a stage-one root for each contributor ahead of later-stage nodes. Shared targets retain
+separate lineage records, so the resulting record count can exceed eight even when the
+distinct-target count is eight; the future profile layout must encode those associations.
+The helper is not wired into gameplay or persistent profiles. Focused tests cover the
+Dratini/Poliwag/Eevee/Applin example, eight two-stage contributors, shared targets, randomized
+Eevee ties, and two 63-target Milcery pools. The existing eight-entry method-based profile,
+save-layout redesign, and live breeding/evolution changes remain outstanding.
 
 Reopen milestone 3 for design, implementation, and validation of base-lineage inheritance;
 milestone 5 remains in progress. Milestones 1 and 2 are complete and milestone 4 is closed.

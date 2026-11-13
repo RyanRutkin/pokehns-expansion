@@ -102,9 +102,9 @@ TEST("Fusion Politoed alternative methods preserve trade and item conditions")
 {
     struct Pokemon mon;
     struct BerserkGeneProfile *profile;
-    const struct Evolution *evolutions = GetSpeciesEvolutions(SPECIES_POLIWHIRL);
-    u16 profileId, heldItem = ITEM_NONE;
-    u8 i, tradeCount = 0, itemCount = 0, choice;
+    const struct Evolution *evolution;
+    u16 profileId, heldItem = ITEM_NONE, index = 0;
+    u8 tradeCount = 0, itemCount = 0, choice;
     u8 oldEvoLimit = gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit;
     bool32 canStop = TRUE;
 
@@ -120,19 +120,17 @@ TEST("Fusion Politoed alternative methods preserve trade and item conditions")
         SPECIES_POLIWHIRL, 25, EVO_LEVEL | EVO_POTENTIAL_SELECTED, 0
     };
     profile->potentialEvolutionCount = 1;
-    for (i = 0; evolutions[i].method != EVOLUTIONS_END; i++)
+    while ((evolution = GetNextSpeciesEvolutionForTarget(SPECIES_POLIWHIRL, SPECIES_POLITOED, &index)) != NULL)
     {
         u8 conditionId;
-        if (evolutions[i].targetSpecies != SPECIES_POLITOED)
-            continue;
         EXPECT(profile->potentialEvolutionCount < MAX_FUSION_POTENTIAL_EVOLUTIONS);
-        conditionId = GetEvolutionConditionSetId(evolutions[i].params);
-        EXPECT(evolutions[i].params == NULL || conditionId != 0);
+        conditionId = GetEvolutionConditionSetId(evolution->params);
+        EXPECT(evolution->params == NULL || conditionId != 0);
         profile->potentialEvolutions[profile->potentialEvolutionCount++] =
-            (struct FusionPotentialEvolution){SPECIES_POLITOED, evolutions[i].param,
-                evolutions[i].method | EVO_POTENTIAL_PHASE_2, conditionId};
-        tradeCount += evolutions[i].method == EVO_TRADE;
-        itemCount += evolutions[i].method == EVO_ITEM;
+            (struct FusionPotentialEvolution){SPECIES_POLITOED, evolution->param,
+                evolution->method | EVO_POTENTIAL_PHASE_2, conditionId};
+        tradeCount += evolution->method == EVO_TRADE;
+        itemCount += evolution->method == EVO_ITEM;
     }
     EXPECT_EQ(tradeCount, 1);
     EXPECT_EQ(itemCount, 1);
@@ -154,6 +152,28 @@ TEST("Fusion Politoed alternative methods preserve trade and item conditions")
     EXPECT_EQ(GetMonData(&mon, MON_DATA_HELD_ITEM), ITEM_NONE);
     ClearBoxMonBerserkGeneProfile(&mon.box);
     gSaveBlock3Ptr->challengeSettings.tx_Challenges_EvoLimit = oldEvoLimit;
+}
+
+TEST("Fusion target methods retain all native alternatives")
+{
+    const struct Evolution *evolution;
+    u16 index = 0;
+    bool8 sawOvalStone = FALSE, sawSyrupyApple = FALSE;
+    u8 count = 0;
+
+    while ((evolution = GetNextSpeciesEvolutionForTarget(SPECIES_APPLIN, SPECIES_DIPPLIN, &index)) != NULL)
+    {
+        EXPECT_EQ(evolution->method, EVO_ITEM);
+        sawOvalStone |= evolution->param == ITEM_OVAL_STONE;
+        sawSyrupyApple |= evolution->param == ITEM_SYRUPY_APPLE;
+        count++;
+    }
+    EXPECT_EQ(count, 2);
+    EXPECT(sawOvalStone);
+    EXPECT(sawSyrupyApple);
+    EXPECT_EQ(GetNextSpeciesEvolutionForTarget(SPECIES_APPLIN, SPECIES_DIPPLIN, &index), NULL);
+    index = 0;
+    EXPECT_EQ(GetNextSpeciesEvolutionForTarget(SPECIES_DRATINI, SPECIES_DIPPLIN, &index), NULL);
 }
 
 TEST("Fusion Shedinja split uses independent branches and ordinary fallback")

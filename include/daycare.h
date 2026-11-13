@@ -15,6 +15,15 @@ struct BerserkGeneContributor
     u16 age;
 };
 
+#define BERSERK_GENE_ROOT_NODE UINT16_MAX
+
+struct BerserkGeneEvolutionNode
+{
+    u16 targetSpecies;
+    u16 rootIndex; // BERSERK_GENE_ROOT_NODE for a first-stage target
+    u8 contributor; // 0-3: first parent, 4-7: second parent
+};
+
 struct RecordMixingDaycareMail
 {
     struct DaycareMail mail[DAYCARE_MON_COUNT];
@@ -35,6 +44,7 @@ void TriggerPendingDaycareEgg(void);
 void RejectEggFromDayCare(void);
 void CreateEgg(struct Pokemon *mon, u16 species, bool8 setHotSpringsLocation);
 void GiveEggFromDaycare(void);
+u16 GetEggSpecies(u16 species);
 bool8 ShouldEggHatch(void);
 u16 GetSelectedMonNicknameAndSpecies(void);
 void GetDaycareMonNicknames(void);
@@ -50,6 +60,9 @@ void StorePokemonInDaycare(struct Pokemon *mon, struct DaycareMon *daycareMon);
 u8 GetEggMoves(struct Pokemon *pokemon, u16 *eggMoves);
 void PruneBerserkGeneLineage(struct FusionPotentialEvolution *nodes, u8 *ages, u8 *rootIds, u16 *count);
 u16 CountBerserkGeneBaseEvolutionNodes(u16 species);
+bool8 AppendBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u16 capacity, u16 *count, u16 species, u8 contributor);
+// Root groups must be contiguous. Shared targets can leave more than eight records.
+bool8 PruneBerserkGeneEvolutionTargets(struct BerserkGeneEvolutionNode *nodes, u16 *count);
 // Up to MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES nonzero-weight base species.
 // Ages increase as contributions become older.
 u8 SelectBerserkGeneContributors(struct BerserkGeneContributor *contributors, u8 count);

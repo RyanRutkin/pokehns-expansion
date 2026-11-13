@@ -659,6 +659,17 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
     EXPECT(sawPidgeotContinuation);
 }
 
+TEST("Fusion base contributors use the existing egg species lineage")
+{
+    EXPECT_EQ(GetEggSpecies(SPECIES_NINCADA), SPECIES_NINCADA);
+    EXPECT_EQ(GetEggSpecies(SPECIES_NINJASK), SPECIES_NINCADA);
+    EXPECT_EQ(GetEggSpecies(SPECIES_SHEDINJA), SPECIES_NINCADA);
+    EXPECT_EQ(GetEggSpecies(SPECIES_DRAGONITE), SPECIES_DRATINI);
+    EXPECT_EQ(GetEggSpecies(SPECIES_POLITOED), SPECIES_POLIWAG);
+    EXPECT_EQ(GetEggSpecies(SPECIES_JOLTEON), SPECIES_EEVEE);
+    EXPECT_EQ(GetEggSpecies(SPECIES_HYDRAPPLE), SPECIES_APPLIN);
+}
+
 TEST("Fusion base contributors count target species instead of evolution methods")
 {
     EXPECT_EQ(CountBerserkGeneBaseEvolutionNodes(SPECIES_DRATINI), 2);
@@ -765,6 +776,146 @@ TEST("Fusion base contributors retain exact ratios or round bounded weights")
     EXPECT(rounded[0].weight >= rounded[1].weight);
     EXPECT(rounded[1].weight >= rounded[2].weight);
     EXPECT_NE(rounded[2].weight, 0);
+}
+
+TEST("Fusion target pruning preserves the four contributor example")
+{
+    static const u16 baseSpecies[] = {SPECIES_DRATINI, SPECIES_POLIWAG, SPECIES_EEVEE, SPECIES_APPLIN};
+    static const u16 required[] = {SPECIES_DRAGONAIR, SPECIES_DRAGONITE, SPECIES_POLIWHIRL,
+                                  SPECIES_POLIWRATH, SPECIES_POLITOED, SPECIES_DIPPLIN, SPECIES_HYDRAPPLE};
+    struct BerserkGeneEvolutionNode nodes[32];
+    rng_value_t oldRng = gRngValue;
+    u16 count = 0, i, j;
+    u8 eeveeCount = 0;
+
+    for (i = 0; i < ARRAY_COUNT(baseSpecies); i++)
+        EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &count, baseSpecies[i], i));
+    EXPECT_EQ(count, 17);
+    EXPECT(PruneBerserkGeneEvolutionTargets(nodes, &count));
+    EXPECT_EQ(count, MAX_FUSION_POTENTIAL_EVOLUTIONS);
+    for (i = 0; i < ARRAY_COUNT(required); i++)
+    {
+        for (j = 0; j < count && nodes[j].targetSpecies != required[i]; j++);
+        EXPECT(j < count);
+    }
+    for (i = 0; i < count; i++)
+    {
+        if (nodes[i].contributor == 2)
+            eeveeCount++;
+        EXPECT_NE(nodes[i].targetSpecies, SPECIES_FLAPPLE);
+        EXPECT_NE(nodes[i].targetSpecies, SPECIES_APPLETUN);
+        if (nodes[i].rootIndex != BERSERK_GENE_ROOT_NODE)
+        {
+            EXPECT(nodes[i].rootIndex < i);
+            EXPECT_EQ(nodes[nodes[i].rootIndex].contributor, nodes[i].contributor);
+        }
+    }
+    EXPECT_EQ(eeveeCount, 1);
+    gRngValue = oldRng;
+}
+
+TEST("Fusion target pruning retains a root for eight contributors")
+{
+    static const u16 roots[] = {SPECIES_IVYSAUR, SPECIES_CHARMELEON, SPECIES_WARTORTLE,
+                                SPECIES_PIDGEOTTO, SPECIES_DRAGONAIR, SPECIES_PUPITAR,
+                                SPECIES_KIRLIA, SPECIES_LUXIO};
+    static const u16 descendants[] = {SPECIES_VENUSAUR, SPECIES_CHARIZARD, SPECIES_BLASTOISE,
+                                      SPECIES_PIDGEOT, SPECIES_DRAGONITE, SPECIES_TYRANITAR,
+                                      SPECIES_GARDEVOIR, SPECIES_LUXRAY};
+    struct BerserkGeneEvolutionNode nodes[16];
+    rng_value_t oldRng = gRngValue;
+    u16 count = 0, i;
+    u8 contributorMask = 0;
+
+    for (i = 0; i < ARRAY_COUNT(roots); i++)
+    {
+        u16 rootIndex = count;
+        nodes[count++] = (struct BerserkGeneEvolutionNode){roots[i], BERSERK_GENE_ROOT_NODE, i};
+        nodes[count++] = (struct BerserkGeneEvolutionNode){descendants[i], rootIndex, i};
+    }
+    EXPECT(PruneBerserkGeneEvolutionTargets(nodes, &count));
+    EXPECT_EQ(count, MAX_FUSION_POTENTIAL_EVOLUTIONS);
+    for (i = 0; i < count; i++)
+    {
+        EXPECT_EQ(nodes[i].rootIndex, BERSERK_GENE_ROOT_NODE);
+        contributorMask |= 1 << nodes[i].contributor;
+    }
+    EXPECT_EQ(contributorMask, 0xFF);
+    gRngValue = oldRng;
+}
+
+TEST("Fusion target pruning counts shared targets only once")
+{
+    struct BerserkGeneEvolutionNode nodes[] = {
+        {SPECIES_IVYSAUR, BERSERK_GENE_ROOT_NODE, 0},
+        {SPECIES_IVYSAUR, BERSERK_GENE_ROOT_NODE, 1},
+        {SPECIES_CHARMELEON, BERSERK_GENE_ROOT_NODE, 2},
+        {SPECIES_WARTORTLE, BERSERK_GENE_ROOT_NODE, 3},
+        {SPECIES_PIDGEOTTO, BERSERK_GENE_ROOT_NODE, 4},
+        {SPECIES_DRAGONAIR, BERSERK_GENE_ROOT_NODE, 5},
+        {SPECIES_PUPITAR, BERSERK_GENE_ROOT_NODE, 6},
+        {SPECIES_KIRLIA, BERSERK_GENE_ROOT_NODE, 7},
+        {SPECIES_LUXIO, 7, 7},
+    };
+    u16 count = ARRAY_COUNT(nodes);
+
+    EXPECT(PruneBerserkGeneEvolutionTargets(nodes, &count));
+    EXPECT_EQ(count, ARRAY_COUNT(nodes));
+}
+
+TEST("Fusion target pruning randomizes tied Eevee branches")
+{
+    static const u16 baseSpecies[] = {SPECIES_DRATINI, SPECIES_POLIWAG, SPECIES_EEVEE, SPECIES_APPLIN};
+    struct BerserkGeneEvolutionNode nodes[32];
+    rng_value_t oldRng = gRngValue;
+    u16 firstTarget = SPECIES_NONE, seed, i;
+    bool8 sawDifferent = FALSE;
+
+    for (seed = 0; seed < 32; seed++)
+    {
+        u16 count = 0, eeveeTarget = SPECIES_NONE;
+        SeedRng(seed);
+        for (i = 0; i < ARRAY_COUNT(baseSpecies); i++)
+            EXPECT(AppendBerserkGeneEvolutionTargets(nodes, ARRAY_COUNT(nodes), &count, baseSpecies[i], i));
+        EXPECT(PruneBerserkGeneEvolutionTargets(nodes, &count));
+        EXPECT_EQ(count, MAX_FUSION_POTENTIAL_EVOLUTIONS);
+        for (i = 0; i < count; i++)
+            if (nodes[i].contributor == 2)
+                eeveeTarget = nodes[i].targetSpecies;
+        EXPECT_NE(eeveeTarget, SPECIES_NONE);
+        if (firstTarget == SPECIES_NONE)
+            firstTarget = eeveeTarget;
+        else if (eeveeTarget != firstTarget)
+            sawDifferent = TRUE;
+    }
+    gRngValue = oldRng;
+    EXPECT(sawDifferent);
+}
+
+TEST("Fusion target pruning handles large shared source pools")
+{
+    u16 perSource = CountBerserkGeneBaseEvolutionNodes(SPECIES_MILCERY);
+    u16 capacity = perSource * 2;
+    struct BerserkGeneEvolutionNode *nodes = Alloc(sizeof(*nodes) * capacity);
+    rng_value_t oldRng = gRngValue;
+    u16 count = 0, distinct = 0, i, j;
+    u8 contributors = 0;
+
+    EXPECT_EQ(perSource, 63);
+    EXPECT(AppendBerserkGeneEvolutionTargets(nodes, capacity, &count, SPECIES_MILCERY, 0));
+    EXPECT(AppendBerserkGeneEvolutionTargets(nodes, capacity, &count, SPECIES_MILCERY, 4));
+    EXPECT(PruneBerserkGeneEvolutionTargets(nodes, &count));
+    for (i = 0; i < count; i++)
+    {
+        contributors |= 1 << (nodes[i].contributor == 4);
+        for (j = 0; j < i && nodes[j].targetSpecies != nodes[i].targetSpecies; j++);
+        if (j == i)
+            distinct++;
+    }
+    EXPECT_EQ(distinct, MAX_FUSION_POTENTIAL_EVOLUTIONS);
+    EXPECT_EQ(contributors, 3);
+    Free(nodes);
+    gRngValue = oldRng;
 }
 
 TEST("Fusion Shedinja split-only entries are excluded from breeding evolution candidates")
