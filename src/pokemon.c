@@ -6619,11 +6619,18 @@ bool8 AppendEvolutionRequiredMoves(const struct EvolutionParam *params, u16 *mov
     return TRUE;
 }
 
-static bool8 CollectBerserkGeneEvolutionMoves(const struct BerserkGeneProfile *profile, u16 *moves, u8 *count)
+static bool8 CollectBerserkGeneEvolutionMoves(u16 profileId, const struct BerserkGeneProfile *profile,
+    u16 *moves, u8 *count)
 {
+    const struct BerserkGeneLineage *lineage = GetBerserkGeneLineage(profileId);
     u8 i;
 
     *count = 0;
+    assertf(lineage != NULL, "Missing fusion lineage %d", profileId)
+        return FALSE;
+    if (lineage->targetCount != 0)
+        return CollectBerserkGeneTargetRequiredMoves(lineage->targets, lineage->targetCount,
+                                                    lineage->contributors, moves, count);
     assertf(profile->potentialEvolutionCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS,
             "Invalid fusion evolution count")
         return FALSE;
@@ -6760,7 +6767,7 @@ static const struct LevelUpMove *BuildBerserkGeneLevelUpLearnset(u16 species, u1
     takeA = min(takeA, countA);
     takeB = min(takeB, countB);
 
-    if (!CollectBerserkGeneEvolutionMoves(profile, requiredMoves, &requiredCount))
+    if (!CollectBerserkGeneEvolutionMoves(profileId, profile, requiredMoves, &requiredCount))
         return NULL;
     ProtectBerserkGeneEvolutionMoves(requiredMoves, requiredCount, teachableEvolutionMoves,
                                     speciesA, sourceCountA, speciesB, sourceCountB, &count);

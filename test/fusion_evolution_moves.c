@@ -158,10 +158,13 @@ TEST("Fusion evolution moves preserve natural Rage Fist without changing known m
     u16 id;
     enum Move known = MOVE_SCRATCH;
     u8 modern = 0;
+    bool8 compact = FALSE;
     u8 oldModern = gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves;
 
     PARAMETRIZE { modern = 0; }
     PARAMETRIZE { modern = 1; }
+    PARAMETRIZE { compact = TRUE; }
+    PARAMETRIZE { modern = 1; compact = TRUE; }
     gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves = modern;
     ResetPokemonStorageSystem();
     CreateMon(&mon, SPECIES_PRIMEAPE, 60, 0, OTID_STRUCT_PLAYER_ID);
@@ -171,6 +174,13 @@ TEST("Fusion evolution moves preserve natural Rage Fist without changing known m
     profile->parentSpeciesB = SPECIES_APPLIN;
     profile->inheritanceFlags = BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
     AddRequiredEvolution(profile, SPECIES_PRIMEAPE, SPECIES_ANNIHILAPE);
+    if (compact)
+    {
+        struct BerserkGeneLineage *lineage = GetBerserkGeneLineage(id);
+        lineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_MANKEY, 1, 0};
+        lineage->contributors[4] = (struct BerserkGeneContributor){SPECIES_APPLIN, 1, 0};
+        EXPECT(BuildBerserkGeneLineageTargets(lineage, lineage->targets, &lineage->targetCount));
+    }
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
     SetMonData(&mon, MON_DATA_MOVE1, &known);
     saved = *profile;
@@ -231,10 +241,13 @@ TEST("Fusion evolution moves accept teachable access without injecting level 40 
     struct BerserkGeneProfile *profile;
     u16 id;
     u8 modern = 0;
+    bool8 compact = FALSE;
     u8 oldModern = gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves;
 
     PARAMETRIZE { modern = 0; }
     PARAMETRIZE { modern = 1; }
+    PARAMETRIZE { compact = TRUE; }
+    PARAMETRIZE { modern = 1; compact = TRUE; }
     gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves = modern;
     ResetPokemonStorageSystem();
     CreateMon(&mon, SPECIES_MAGIKARP, 60, 0, OTID_STRUCT_PLAYER_ID);
@@ -244,10 +257,69 @@ TEST("Fusion evolution moves accept teachable access without injecting level 40 
     profile->parentSpeciesB = SPECIES_DITTO;
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
     AddRequiredEvolution(profile, SPECIES_POIPOLE, SPECIES_NAGANADEL);
+    if (compact)
+    {
+        struct BerserkGeneLineage *lineage = GetBerserkGeneLineage(id);
+        lineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_POIPOLE, 1, 0};
+        lineage->contributors[4] = (struct BerserkGeneContributor){SPECIES_DITTO, 1, 0};
+        EXPECT(BuildBerserkGeneLineageTargets(lineage, lineage->targets, &lineage->targetCount));
+    }
     // Give the teachable union a Dragon Pulse source with no level-up Dragon Pulse.
     profile->parentSpeciesB = SPECIES_CHARIZARD;
     EXPECT(CanBoxMonLearnTeachableMove(&mon.box, MOVE_DRAGON_PULSE));
     EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_DRAGON_PULSE, 40), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+    gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves = oldModern;
+}
+
+TEST("Fusion evolution moves protect stored compact future routes in party and boxed rebuilds")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneLineage *lineage;
+    struct BerserkGeneLineage saved;
+    struct LevelUpMove expected[MAX_LEVEL_UP_MOVES + 1];
+    u16 id;
+    u8 modern = 0, phase = BERSERK_GENE_PHASE_1, i;
+    u8 oldModern = gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves;
+    bool8 barbBarrage = FALSE;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { modern = 1; }
+    PARAMETRIZE { phase = BERSERK_GENE_PHASE_2; }
+    PARAMETRIZE { modern = 1; phase = BERSERK_GENE_PHASE_COMPLETE; }
+    ResetPokemonStorageSystem();
+    gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves = modern;
+    CreateMon(&mon, SPECIES_CHARIZARD, 60, 12345, OTID_STRUCT_PLAYER_ID);
+    id = AllocBerserkGeneProfile();
+    EXPECT_NE(id, 0);
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
+    SetMonMoveSlot(&mon, MOVE_SCRATCH, 0);
+    profile = GetBerserkGeneProfile(id);
+    profile->parentSpeciesA = SPECIES_MEWTWO;
+    profile->parentSpeciesB = SPECIES_HERACROSS;
+    profile->inheritanceFlags = BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT;
+    profile->evolutionFlags = phase << BERSERK_GENE_EVOLUTION_PHASE_SHIFT;
+    // The populated compact graph, not an obsolete method entry, owns requirements.
+    AddRequiredEvolution(profile, SPECIES_QWILFISH_HISUI, SPECIES_OVERQWIL);
+    lineage = GetBerserkGeneLineage(id);
+    lineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_MANKEY, 1, 0};
+    lineage->contributors[4] = (struct BerserkGeneContributor){SPECIES_APPLIN, 1, 0};
+    EXPECT(BuildBerserkGeneLineageTargets(lineage, lineage->targets, &lineage->targetCount));
+    saved = *lineage;
+    EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_RAGE_FIST, 40), 1);
+    EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_DRAGON_CHEER, 40), 1);
+    memcpy(expected, GetMonLevelUpLearnset(&mon), sizeof(expected));
+    EXPECT_EQ(memcmp(expected, GetBoxMonLevelUpLearnset(&mon.box), sizeof(expected)), 0);
+    for (i = 0; i < MAX_LEVEL_UP_MOVES && expected[i].move != LEVEL_UP_MOVE_END; i++)
+        barbBarrage |= expected[i].move == MOVE_BARB_BARRAGE;
+    EXPECT(!barbBarrage);
+    EXPECT_EQ(GetMonData(&mon, MON_DATA_MOVE1), MOVE_SCRATCH);
+    EXPECT_EQ(memcmp(lineage, &saved, sizeof(saved)), 0);
+    lineage->contributors[4].species = SPECIES_DITTO;
+    EXPECT(BuildBerserkGeneLineageTargets(lineage, lineage->targets, &lineage->targetCount));
+    EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_RAGE_FIST, 40), 1);
+    EXPECT_EQ(CountMove(GetBoxMonLevelUpLearnset(&mon.box), MOVE_DRAGON_CHEER, 40), 0);
     ClearBoxMonBerserkGeneProfile(&mon.box);
     gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves = oldModern;
 }

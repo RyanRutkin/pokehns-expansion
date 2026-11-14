@@ -313,6 +313,32 @@ leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
 
+Live compact-graph move protection checkpoint (2026-11-13): the shared party/boxed
+level-up rebuild now reads evolution requirements from a profile's populated compact
+sidecar graph. It streams retained native routes across both stages through the existing
+collector and feeds the same protection/level-40 repair passes; there is no new move-catalog
+scan. With a populated graph, obsolete method entries no longer add requirements for
+branches absent from that graph. Removing a retained branch removes its fallback on
+the next reconstruction, without removing already-known moves.
+
+This is a transitional dispatch: a nonzero sidecar targetCount selects the compact registry;
+profiles with count zero keep the existing method-based registry. That preserves current
+profiles and version-7 contributor-only data while live evolution/profile conversion remains
+pending. A deliberately empty compact graph is not yet distinguished from legacy data;
+the eventual compact-profile activation/state must make that distinction explicit rather
+than treating this temporary dispatch as the final format discriminator.
+
+Validation: `make -k check BUILD=hns -j8 TESTS='Fusion evolution moves'` passed 8
+tests, including parameterized compact/legacy natural Rage Fist, TM/tutor Dragon Pulse
+access, full-pool future-stage Rage Fist and Dragon Cheer fallbacks, both Modern Moves
+settings, later phases, party/boxed agreement, unchanged known moves and sidecars,
+obsolete-method exclusion, and branch removal. `make -k check BUILD=hns -j8
+TESTS='Fusion weighted pruning'` passed 5 tests; `make -k check BUILD=hns -j8
+TESTS='Fusion rebreeding'` passed 11 tests. Compilation/linking succeeded.
+No storage layout or profile allocation limit changed. Native evolution selection, resolved
+contributor traits/moves, and live base-contributor breeding still require integration;
+milestone 3 remains open.
+
 Persistent compact-target checkpoint (2026-11-13): each internal lineage sidecar now
 contains its eight compact target records and target count, in addition to its contributor
 array. The target type lives with the global save data so the same representation is used
