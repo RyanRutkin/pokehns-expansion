@@ -83,10 +83,14 @@ bool8 CollectBerserkGeneParentContributors(struct BoxPokemon *mon,
 bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage);
 bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
     struct BerserkGeneEvolutionTarget *targets, u8 *targetCount);
-bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage);
+bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage,
+    u8 *baseStats);
 bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage);
 // Ready graph only. No unconditional first-stage routes succeeds with all outputs zero.
 bool8 GetBerserkGeneFirstStageLevel(const struct BerserkGeneLineage *lineage,
     u8 parentShareA, u8 *level, u8 *contributorMask, u8 *targetMask);
+// Blend retained birth contributors, normalizing each whole side; round nearest, ties up.
+bool8 GetBerserkGeneContributorBaseStats(const struct BerserkGeneLineage *lineage,
+    u8 parentShareA, u8 *baseStats);
 
 #endif // GUARD_DAYCARE_H

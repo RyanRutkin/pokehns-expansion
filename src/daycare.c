@@ -552,6 +552,49 @@ bool8 GetBerserkGeneFirstStageLevel(const struct BerserkGeneLineage *lineage,
     return TRUE;
 }
 
+bool8 GetBerserkGeneContributorBaseStats(const struct BerserkGeneLineage *lineage,
+    u8 parentShareA, u8 *baseStats)
+{
+    u32 totals[2] = {0};
+    u32 weightedStats[2][NUM_STATS] = {0};
+    u8 result[NUM_STATS], i, stat;
+    u64 denominator;
+
+    assertf(parentShareA > 0 && parentShareA < 100, "Invalid fusion parent share")
+        return FALSE;
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+    {
+        const struct BerserkGeneContributor *contributor = &lineage->contributors[i];
+        u8 side = i / MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+
+        assertf((contributor->species == SPECIES_NONE && contributor->weight == 0 && contributor->age == 0)
+             || (contributor->species != SPECIES_NONE && contributor->species < NUM_SPECIES
+                 && contributor->weight != 0),
+                "Invalid fusion stat contributor %d", i)
+            return FALSE;
+        if (contributor->species == SPECIES_NONE)
+            continue;
+        totals[side] += contributor->weight;
+        for (stat = 0; stat < NUM_STATS; stat++)
+            weightedStats[side][stat] += contributor->weight * GetSpeciesBaseStat(contributor->species, stat);
+    }
+    assertf(totals[0] != 0 && totals[1] != 0, "Missing fusion stat parent contributors")
+        return FALSE;
+    denominator = (u64)100 * totals[0] * totals[1];
+    for (stat = 0; stat < NUM_STATS; stat++)
+    {
+        u64 numerator = (u64)parentShareA * weightedStats[0][stat] * totals[1]
+                      + (u64)(100 - parentShareA) * weightedStats[1][stat] * totals[0];
+        u64 value = (numerator + denominator / 2) / denominator;
+
+        assertf(value <= UINT8_MAX, "Fusion base stat exceeds profile capacity")
+            return FALSE;
+        result[stat] = value;
+    }
+    memcpy(baseStats, result, sizeof(result));
+    return TRUE;
+}
+
 static void NormalizeBerserkGeneContributorWeights(struct BerserkGeneContributor *contributors,
     u64 *weights, u8 count)
 {
@@ -825,18 +868,22 @@ bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage)
     return TRUE;
 }
 
-bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage)
+bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage,
+    u8 *baseStats)
 {
     struct BerserkGeneLineage result = {0};
+    u8 stats[NUM_STATS];
     u8 level, contributorMask, targetMask;
     u8 holders = CountBerserkGeneHolders(daycare);
     u8 shareA = holders >= 2 ? 50 : DaycareMonHasBerserkGene(daycare, 1) ? 38 : 62;
 
     if (!BuildBerserkGeneBreedingLineage(daycare, &result)
      || !RebuildBerserkGeneLineageGraph(&result)
-     || !GetBerserkGeneFirstStageLevel(&result, shareA, &level, &contributorMask, &targetMask))
+     || !GetBerserkGeneFirstStageLevel(&result, shareA, &level, &contributorMask, &targetMask)
+     || !GetBerserkGeneContributorBaseStats(&result, shareA, stats))
         return FALSE;
     *lineage = result;
+    memcpy(baseStats, stats, sizeof(stats));
     return TRUE;
 }
 

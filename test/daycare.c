@@ -792,6 +792,7 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
     struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
     u16 requiredMoves[MAX_LEVEL_UP_MOVES];
     u8 targetCount, requiredCount;
+    u8 baseStats[NUM_STATS];
     struct DayCare *daycare = &gSaveBlock1Ptr->daycare;
     u16 ids[2] = {0};
     u8 mode = 0, side;
@@ -819,8 +820,24 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
         daycare->mons[side].mon = mon.box;
     }
     memset(&result, 0xFF, sizeof(result));
-    EXPECT(PrepareBerserkGeneBreedingLineage(daycare, &result));
+    EXPECT(PrepareBerserkGeneBreedingLineage(daycare, &result, baseStats));
     EXPECT(result.graphReady);
+    for (u8 stat = 0; stat < NUM_STATS; stat++)
+    {
+        u32 a = GetSpeciesBaseStat(SPECIES_DRATINI, stat);
+        u32 b = GetSpeciesBaseStat(mode == 0 ? SPECIES_APPLIN
+            : mode == 2 ? SPECIES_DRATINI : SPECIES_EEVEE, stat);
+        u32 expected;
+        if (mode == 0)
+            expected = (a * 62 + b * 38 + 50) / 100;
+        else
+        {
+            a += GetSpeciesBaseStat(SPECIES_POLIWAG, stat);
+            b += GetSpeciesBaseStat(SPECIES_APPLIN, stat);
+            expected = (a * 62 + b * 38 + 100) / 200;
+        }
+        EXPECT_EQ(baseStats[stat], expected);
+    }
     EXPECT_EQ(result.contributors[0].species, SPECIES_DRATINI);
     EXPECT_EQ(result.contributors[4].species, mode == 0 ? SPECIES_APPLIN
               : mode == 2 ? SPECIES_DRATINI : SPECIES_EEVEE);
@@ -852,6 +869,85 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
         ClearBoxMonBerserkGeneProfile(&daycare->mons[side].mon);
         ZeroBoxMonData(&daycare->mons[side].mon);
     }
+}
+
+TEST("Fusion base contributors project numeric stats with whole side normalization")
+{
+    struct BerserkGeneLineage lineage = {0}, saved;
+    u8 stats[NUM_STATS], share = 62;
+    rng_value_t rng = gRngValue;
+    bool8 multiple = FALSE;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { share = 38; }
+    PARAMETRIZE { share = 50; }
+    PARAMETRIZE { multiple = TRUE; }
+    PARAMETRIZE { multiple = TRUE; share = 38; }
+    PARAMETRIZE { multiple = TRUE; share = 50; }
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_DRATINI, multiple ? 3 : 1, 7};
+    lineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_POLIWAG, multiple ? 7 : UINT16_MAX, 1};
+    if (multiple)
+    {
+        lineage.contributors[1] = (struct BerserkGeneContributor){SPECIES_EEVEE, 1, 2};
+        lineage.contributors[5] = (struct BerserkGeneContributor){SPECIES_APPLIN, 3, 5};
+    }
+    saved = lineage;
+    EXPECT(GetBerserkGeneContributorBaseStats(&lineage, share, stats));
+    for (u8 stat = 0; stat < NUM_STATS; stat++)
+    {
+        u32 a = GetSpeciesBaseStat(SPECIES_DRATINI, stat);
+        u32 b = GetSpeciesBaseStat(SPECIES_POLIWAG, stat);
+        u32 expected;
+        if (multiple)
+        {
+            a = a * 3 + GetSpeciesBaseStat(SPECIES_EEVEE, stat);
+            b = b * 7 + GetSpeciesBaseStat(SPECIES_APPLIN, stat) * 3;
+            expected = (a * share * 10 + b * (100 - share) * 4 + 2000) / 4000;
+        }
+        else
+            expected = (a * share + b * (100 - share) + 50) / 100;
+        EXPECT_EQ(stats[stat], expected);
+    }
+    EXPECT_EQ(memcmp(&lineage, &saved, sizeof(saved)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &rng, sizeof(rng)), 0);
+}
+
+TEST("Fusion base contributors project maximum weights with one final rounding step")
+{
+    struct BerserkGeneLineage lineage = {0};
+    u8 stats[NUM_STATS], share = 50;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { share = 62; }
+    PARAMETRIZE { share = 38; }
+    for (u8 i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+        lineage.contributors[i] = (struct BerserkGeneContributor){
+            i < MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE ? SPECIES_CHANSEY : SPECIES_SHUCKLE,
+            UINT16_MAX, UINT16_MAX};
+    EXPECT(GetBerserkGeneContributorBaseStats(&lineage, share, stats));
+    for (u8 stat = 0; stat < NUM_STATS; stat++)
+        EXPECT_EQ(stats[stat], (GetSpeciesBaseStat(SPECIES_CHANSEY, stat) * share
+            + GetSpeciesBaseStat(SPECIES_SHUCKLE, stat) * (100 - share) + 50) / 100);
+}
+
+TEST("Fusion base contributors preserve attacking category ties and preferences")
+{
+    struct BerserkGeneLineage lineage = {0};
+    u8 stats[NUM_STATS];
+    u16 species = SPECIES_EEVEE;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { species = SPECIES_ABRA; }
+    PARAMETRIZE { species = SPECIES_MEW; }
+    lineage.contributors[0] = (struct BerserkGeneContributor){species, 1, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){species, UINT16_MAX, 0};
+    EXPECT(GetBerserkGeneContributorBaseStats(&lineage, 62, stats));
+    if (species == SPECIES_EEVEE)
+        EXPECT(stats[STAT_ATK] > stats[STAT_SPATK]);
+    else if (species == SPECIES_ABRA)
+        EXPECT(stats[STAT_ATK] < stats[STAT_SPATK]);
+    else
+        EXPECT_EQ(stats[STAT_ATK], stats[STAT_SPATK]);
 }
 
 TEST("Fusion base contributors merge weights and keep the newest duplicate age")

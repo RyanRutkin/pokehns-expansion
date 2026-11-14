@@ -313,6 +313,34 @@ leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
 
+Contributor base-stat projection checkpoint (2026-11-13):
+`GetBerserkGeneContributorBaseStats` calculates all six birth base stats directly from
+retained contributor species, not the evolved fusion parent's effective stats. Normalize
+each complete immediate-parent side, apply the offspring's 62/38 or 50/50 shares, and
+round once at the final combined average to nearest, with exact halves rounded up.
+Do not round per-contributor or per-side subtotals. Wide intermediates handle eight
+maximum-weight contributors; final profile-byte capacity is asserted explicitly.
+Projection is read-only and consumes no RNG.
+
+`PrepareBerserkGeneBreedingLineage` now returns the projected base-stat array alongside
+the prepared contributor/graph sidecar. Both outputs are published only after all preparation
+steps succeed. This makes the actual birth Attack/Special Attack result available before
+the revised pipeline performs weighted move selection. No base-stat copy is added to
+SaveBlock3; the main profile already owns resolved baseStats. Save size and allocation
+limits are unchanged.
+
+Validation: `make -k check BUILD=hns -j8 TESTS='Fusion base contributors'` passed
+13 tests, including exact expected values for every stat in ordinary and four-contributor
+preparation, unequal weights, all parent shares, maximum weights, physical/special/tied
+attacking categories, unchanged metadata, and unchanged RNG. `make -k check BUILD=hns
+-j8 TESTS='Fusion weighted pruning'` passed 5 tests; `make -k check BUILD=hns -j8
+TESTS='Fusion rebreeding'` passed 11 tests. Compilation/linking succeeded.
+
+The live method-based breeding pipeline is not switched yet; its existing base-stat blending
+and move-selection behavior remains unchanged. This is a prepared-output prerequisite for
+the coherent trait/evolution/movepool conversion, not revised gameplay completion.
+Milestone 3 remains open.
+
 Stored first-stage level projection checkpoint (2026-11-13):
 `GetBerserkGeneFirstStageLevel` now streams the ready graph's base-contributor routes,
 collects unconditional native EVO_LEVEL methods only, and invokes the shared whole-side
