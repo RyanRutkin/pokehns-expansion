@@ -313,6 +313,34 @@ leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
 
+Stored first-stage level projection checkpoint (2026-11-13):
+`GetBerserkGeneFirstStageLevel` now streams the ready graph's base-contributor routes,
+collects unconditional native EVO_LEVEL methods only, and invokes the shared whole-side
+weighted average. It returns the rounded-up level plus participating contributor and
+target masks, preserving source identity when multiple contributors share one target.
+Conditional level methods and second-stage target routes do not enter this first-stage
+merge. With no unconditional first-stage routes, construction succeeds with level and
+both masks zero. Invalid levels and conflicting unconditional levels for one contributor
+assert explicitly rather than silently selecting an arbitrary level.
+
+`PrepareBerserkGeneBreedingLineage` now validates this projection with the new breeding's
+actual 62/38 or 50/50 parent shares before publishing its prepared result. Level projection
+is read-only, uses no gameplay RNG, and does not persist pointers or extra storage fields.
+SaveBlock3 remains 976 bytes and the profile cap remains eight.
+
+Validation: `make -k check BUILD=hns -j8 TESTS='Fusion target'` passed 23 tests,
+including same-side weighted contributors, shared roots, opposite-side normalization,
+all parent-share modes, conditional/empty routes, exact source masks, unchanged sidecars,
+and unchanged RNG. `make -k check BUILD=hns -j8 TESTS='Fusion base contributors'`
+passed 10 tests. The test ROM compiled and linked. The initial fixture compile failure
+compared the struct-valued RNG state with EXPECT_EQ; it was corrected to compare its
+bytes, then both selectors passed.
+
+Live evolution triggers and trait projection still use the method-based profile implementation.
+The returned masks are not yet applied to consume first-stage options or build pseudo-fusions;
+second-stage state/projection and full live base-contributor breeding remain pending.
+Milestone 3 is open; this checkpoint does not claim revised gameplay is complete.
+
 Explicit compact-graph activation checkpoint (2026-11-13): the sidecar now records
 `graphReady` independently of targetCount. `RebuildBerserkGeneLineageGraph` publishes
 a validated graph and marks it ready only after collection, pruning, compaction, and

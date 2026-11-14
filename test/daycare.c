@@ -1498,6 +1498,71 @@ TEST("Fusion target merged levels normalize side totals and handle maximum weigh
     EXPECT_EQ(level, 39);
 }
 
+TEST("Fusion target stored graph merges first stage levels and preserves source masks")
+{
+    struct BerserkGeneLineage lineage = {0}, saved;
+    u8 level = 0, contributors = 0, targets = 0, share = 62;
+    rng_value_t rng;
+    bool8 sharedRoot = FALSE;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { share = 38; }
+    PARAMETRIZE { share = 50; }
+    PARAMETRIZE { sharedRoot = TRUE; }
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_DRATINI, 3, 0};
+    lineage.contributors[1] = (struct BerserkGeneContributor){SPECIES_POLIWAG, 1, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){sharedRoot ? SPECIES_DRATINI : SPECIES_EEVEE, 7, 0};
+    lineage.contributors[5] = (struct BerserkGeneContributor){SPECIES_APPLIN, 3, 0};
+    EXPECT(RebuildBerserkGeneLineageGraph(&lineage));
+    saved = lineage;
+    rng = gRngValue;
+    EXPECT(GetBerserkGeneFirstStageLevel(&lineage, share, &level, &contributors, &targets));
+    EXPECT_EQ(level, sharedRoot ? 30 : 29);
+    EXPECT_EQ(contributors, (1 << 0) | (1 << 1) | (sharedRoot ? 1 << 4 : 0));
+    for (u8 i = 0; i < lineage.targetCount; i++)
+    {
+        bool8 selected = (targets & (1 << i)) != 0;
+        EXPECT_EQ(selected, lineage.targets[i].species == SPECIES_DRAGONAIR
+                        || lineage.targets[i].species == SPECIES_POLIWHIRL);
+    }
+    EXPECT_EQ(memcmp(&lineage, &saved, sizeof(lineage)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &rng, sizeof(rng)), 0);
+}
+
+TEST("Fusion target stored graph first stage levels normalize immediate parent shares")
+{
+    struct BerserkGeneLineage lineage = {0};
+    u8 level, contributors, targets, share = 62;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { share = 38; }
+    PARAMETRIZE { share = 50; }
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_DRATINI, 1, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_POLIWAG, UINT16_MAX, 0};
+    EXPECT(RebuildBerserkGeneLineageGraph(&lineage));
+    EXPECT(GetBerserkGeneFirstStageLevel(&lineage, share, &level, &contributors, &targets));
+    EXPECT_EQ(level, share == 62 ? 29 : share == 38 ? 27 : 28);
+    EXPECT_EQ(contributors, (1 << 0) | (1 << 4));
+    EXPECT_NE(targets, 0);
+}
+
+TEST("Fusion target stored graph first stage levels exclude conditional and empty routes")
+{
+    struct BerserkGeneLineage lineage = {0};
+    u8 level = UINT8_MAX, contributors = UINT8_MAX, targets = UINT8_MAX;
+    bool8 empty = FALSE;
+
+    PARAMETRIZE { }
+    PARAMETRIZE { empty = TRUE; }
+    lineage.contributors[0] = (struct BerserkGeneContributor){empty ? SPECIES_DITTO : SPECIES_PRIMEAPE, 1, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){empty ? SPECIES_SMEARGLE : SPECIES_APPLIN, 1, 0};
+    EXPECT(RebuildBerserkGeneLineageGraph(&lineage));
+    EXPECT(GetBerserkGeneFirstStageLevel(&lineage, 62, &level, &contributors, &targets));
+    EXPECT_EQ(level, 0);
+    EXPECT_EQ(contributors, 0);
+    EXPECT_EQ(targets, 0);
+}
+
 TEST("Fusion Shedinja split-only entries are excluded from breeding evolution candidates")
 {
     struct BerserkGeneProfile *profile;

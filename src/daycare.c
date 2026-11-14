@@ -507,6 +507,51 @@ bool8 GetBerserkGeneMergedEvolutionLevel(const struct BerserkGeneContributor *co
     return TRUE;
 }
 
+bool8 GetBerserkGeneFirstStageLevel(const struct BerserkGeneLineage *lineage,
+    u8 parentShareA, u8 *level, u8 *contributorMask, u8 *targetMask)
+{
+    u8 levels[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES] = {0};
+    u8 contributors = 0, targets = 0, mergedLevel = 0, i;
+    u16 requiredMoves[MAX_LEVEL_UP_MOVES];
+    u8 requiredCount;
+
+    assertf(lineage->graphReady, "Fusion graph is not ready")
+        return FALSE;
+    assertf(parentShareA > 0 && parentShareA < 100, "Invalid fusion parent share")
+        return FALSE;
+    if (!CollectBerserkGeneTargetRequiredMoves(lineage->targets, lineage->targetCount,
+                                             lineage->contributors, requiredMoves, &requiredCount))
+        return FALSE;
+    for (i = 0; i < lineage->targetCount; i++)
+    {
+        struct BerserkGeneEvolutionMethodCursor cursor = {0};
+        const struct Evolution *evolution;
+        while ((evolution = GetNextBerserkGeneTargetMethod(lineage->targets, lineage->targetCount,
+            lineage->contributors, i, UINT8_MAX, 0, &cursor)) != NULL)
+        {
+            u8 source = cursor.sourceIndex;
+            if (evolution->method != EVO_LEVEL || evolution->params != NULL)
+                continue;
+            assertf(evolution->param > 0 && evolution->param <= MAX_LEVEL,
+                    "Invalid fusion native evolution level")
+                return FALSE;
+            assertf(levels[source] == 0 || levels[source] == evolution->param,
+                    "Conflicting unconditional fusion levels for contributor %d", source)
+                return FALSE;
+            levels[source] = evolution->param;
+            contributors |= 1 << source;
+            targets |= 1 << i;
+        }
+    }
+    if (contributors != 0
+     && !GetBerserkGeneMergedEvolutionLevel(lineage->contributors, levels, parentShareA, &mergedLevel))
+        return FALSE;
+    *level = mergedLevel;
+    *contributorMask = contributors;
+    *targetMask = targets;
+    return TRUE;
+}
+
 static void NormalizeBerserkGeneContributorWeights(struct BerserkGeneContributor *contributors,
     u64 *weights, u8 count)
 {
@@ -783,9 +828,13 @@ bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage)
 bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage)
 {
     struct BerserkGeneLineage result = {0};
+    u8 level, contributorMask, targetMask;
+    u8 holders = CountBerserkGeneHolders(daycare);
+    u8 shareA = holders >= 2 ? 50 : DaycareMonHasBerserkGene(daycare, 1) ? 38 : 62;
 
     if (!BuildBerserkGeneBreedingLineage(daycare, &result)
-     || !RebuildBerserkGeneLineageGraph(&result))
+     || !RebuildBerserkGeneLineageGraph(&result)
+     || !GetBerserkGeneFirstStageLevel(&result, shareA, &level, &contributorMask, &targetMask))
         return FALSE;
     *lineage = result;
     return TRUE;

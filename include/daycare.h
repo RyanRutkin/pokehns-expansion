@@ -85,5 +85,8 @@ bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
     struct BerserkGeneEvolutionTarget *targets, u8 *targetCount);
 bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage);
 bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage);
+// Ready graph only. No unconditional first-stage routes succeeds with all outputs zero.
+bool8 GetBerserkGeneFirstStageLevel(const struct BerserkGeneLineage *lineage,
+    u8 parentShareA, u8 *level, u8 *contributorMask, u8 *targetMask);
 
 #endif // GUARD_DAYCARE_H
