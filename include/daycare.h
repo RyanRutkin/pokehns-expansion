@@ -6,6 +6,15 @@
 struct FusionPotentialEvolution;
 struct Evolution;
 
+struct BerserkGeneNumericTraits
+{
+    u8 baseStats[NUM_STATS];
+    u16 height;
+    u16 weight;
+    u16 pokemonScale;
+    u16 pokemonOffset;
+};
+
 #define BERSERK_GENE_ROOT_NODE UINT16_MAX
 
 struct BerserkGeneEvolutionNode
@@ -84,7 +93,7 @@ bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGen
 bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
     struct BerserkGeneEvolutionTarget *targets, u8 *targetCount);
 bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage,
-    u8 *baseStats);
+    struct BerserkGeneNumericTraits *traits);
 bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage);
 // Ready graph only. No unconditional first-stage routes succeeds with all outputs zero.
 bool8 GetBerserkGeneFirstStageLevel(const struct BerserkGeneLineage *lineage,
@@ -92,5 +101,7 @@ bool8 GetBerserkGeneFirstStageLevel(const struct BerserkGeneLineage *lineage,
 // Blend retained birth contributors, normalizing each whole side; round nearest, ties up.
 bool8 GetBerserkGeneContributorBaseStats(const struct BerserkGeneLineage *lineage,
     u8 parentShareA, u8 *baseStats);
+bool8 GetBerserkGeneContributorNumericTraits(const struct BerserkGeneLineage *lineage,
+    u8 parentShareA, struct BerserkGeneNumericTraits *traits);
 
 #endif // GUARD_DAYCARE_H

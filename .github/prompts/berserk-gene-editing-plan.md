@@ -313,6 +313,32 @@ leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
 
+Complete contributor numeric projection checkpoint (2026-11-13):
+`GetBerserkGeneContributorNumericTraits` extends the same normalized whole-side
+calculation to height, weight, Pokédex Pokemon scale, and Pokemon offset, alongside
+all six base stats. It reads each retained contributor's native species measurements,
+not its evolved parent's effective profile. Accumulation uses 64-bit values for the larger
+16-bit measurement fields, with one final nearest/ties-up rounding step and explicit
+destination-capacity assertions. The base-stat helper delegates to this shared calculation
+instead of duplicating the normalization and rounding logic.
+
+`PrepareBerserkGeneBreedingLineage` now returns a `BerserkGeneNumericTraits`
+scratch result alongside the prepared sidecar, publishing both outputs only on success.
+The struct is not a new save record: resolved measurements and stats already have fields
+in the main profile. No SaveBlock3 growth or profile-cap change is introduced.
+
+Validation: `make -k check BUILD=hns -j8 TESTS='Fusion base contributors'` passed
+14 tests, including all numeric fields, unequal contributor weights, all parent shares,
+eight maximum-weight sources, contrasting Wailord/Diglett/Steelix/Gastly measurements,
+unchanged ancestry/RNG, and complete preparation output. `make -k check BUILD=hns
+-j8 TESTS='Fusion rebreeding'` passed 11 tests; `make -k check BUILD=hns -j8
+TESTS='Fusion weighted pruning'` passed 5 tests. Compilation/linking succeeded.
+
+Live breeding remains on the existing method-based pipeline. Categorical trait donor
+selection/provenance, evolution state, naming, and contributor-weighted move allocations
+still need integration before the prepared numeric outputs can replace live construction.
+Milestone 3 remains open; this supersedes the base-stat-only preparation signature below.
+
 Contributor base-stat projection checkpoint (2026-11-13):
 `GetBerserkGeneContributorBaseStats` calculates all six birth base stats directly from
 retained contributor species, not the evolved fusion parent's effective stats. Normalize

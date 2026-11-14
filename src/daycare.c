@@ -552,12 +552,15 @@ bool8 GetBerserkGeneFirstStageLevel(const struct BerserkGeneLineage *lineage,
     return TRUE;
 }
 
-bool8 GetBerserkGeneContributorBaseStats(const struct BerserkGeneLineage *lineage,
-    u8 parentShareA, u8 *baseStats)
+bool8 GetBerserkGeneContributorNumericTraits(const struct BerserkGeneLineage *lineage,
+    u8 parentShareA, struct BerserkGeneNumericTraits *traits)
 {
+    enum { HEIGHT = NUM_STATS, WEIGHT, SCALE, OFFSET, TRAIT_COUNT };
     u32 totals[2] = {0};
-    u32 weightedStats[2][NUM_STATS] = {0};
-    u8 result[NUM_STATS], i, stat;
+    u64 weightedTraits[2][TRAIT_COUNT] = {0};
+    u16 values[TRAIT_COUNT];
+    struct BerserkGeneNumericTraits result = {0};
+    u8 i, stat;
     u64 denominator;
 
     assertf(parentShareA > 0 && parentShareA < 100, "Invalid fusion parent share")
@@ -576,22 +579,44 @@ bool8 GetBerserkGeneContributorBaseStats(const struct BerserkGeneLineage *lineag
             continue;
         totals[side] += contributor->weight;
         for (stat = 0; stat < NUM_STATS; stat++)
-            weightedStats[side][stat] += contributor->weight * GetSpeciesBaseStat(contributor->species, stat);
+            weightedTraits[side][stat] += (u64)contributor->weight * GetSpeciesBaseStat(contributor->species, stat);
+        weightedTraits[side][HEIGHT] += (u64)contributor->weight * GetSpeciesHeight(contributor->species);
+        weightedTraits[side][WEIGHT] += (u64)contributor->weight * GetSpeciesWeight(contributor->species);
+        weightedTraits[side][SCALE] += (u64)contributor->weight * gSpeciesInfo[contributor->species].pokemonScale;
+        weightedTraits[side][OFFSET] += (u64)contributor->weight * gSpeciesInfo[contributor->species].pokemonOffset;
     }
     assertf(totals[0] != 0 && totals[1] != 0, "Missing fusion stat parent contributors")
         return FALSE;
     denominator = (u64)100 * totals[0] * totals[1];
-    for (stat = 0; stat < NUM_STATS; stat++)
+    for (stat = 0; stat < TRAIT_COUNT; stat++)
     {
-        u64 numerator = (u64)parentShareA * weightedStats[0][stat] * totals[1]
-                      + (u64)(100 - parentShareA) * weightedStats[1][stat] * totals[0];
+        u64 numerator = parentShareA * weightedTraits[0][stat] * totals[1]
+                      + (100 - parentShareA) * weightedTraits[1][stat] * totals[0];
         u64 value = (numerator + denominator / 2) / denominator;
 
-        assertf(value <= UINT8_MAX, "Fusion base stat exceeds profile capacity")
+        assertf(value <= (stat < NUM_STATS ? UINT8_MAX : UINT16_MAX),
+                "Fusion numeric trait exceeds profile capacity")
             return FALSE;
-        result[stat] = value;
+        values[stat] = value;
     }
-    memcpy(baseStats, result, sizeof(result));
+    for (stat = 0; stat < NUM_STATS; stat++)
+        result.baseStats[stat] = values[stat];
+    result.height = values[HEIGHT];
+    result.weight = values[WEIGHT];
+    result.pokemonScale = values[SCALE];
+    result.pokemonOffset = values[OFFSET];
+    *traits = result;
+    return TRUE;
+}
+
+bool8 GetBerserkGeneContributorBaseStats(const struct BerserkGeneLineage *lineage,
+    u8 parentShareA, u8 *baseStats)
+{
+    struct BerserkGeneNumericTraits traits;
+
+    if (!GetBerserkGeneContributorNumericTraits(lineage, parentShareA, &traits))
+        return FALSE;
+    memcpy(baseStats, traits.baseStats, sizeof(traits.baseStats));
     return TRUE;
 }
 
@@ -869,10 +894,10 @@ bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage)
 }
 
 bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage,
-    u8 *baseStats)
+    struct BerserkGeneNumericTraits *traits)
 {
     struct BerserkGeneLineage result = {0};
-    u8 stats[NUM_STATS];
+    struct BerserkGeneNumericTraits numericTraits;
     u8 level, contributorMask, targetMask;
     u8 holders = CountBerserkGeneHolders(daycare);
     u8 shareA = holders >= 2 ? 50 : DaycareMonHasBerserkGene(daycare, 1) ? 38 : 62;
@@ -880,10 +905,10 @@ bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkG
     if (!BuildBerserkGeneBreedingLineage(daycare, &result)
      || !RebuildBerserkGeneLineageGraph(&result)
      || !GetBerserkGeneFirstStageLevel(&result, shareA, &level, &contributorMask, &targetMask)
-     || !GetBerserkGeneContributorBaseStats(&result, shareA, stats))
+     || !GetBerserkGeneContributorNumericTraits(&result, shareA, &numericTraits))
         return FALSE;
     *lineage = result;
-    memcpy(baseStats, stats, sizeof(stats));
+    *traits = numericTraits;
     return TRUE;
 }
 

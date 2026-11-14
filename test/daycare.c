@@ -792,7 +792,7 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
     struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
     u16 requiredMoves[MAX_LEVEL_UP_MOVES];
     u8 targetCount, requiredCount;
-    u8 baseStats[NUM_STATS];
+    struct BerserkGeneNumericTraits traits;
     struct DayCare *daycare = &gSaveBlock1Ptr->daycare;
     u16 ids[2] = {0};
     u8 mode = 0, side;
@@ -820,7 +820,7 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
         daycare->mons[side].mon = mon.box;
     }
     memset(&result, 0xFF, sizeof(result));
-    EXPECT(PrepareBerserkGeneBreedingLineage(daycare, &result, baseStats));
+    EXPECT(PrepareBerserkGeneBreedingLineage(daycare, &result, &traits));
     EXPECT(result.graphReady);
     for (u8 stat = 0; stat < NUM_STATS; stat++)
     {
@@ -836,7 +836,15 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
             b += GetSpeciesBaseStat(SPECIES_APPLIN, stat);
             expected = (a * 62 + b * 38 + 100) / 200;
         }
-        EXPECT_EQ(baseStats[stat], expected);
+        EXPECT_EQ(traits.baseStats[stat], expected);
+    }
+    {
+        struct BerserkGeneNumericTraits expected;
+        EXPECT(GetBerserkGeneContributorNumericTraits(&result, 62, &expected));
+        EXPECT_EQ(traits.height, expected.height);
+        EXPECT_EQ(traits.weight, expected.weight);
+        EXPECT_EQ(traits.pokemonScale, expected.pokemonScale);
+        EXPECT_EQ(traits.pokemonOffset, expected.pokemonOffset);
     }
     EXPECT_EQ(result.contributors[0].species, SPECIES_DRATINI);
     EXPECT_EQ(result.contributors[4].species, mode == 0 ? SPECIES_APPLIN
@@ -928,6 +936,64 @@ TEST("Fusion base contributors project maximum weights with one final rounding s
     for (u8 stat = 0; stat < NUM_STATS; stat++)
         EXPECT_EQ(stats[stat], (GetSpeciesBaseStat(SPECIES_CHANSEY, stat) * share
             + GetSpeciesBaseStat(SPECIES_SHUCKLE, stat) * (100 - share) + 50) / 100);
+}
+
+TEST("Fusion base contributors project dimensions and sprite measurements from ancestral species")
+{
+    struct BerserkGeneLineage lineage = {0}, saved;
+    struct BerserkGeneNumericTraits traits;
+    u8 share = 62;
+    bool8 maximum = FALSE;
+    rng_value_t rng = gRngValue;
+    u64 totals[2] = {0};
+    u64 sums[2][4] = {0};
+    u16 expected[4], actual[4];
+
+    PARAMETRIZE { }
+    PARAMETRIZE { share = 38; }
+    PARAMETRIZE { share = 50; }
+    PARAMETRIZE { maximum = TRUE; }
+    PARAMETRIZE { maximum = TRUE; share = 38; }
+    PARAMETRIZE { maximum = TRUE; share = 50; }
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_WAILORD, maximum ? UINT16_MAX : 3, 8};
+    lineage.contributors[1] = (struct BerserkGeneContributor){SPECIES_DIGLETT, maximum ? UINT16_MAX : 1, 5};
+    lineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_STEELIX, maximum ? UINT16_MAX : 7, 2};
+    lineage.contributors[5] = (struct BerserkGeneContributor){SPECIES_GASTLY, maximum ? UINT16_MAX : 3, 1};
+    if (maximum)
+    {
+        lineage.contributors[2] = lineage.contributors[0];
+        lineage.contributors[3] = lineage.contributors[1];
+        lineage.contributors[6] = lineage.contributors[4];
+        lineage.contributors[7] = lineage.contributors[5];
+    }
+    saved = lineage;
+    EXPECT(GetBerserkGeneContributorNumericTraits(&lineage, share, &traits));
+    for (u8 i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+    {
+        const struct BerserkGeneContributor *contributor = &lineage.contributors[i];
+        u8 side = i / MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+        if (contributor->species == SPECIES_NONE)
+            continue;
+        totals[side] += contributor->weight;
+        sums[side][0] += (u64)contributor->weight * GetSpeciesHeight(contributor->species);
+        sums[side][1] += (u64)contributor->weight * GetSpeciesWeight(contributor->species);
+        sums[side][2] += (u64)contributor->weight * gSpeciesInfo[contributor->species].pokemonScale;
+        sums[side][3] += (u64)contributor->weight * gSpeciesInfo[contributor->species].pokemonOffset;
+    }
+    for (u8 i = 0; i < ARRAY_COUNT(expected); i++)
+    {
+        u64 denominator = 100 * totals[0] * totals[1];
+        expected[i] = (sums[0][i] * share * totals[1]
+            + sums[1][i] * (100 - share) * totals[0] + denominator / 2) / denominator;
+    }
+    actual[0] = traits.height;
+    actual[1] = traits.weight;
+    actual[2] = traits.pokemonScale;
+    actual[3] = traits.pokemonOffset;
+    for (u8 i = 0; i < ARRAY_COUNT(expected); i++)
+        EXPECT_EQ(actual[i], expected[i]);
+    EXPECT_EQ(memcmp(&lineage, &saved, sizeof(saved)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &rng, sizeof(rng)), 0);
 }
 
 TEST("Fusion base contributors preserve attacking category ties and preferences")
