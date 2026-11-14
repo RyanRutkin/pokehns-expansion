@@ -6628,7 +6628,7 @@ static bool8 CollectBerserkGeneEvolutionMoves(u16 profileId, const struct Berser
     *count = 0;
     assertf(lineage != NULL, "Missing fusion lineage %d", profileId)
         return FALSE;
-    if (lineage->targetCount != 0)
+    if (lineage->graphReady)
         return CollectBerserkGeneTargetRequiredMoves(lineage->targets, lineage->targetCount,
                                                     lineage->contributors, moves, count);
     assertf(profile->potentialEvolutionCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS,

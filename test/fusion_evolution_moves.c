@@ -179,7 +179,7 @@ TEST("Fusion evolution moves preserve natural Rage Fist without changing known m
         struct BerserkGeneLineage *lineage = GetBerserkGeneLineage(id);
         lineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_MANKEY, 1, 0};
         lineage->contributors[4] = (struct BerserkGeneContributor){SPECIES_APPLIN, 1, 0};
-        EXPECT(BuildBerserkGeneLineageTargets(lineage, lineage->targets, &lineage->targetCount));
+        EXPECT(RebuildBerserkGeneLineageGraph(lineage));
     }
     SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &id);
     SetMonData(&mon, MON_DATA_MOVE1, &known);
@@ -262,7 +262,7 @@ TEST("Fusion evolution moves accept teachable access without injecting level 40 
         struct BerserkGeneLineage *lineage = GetBerserkGeneLineage(id);
         lineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_POIPOLE, 1, 0};
         lineage->contributors[4] = (struct BerserkGeneContributor){SPECIES_DITTO, 1, 0};
-        EXPECT(BuildBerserkGeneLineageTargets(lineage, lineage->targets, &lineage->targetCount));
+        EXPECT(RebuildBerserkGeneLineageGraph(lineage));
     }
     // Give the teachable union a Dragon Pulse source with no level-up Dragon Pulse.
     profile->parentSpeciesB = SPECIES_CHARIZARD;
@@ -305,7 +305,7 @@ TEST("Fusion evolution moves protect stored compact future routes in party and b
     lineage = GetBerserkGeneLineage(id);
     lineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_MANKEY, 1, 0};
     lineage->contributors[4] = (struct BerserkGeneContributor){SPECIES_APPLIN, 1, 0};
-    EXPECT(BuildBerserkGeneLineageTargets(lineage, lineage->targets, &lineage->targetCount));
+    EXPECT(RebuildBerserkGeneLineageGraph(lineage));
     saved = *lineage;
     EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_RAGE_FIST, 40), 1);
     EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_DRAGON_CHEER, 40), 1);
@@ -317,9 +317,17 @@ TEST("Fusion evolution moves protect stored compact future routes in party and b
     EXPECT_EQ(GetMonData(&mon, MON_DATA_MOVE1), MOVE_SCRATCH);
     EXPECT_EQ(memcmp(lineage, &saved, sizeof(saved)), 0);
     lineage->contributors[4].species = SPECIES_DITTO;
-    EXPECT(BuildBerserkGeneLineageTargets(lineage, lineage->targets, &lineage->targetCount));
+    EXPECT(RebuildBerserkGeneLineageGraph(lineage));
     EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_RAGE_FIST, 40), 1);
     EXPECT_EQ(CountMove(GetBoxMonLevelUpLearnset(&mon.box), MOVE_DRAGON_CHEER, 40), 0);
+    lineage->contributors[0].species = SPECIES_SMEARGLE;
+    EXPECT(RebuildBerserkGeneLineageGraph(lineage));
+    EXPECT(lineage->graphReady);
+    EXPECT_EQ(lineage->targetCount, 0);
+    EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_BARB_BARRAGE, 40), 0);
+    EXPECT_EQ(CountMove(GetMonLevelUpLearnset(&mon), MOVE_RAGE_FIST, 40), 0);
+    lineage->graphReady = FALSE;
+    EXPECT_EQ(CountMove(GetBoxMonLevelUpLearnset(&mon.box), MOVE_BARB_BARRAGE, 40), 1);
     ClearBoxMonBerserkGeneProfile(&mon.box);
     gSaveBlock3Ptr->challengeSettings.tx_Mode_Modern_Moves = oldModern;
 }

@@ -84,5 +84,6 @@ bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGen
 bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
     struct BerserkGeneEvolutionTarget *targets, u8 *targetCount);
 bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage);
+bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage);
 
 #endif // GUARD_DAYCARE_H

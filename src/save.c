@@ -86,6 +86,7 @@ STATIC_ASSERT(offsetof(struct SaveBlock3, berserkGeneLineages) == 52, SaveBlock3
 STATIC_ASSERT(sizeof(struct BerserkGeneContributor) == 6, BerserkGeneContributorSize);
 STATIC_ASSERT(sizeof(struct BerserkGeneEvolutionTarget) == 4, BerserkGeneTargetSize);
 STATIC_ASSERT(offsetof(struct BerserkGeneLineage, targets) == 48, BerserkGeneLineageContributorPrefix);
+STATIC_ASSERT(offsetof(struct BerserkGeneLineage, graphReady) == 81, BerserkGeneGraphReadyOffset);
 STATIC_ASSERT(sizeof(struct BerserkGeneLineage) == 84, BerserkGeneLineageSize);
 STATIC_ASSERT(offsetof(struct SaveBlock3, pyramidFusionLineages)
     == offsetof(struct SaveBlock3, berserkGeneLineages)
@@ -1015,6 +1016,17 @@ u8 LoadGameSave(u8 saveType)
             memset(destination + 48, 0, sizeof(struct BerserkGeneLineage) - 48);
         }
         gSaveBlock1Ptr->saveVersion = 8;
+    }
+
+    if (gSaveBlock1Ptr->saveVersion < 9)
+    {
+        u32 i;
+
+        for (i = 0; i < MAX_BERSERK_GENE_PROFILES; i++)
+            gSaveBlock3Ptr->berserkGeneLineages[i].graphReady = gSaveBlock3Ptr->berserkGeneLineages[i].targetCount != 0;
+        for (i = 0; i < FRONTIER_PARTY_SIZE; i++)
+            gSaveBlock3Ptr->pyramidFusionLineages[i].graphReady = gSaveBlock3Ptr->pyramidFusionLineages[i].targetCount != 0;
+        gSaveBlock1Ptr->saveVersion = 9;
     }
 
     // Add version migration steps here:

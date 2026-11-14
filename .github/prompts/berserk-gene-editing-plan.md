@@ -313,6 +313,37 @@ leaving 52 bytes before the storage-size assertion fails. Profiles occur in nine
 and three Pyramid snapshots, so the revision must budget any profile expansion across all
 12 copies; compacting existing fields or another verified layout may be needed.
 
+Explicit compact-graph activation checkpoint (2026-11-13): the sidecar now records
+`graphReady` independently of targetCount. `RebuildBerserkGeneLineageGraph` publishes
+a validated graph and marks it ready only after collection, pruning, compaction, and
+required-move registration succeed; `PrepareBerserkGeneBreedingLineage` uses this helper.
+The level-up protection registry dispatches on readiness, not graph size. A ready empty
+graph is authoritative and does not resurrect requirements from obsolete method entries.
+Inactive sidecars keep the legacy registry. Readiness describes graph validity only,
+not completion of the remaining compact evolution/profile implementation.
+
+The flag occupies an existing padding byte at sidecar offset 81. Sidecars remain 84 bytes,
+SaveBlock3 remains 976 bytes, and the profile limit remains eight. Save version 9 initializes
+the formerly untrusted version-8 padding byte using the previous nonempty-graph rule;
+older contributor-only and empty sidecars stay inactive. Current ready empty graphs retain
+their flag through normal save/reload. Copy/free and Pyramid rollback include readiness
+through existing whole-sidecar operations.
+
+Validation: `make -k check BUILD=hns -j8` with each selector below passed:
+
+- `TESTS='Fusion evolution moves'`: 8 tests, including ready empty graphs overriding
+  obsolete method entries, legacy dispatch, branch removal, and both move settings.
+- `TESTS='Fusion lineage'`: 7 tests, including version-8 live/Pyramid flag initialization
+  from deliberately nonzero padding and unchanged graph/contributor records.
+- `TESTS='Fusion base contributors'`: 10 tests, including ready graph preparation.
+- `TESTS='Fusion normal save'`: 1 test, parameterized with a ready empty boxed graph.
+- `TESTS='Fusion Pyramid snapshots'`: 1 test, including graph readiness rollback.
+- `TESTS='SaveBlock3 is backwards compatible'`: 1 test.
+
+Compilation/linking succeeded. This supersedes the temporary targetCount discriminator
+described below. Live base-contributor breeding, compact evolution selection state, and
+resolved trait/move/naming integration remain pending; milestone 3 is still open.
+
 Live compact-graph move protection checkpoint (2026-11-13): the shared party/boxed
 level-up rebuild now reads evolution requirements from a profile's populated compact
 sidecar graph. It streams retained native routes across both stages through the existing

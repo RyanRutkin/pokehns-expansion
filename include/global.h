@@ -359,6 +359,7 @@ struct BerserkGeneLineage
     struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
     struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
     u8 targetCount;
+    bool8 graphReady;
 };
 
 struct SaveBlock3

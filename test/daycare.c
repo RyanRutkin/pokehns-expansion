@@ -820,6 +820,7 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
     }
     memset(&result, 0xFF, sizeof(result));
     EXPECT(PrepareBerserkGeneBreedingLineage(daycare, &result));
+    EXPECT(result.graphReady);
     EXPECT_EQ(result.contributors[0].species, SPECIES_DRATINI);
     EXPECT_EQ(result.contributors[4].species, mode == 0 ? SPECIES_APPLIN
               : mode == 2 ? SPECIES_DRATINI : SPECIES_EEVEE);

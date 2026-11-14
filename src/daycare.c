@@ -765,16 +765,27 @@ bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
     return success;
 }
 
-bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage)
+bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage)
 {
-    struct BerserkGeneLineage result = {0};
+    struct BerserkGeneLineage result = *lineage;
     u16 requiredMoves[MAX_LEVEL_UP_MOVES];
     u8 requiredCount;
 
-    if (!BuildBerserkGeneBreedingLineage(daycare, &result)
-     || !BuildBerserkGeneLineageTargets(&result, result.targets, &result.targetCount)
+    if (!BuildBerserkGeneLineageTargets(&result, result.targets, &result.targetCount)
      || !CollectBerserkGeneTargetRequiredMoves(result.targets, result.targetCount,
                                              result.contributors, requiredMoves, &requiredCount))
+        return FALSE;
+    result.graphReady = TRUE;
+    *lineage = result;
+    return TRUE;
+}
+
+bool8 PrepareBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGeneLineage *lineage)
+{
+    struct BerserkGeneLineage result = {0};
+
+    if (!BuildBerserkGeneBreedingLineage(daycare, &result)
+     || !RebuildBerserkGeneLineageGraph(&result))
         return FALSE;
     *lineage = result;
     return TRUE;
