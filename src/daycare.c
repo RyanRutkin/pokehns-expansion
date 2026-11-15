@@ -891,6 +891,60 @@ bool8 SetBerserkGeneTypeContributor(struct BerserkGeneLineage *lineage, u8 typeS
     return TRUE;
 }
 
+bool8 ChooseBerserkGeneLineageType(struct BerserkGeneLineage *lineage, u8 typeSlot,
+    u8 parentShareA, enum Type *type)
+{
+    u32 totals[2] = {0};
+    u32 ticket, total;
+    u8 side, i, contributor = UINT8_MAX;
+    u8 slots[2], slotCount = 1;
+    enum Type candidateTypes[2];
+
+    assertf(typeSlot < 2 && parentShareA > 0 && parentShareA < 100,
+            "Invalid fusion type selection")
+        return FALSE;
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+    {
+        const struct BerserkGeneContributor *entry = &lineage->contributors[i];
+        assertf((entry->species == SPECIES_NONE && entry->weight == 0 && entry->age == 0)
+             || (entry->species != SPECIES_NONE && entry->species < NUM_SPECIES && entry->weight != 0),
+                "Invalid fusion type candidate %d", i)
+            return FALSE;
+        if (entry->species != SPECIES_NONE)
+            totals[i / MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE] += entry->weight;
+    }
+    assertf(totals[0] != 0 && totals[1] != 0, "Missing fusion type parent contributors")
+        return FALSE;
+    side = Random() % 100 < parentShareA ? 0 : 1;
+    total = totals[side];
+    ticket = Random32() % total;
+    for (i = side * MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+         i < (side + 1) * MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE; i++)
+    {
+        if (ticket < lineage->contributors[i].weight)
+        {
+            contributor = i;
+            break;
+        }
+        ticket -= lineage->contributors[i].weight;
+    }
+    assertf(contributor != UINT8_MAX, "Fusion type contributor selection failed")
+        return FALSE;
+    candidateTypes[0] = GetSpeciesType(lineage->contributors[contributor].species, 0);
+    candidateTypes[1] = GetSpeciesType(lineage->contributors[contributor].species, 1);
+    slots[0] = 0;
+    if (candidateTypes[1] != candidateTypes[0])
+    {
+        slots[1] = 1;
+        slotCount++;
+    }
+    i = slots[slotCount == 1 ? 0 : Random() % slotCount];
+    if (!SetBerserkGeneTypeContributor(lineage, typeSlot, contributor, i))
+        return FALSE;
+    *type = GetSpeciesType(lineage->contributors[contributor].species, i);
+    return TRUE;
+}
+
 bool8 BindBerserkGeneTypeTarget(struct BerserkGeneLineage *lineage, u8 typeSlot, u8 targetIndex)
 {
     u8 source, contributor, mask;
@@ -917,6 +971,41 @@ bool8 BindBerserkGeneTypeTarget(struct BerserkGeneLineage *lineage, u8 typeSlot,
         return FALSE;
     lineage->typeSources[typeSlot] = source | ((targetIndex + 1) << 4);
     return TRUE;
+}
+
+bool8 BindBerserkGeneTypeBranch(struct BerserkGeneLineage *lineage, u8 typeSlot,
+    u8 candidateTargets)
+{
+    u8 source, contributor, existing, candidates[MAX_FUSION_POTENTIAL_EVOLUTIONS];
+    u8 count = 0, i;
+
+    assertf(typeSlot < 2 && lineage->graphReady
+         && lineage->targetCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS
+         && lineage->typeSources[typeSlot] != BERSERK_GENE_TYPE_SOURCE_NONE,
+            "Invalid fusion type branch binding")
+        return FALSE;
+    source = lineage->typeSources[typeSlot] & 0x0F;
+    contributor = source & 7;
+    existing = lineage->typeSources[typeSlot] >> 4;
+    if (existing != 0)
+    {
+        u8 target = existing - 1;
+        assertf(target < lineage->targetCount, "Stored fusion type branch is invalid")
+            return FALSE;
+        return BindBerserkGeneTypeTarget(lineage, typeSlot, target);
+    }
+    for (i = 0; i < lineage->targetCount; i++)
+    {
+        u8 roots = lineage->targets[i].rootContributors;
+        for (u8 ancestor = 0; ancestor < lineage->targetCount; ancestor++)
+            if (lineage->targets[i].sourceTargets & (1 << ancestor))
+                roots |= lineage->targets[ancestor].rootContributors;
+        if ((candidateTargets & (1 << i)) && (roots & (1 << contributor)))
+            candidates[count++] = i;
+    }
+    if (count == 0)
+        return TRUE;
+    return BindBerserkGeneTypeTarget(lineage, typeSlot, candidates[Random() % count]);
 }
 
 bool8 ResolveBerserkGeneLineageType(const struct BerserkGeneLineage *lineage, u8 typeSlot,

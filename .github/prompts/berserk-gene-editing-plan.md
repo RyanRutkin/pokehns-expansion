@@ -376,6 +376,17 @@ Live type integration is still pending: gameplay still reads the method-based pr
 type fields, not this new sidecar provenance. Branch binding must be wired into the
 revised phase-selection pipeline before contributor-based sticky types become live.
 
+Weighted sticky-type source selection groundwork: `ChooseBerserkGeneLineageType` now
+selects a parent side using the existing 62/38 or 50/50 share, selects a retained
+contributor proportionally to that side's stored weights, and selects uniformly among
+that contributor's distinct native type slots. A persisted branch binding remains stable
+even when later phase candidate masks no longer contain its original target; graph and
+contributor ancestry are still validated. `make -k check BUILD=hns -j8
+TESTS='Fusion base contributors'` passed 17 tests, including sampled side/contributor
+weights and repeated branch reads. This is still groundwork: callers must coordinate the
+two type slots to preserve the existing distinct-type behavior, and live profile,
+evolution-phase, and sidecar integration remain pending.
+
 Contributor base-stat projection checkpoint (2026-11-13):
 `GetBerserkGeneContributorBaseStats` calculates all six birth base stats directly from
 retained contributor species, not the evolved fusion parent's effective stats. Normalize

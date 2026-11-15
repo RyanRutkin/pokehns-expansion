@@ -1061,6 +1061,70 @@ TEST("Fusion base contributors sticky types retain exact source slot and branch"
     EXPECT_EQ(type, GetSpeciesType(SPECIES_DRATINI, 1));
 }
 
+TEST("Fusion base contributors choose sticky type sources using side and lineage weights")
+{
+    struct BerserkGeneLineage lineage = {0};
+    rng_value_t savedRng = gRngValue;
+    u32 sideA = 0, contributorA = 0, slot1 = 0;
+    u16 i;
+    enum Type type;
+
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_BULBASAUR, 1, 0};
+    lineage.contributors[1] = (struct BerserkGeneContributor){SPECIES_ABRA, 3, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_DRATINI, 1, 0};
+    lineage.contributors[5] = (struct BerserkGeneContributor){SPECIES_POLIWAG, 2, 0};
+    SeedRng(0xB37A);
+    for (i = 0; i < 2048; i++)
+    {
+        EXPECT(ChooseBerserkGeneLineageType(&lineage, 0, 62, &type));
+        EXPECT(ResolveBerserkGeneLineageType(&lineage, 0, &type));
+        sideA += (lineage.typeSources[0] & 7) < 4;
+        contributorA += (lineage.typeSources[0] & 7) == 1;
+        slot1 += (lineage.typeSources[0] & 8) != 0;
+    }
+    EXPECT(sideA > 1150 && sideA < 1400);
+    EXPECT(contributorA > 850 && contributorA < 1050);
+    EXPECT(slot1 > 100 && slot1 < 230);
+    gRngValue = savedRng;
+}
+
+TEST("Fusion base contributors persist pseudo-side type branches after one weighted choice")
+{
+    struct BerserkGeneLineage lineage = {0}, saved;
+    rng_value_t rng;
+    enum Type type;
+    u8 eeveeTargets = 0, dragoniteTarget = UINT8_MAX;
+
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_EEVEE, 1, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_DRATINI, 1, 0};
+    EXPECT(RebuildBerserkGeneLineageGraph(&lineage));
+    EXPECT(SetBerserkGeneTypeContributor(&lineage, 0, 0, 0));
+    for (u8 i = 0; i < lineage.targetCount; i++)
+    {
+        if (lineage.targets[i].rootContributors & 1)
+            eeveeTargets |= 1 << i;
+        if (lineage.targets[i].species == SPECIES_DRAGONITE)
+            dragoniteTarget = i;
+    }
+    EXPECT_NE(eeveeTargets, 0);
+    EXPECT_NE(dragoniteTarget, UINT8_MAX);
+    rng = gRngValue;
+    EXPECT(BindBerserkGeneTypeBranch(&lineage, 0, eeveeTargets));
+    EXPECT_NE(memcmp(&gRngValue, &rng, sizeof(rng)), 0);
+    saved = lineage;
+    for (u8 i = 0; i < 8; i++)
+    {
+        rng = gRngValue;
+        EXPECT(BindBerserkGeneTypeBranch(&lineage, 0, eeveeTargets));
+        EXPECT_EQ(memcmp(&lineage, &saved, sizeof(saved)), 0);
+        EXPECT_EQ(memcmp(&gRngValue, &rng, sizeof(rng)), 0);
+    }
+    EXPECT(BindBerserkGeneTypeBranch(&lineage, 0, 1 << dragoniteTarget));
+    EXPECT_EQ(memcmp(&lineage, &saved, sizeof(saved)), 0);
+    EXPECT(ResolveBerserkGeneLineageType(&lineage, 0, &type));
+    EXPECT(type == GetSpeciesType(lineage.targets[(lineage.typeSources[0] >> 4) - 1].species, 0));
+}
+
 TEST("Fusion base contributors merge weights and keep the newest duplicate age")
 {
     struct BerserkGeneContributor contributors[] = {

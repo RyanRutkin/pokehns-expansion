@@ -13,6 +13,10 @@ bool8 SetBerserkGeneTypeContributor(struct BerserkGeneLineage *lineage, u8 typeS
 bool8 BindBerserkGeneTypeTarget(struct BerserkGeneLineage *lineage, u8 typeSlot, u8 targetIndex);
 bool8 ResolveBerserkGeneLineageType(const struct BerserkGeneLineage *lineage, u8 typeSlot,
     enum Type *type);
+bool8 ChooseBerserkGeneLineageType(struct BerserkGeneLineage *lineage, u8 typeSlot,
+    u8 parentShareA, enum Type *type);
+bool8 BindBerserkGeneTypeBranch(struct BerserkGeneLineage *lineage, u8 typeSlot,
+    u8 candidateTargets);
 
 struct BerserkGeneNumericTraits
 {
