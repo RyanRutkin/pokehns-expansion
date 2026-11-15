@@ -1016,6 +1016,51 @@ TEST("Fusion base contributors preserve attacking category ties and preferences"
         EXPECT_EQ(stats[STAT_ATK], stats[STAT_SPATK]);
 }
 
+TEST("Fusion base contributors sticky types retain exact source slot and branch")
+{
+    struct BerserkGeneLineage lineage = {0}, saved;
+    enum Type type;
+    u8 root = UINT8_MAX, descendant = UINT8_MAX;
+    rng_value_t rng;
+
+    lineage.contributors[0] = (struct BerserkGeneContributor){SPECIES_EEVEE, 1, 0};
+    lineage.contributors[1] = (struct BerserkGeneContributor){SPECIES_POLIWAG, 1, 0};
+    lineage.contributors[4] = (struct BerserkGeneContributor){SPECIES_DRATINI, 1, 0};
+    EXPECT(RebuildBerserkGeneLineageGraph(&lineage));
+    EXPECT(SetBerserkGeneTypeContributor(&lineage, 0, 4, 0));
+    EXPECT(SetBerserkGeneTypeContributor(&lineage, 1, 1, 1));
+    EXPECT(ResolveBerserkGeneLineageType(&lineage, 0, &type));
+    EXPECT_EQ(type, TYPE_DRAGON);
+    EXPECT(ResolveBerserkGeneLineageType(&lineage, 1, &type));
+    EXPECT_EQ(type, GetSpeciesType(SPECIES_POLIWAG, 1));
+    for (u8 i = 0; i < lineage.targetCount; i++)
+    {
+        if (lineage.targets[i].species == SPECIES_DRAGONAIR)
+            root = i;
+        if (lineage.targets[i].species == SPECIES_DRAGONITE)
+            descendant = i;
+    }
+    EXPECT_NE(root, UINT8_MAX);
+    EXPECT_NE(descendant, UINT8_MAX);
+    EXPECT(BindBerserkGeneTypeTarget(&lineage, 0, root));
+    EXPECT(ResolveBerserkGeneLineageType(&lineage, 0, &type));
+    EXPECT_EQ(type, GetSpeciesType(SPECIES_DRAGONAIR, 0));
+    EXPECT(SetBerserkGeneTypeContributor(&lineage, 0, 4, 1));
+    EXPECT(BindBerserkGeneTypeTarget(&lineage, 0, descendant));
+    saved = lineage;
+    rng = gRngValue;
+    for (u8 i = 0; i < 8; i++)
+    {
+        EXPECT(ResolveBerserkGeneLineageType(&lineage, 0, &type));
+        EXPECT_EQ(type, GetSpeciesType(SPECIES_DRAGONITE, 1));
+    }
+    EXPECT_EQ(memcmp(&lineage, &saved, sizeof(saved)), 0);
+    EXPECT_EQ(memcmp(&gRngValue, &rng, sizeof(rng)), 0);
+    EXPECT(BindBerserkGeneTypeTarget(&lineage, 0, BERSERK_GENE_TYPE_SOURCE_NONE));
+    EXPECT(ResolveBerserkGeneLineageType(&lineage, 0, &type));
+    EXPECT_EQ(type, GetSpeciesType(SPECIES_DRATINI, 1));
+}
+
 TEST("Fusion base contributors merge weights and keep the newest duplicate age")
 {
     struct BerserkGeneContributor contributors[] = {

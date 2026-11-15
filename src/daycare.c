@@ -818,6 +818,7 @@ bool8 BuildBerserkGeneBreedingLineage(struct DayCare *daycare, struct BerserkGen
     struct BerserkGeneContributor contributors[MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES];
     u8 side, count;
 
+    memset(result.typeSources, 0xFF, sizeof(result.typeSources));
     for (side = 0; side < DAYCARE_MON_COUNT; side++)
     {
         if (!CollectBerserkGeneParentContributors(&daycare->mons[side].mon, contributors, &count))
@@ -878,12 +879,85 @@ bool8 BuildBerserkGeneLineageTargets(const struct BerserkGeneLineage *lineage,
     return success;
 }
 
+bool8 SetBerserkGeneTypeContributor(struct BerserkGeneLineage *lineage, u8 typeSlot,
+    u8 contributor, u8 sourceSlot)
+{
+    assertf(typeSlot < 2 && contributor < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES
+         && sourceSlot < 2 && lineage->contributors[contributor].species != SPECIES_NONE
+         && lineage->contributors[contributor].species < NUM_SPECIES
+         && lineage->contributors[contributor].weight != 0, "Invalid fusion type contributor")
+        return FALSE;
+    lineage->typeSources[typeSlot] = contributor | (sourceSlot << 3);
+    return TRUE;
+}
+
+bool8 BindBerserkGeneTypeTarget(struct BerserkGeneLineage *lineage, u8 typeSlot, u8 targetIndex)
+{
+    u8 source, contributor, mask;
+
+    assertf(typeSlot < 2 && lineage->graphReady
+         && lineage->targetCount <= MAX_FUSION_POTENTIAL_EVOLUTIONS
+         && lineage->typeSources[typeSlot] != BERSERK_GENE_TYPE_SOURCE_NONE,
+            "Invalid fusion type target binding")
+        return FALSE;
+    source = lineage->typeSources[typeSlot] & 0x0F;
+    contributor = source & 7;
+    if (targetIndex == BERSERK_GENE_TYPE_SOURCE_NONE)
+    {
+        lineage->typeSources[typeSlot] = source;
+        return TRUE;
+    }
+    assertf(targetIndex < lineage->targetCount, "Invalid fusion type target index")
+        return FALSE;
+    mask = lineage->targets[targetIndex].rootContributors;
+    for (u8 i = 0; i < lineage->targetCount; i++)
+        if (lineage->targets[targetIndex].sourceTargets & (1 << i))
+            mask |= lineage->targets[i].rootContributors;
+    assertf(mask & (1 << contributor), "Fusion type target belongs to another contributor")
+        return FALSE;
+    lineage->typeSources[typeSlot] = source | ((targetIndex + 1) << 4);
+    return TRUE;
+}
+
+bool8 ResolveBerserkGeneLineageType(const struct BerserkGeneLineage *lineage, u8 typeSlot,
+    enum Type *type)
+{
+    u8 source, branch, contributor;
+    u16 species;
+
+    assertf(typeSlot < 2 && lineage->typeSources[typeSlot] != BERSERK_GENE_TYPE_SOURCE_NONE,
+            "Missing fusion type provenance")
+        return FALSE;
+    source = lineage->typeSources[typeSlot];
+    contributor = source & 7;
+    branch = source >> 4;
+    species = lineage->contributors[contributor].species;
+    assertf(species != SPECIES_NONE && species < NUM_SPECIES
+         && lineage->contributors[contributor].weight != 0, "Invalid fusion type source species")
+        return FALSE;
+    if (branch != 0)
+    {
+        struct BerserkGeneLineage copy = *lineage;
+        if (!BindBerserkGeneTypeTarget(&copy, typeSlot, branch - 1))
+            return FALSE;
+        species = lineage->targets[branch - 1].species;
+        assertf(species != SPECIES_NONE && species < NUM_SPECIES, "Invalid fusion type target species")
+            return FALSE;
+    }
+    *type = GetSpeciesType(species, (source >> 3) & 1);
+    return TRUE;
+}
+
 bool8 RebuildBerserkGeneLineageGraph(struct BerserkGeneLineage *lineage)
 {
     struct BerserkGeneLineage result = *lineage;
     u16 requiredMoves[MAX_LEVEL_UP_MOVES];
     u8 requiredCount;
 
+    for (u8 i = 0; i < 2; i++)
+        assertf(result.typeSources[i] == BERSERK_GENE_TYPE_SOURCE_NONE
+             || (result.typeSources[i] >> 4) == 0, "Cannot rebuild a bound fusion type graph")
+            return FALSE;
     if (!BuildBerserkGeneLineageTargets(&result, result.targets, &result.targetCount)
      || !CollectBerserkGeneTargetRequiredMoves(result.targets, result.targetCount,
                                              result.contributors, requiredMoves, &requiredCount))

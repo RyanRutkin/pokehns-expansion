@@ -6,6 +6,14 @@
 struct FusionPotentialEvolution;
 struct Evolution;
 
+#define BERSERK_GENE_TYPE_SOURCE_NONE UINT8_MAX
+
+bool8 SetBerserkGeneTypeContributor(struct BerserkGeneLineage *lineage, u8 typeSlot,
+    u8 contributor, u8 sourceSlot);
+bool8 BindBerserkGeneTypeTarget(struct BerserkGeneLineage *lineage, u8 typeSlot, u8 targetIndex);
+bool8 ResolveBerserkGeneLineageType(const struct BerserkGeneLineage *lineage, u8 typeSlot,
+    enum Type *type);
+
 struct BerserkGeneNumericTraits
 {
     u8 baseStats[NUM_STATS];

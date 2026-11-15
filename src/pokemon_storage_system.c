@@ -9696,6 +9696,7 @@ u16 AllocBerserkGeneProfile(void)
             memset(profile, 0, sizeof(*profile));
             profile->inUse = TRUE;
             memset(GetBerserkGeneLineage(profileId), 0, sizeof(struct BerserkGeneLineage));
+            memset(GetBerserkGeneLineage(profileId)->typeSources, 0xFF, 2);
             return profileId;
         }
     }

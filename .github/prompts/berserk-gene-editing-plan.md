@@ -339,6 +339,43 @@ selection/provenance, evolution state, naming, and contributor-weighted move all
 still need integration before the prepared numeric outputs can replace live construction.
 Milestone 3 remains open; this supersedes the base-stat-only preparation signature below.
 
+Exact-contributor sticky type provenance checkpoint (2026-11-13): compact sidecars now
+store per-type provenance as exact contributor index + native type slot, with an optional
+bound retained-target index for pseudo-fusion branch selection. This uses the existing
+two padding bytes at offsets 82-83; sidecar size stays 84 bytes and SaveBlock3 size stays
+976 bytes. No new storage mechanism or profile-cap increase is introduced.
+
+Helpers:
+- `SetBerserkGeneTypeContributor` records contributor/slot provenance only for retained
+  contributors.
+- `BindBerserkGeneTypeTarget` optionally binds a retained target branch that actually
+  belongs to that contributor's retained lineage.
+- `ResolveBerserkGeneLineageType` reads the type from either the contributor's species
+  (unbound) or the bound retained target, without RNG/state mutation.
+- `RebuildBerserkGeneLineageGraph` now rejects sidecars that still carry bound target
+  indices because target reindexing would otherwise silently retarget types.
+
+Initialization/migration:
+- New and reset lineages initialize both provenance bytes to `0xFF` (none).
+- Save version 10 migration initializes existing profile and Pyramid sidecars'
+  provenance bytes to `0xFF` without changing other fields. Graph/readiness migrations
+  remain as previously documented.
+
+Validation:
+- `make -k check BUILD=hns -j8 TESTS='Fusion base contributors'`: 15 passed, including
+  exact contributor/slot reads, binding to retained branches, unbinding back to source,
+  stability across repeated reads, and unchanged RNG/metadata.
+- `make -k check BUILD=hns -j8 TESTS='Fusion lineage'`: 7 passed, including copy/free and
+  versioned sidecar migrations.
+- `make -k check BUILD=hns -j8 TESTS='Fusion normal save'`: 1 passed.
+- `make -k check BUILD=hns -j8 TESTS='Fusion Pyramid snapshots'`: 1 passed.
+- `make -k check BUILD=hns -j8 TESTS='Fusion evolution moves'`: 8 passed.
+- `make -k check BUILD=hns -j8 TESTS='SaveBlock3 is backwards compatible'`: 1 passed.
+
+Live type integration is still pending: gameplay still reads the method-based profile
+type fields, not this new sidecar provenance. Branch binding must be wired into the
+revised phase-selection pipeline before contributor-based sticky types become live.
+
 Contributor base-stat projection checkpoint (2026-11-13):
 `GetBerserkGeneContributorBaseStats` calculates all six birth base stats directly from
 retained contributor species, not the evolved fusion parent's effective stats. Normalize
@@ -2691,6 +2728,17 @@ profile. Neither evolution phase nor pseudo-side aggregation changes it. EXP/lev
 use that stored curve consistently; evolution must not remap EXP onto a different curve.
 
 ### Type inheritance across evolution is "sticky by provenance," not re-rolled
+Multi-contributor refinement (user decision, 2026-11-13): each offspring type slot
+must remember its **exact retained base contributor and that contributor's type slot**,
+not merely its immediate parent side. When that contributor's branch is selected, read
+the type from the selected evolution. If it contributes multiple unselected branches
+to a pseudo-fusion, select a retained branch once when forming that phase and persist
+the choice for subsequent reads. Do not reroll on learnset rebuilds, UI reads, or reload.
+Do not let the type follow an unrelated displayed contributor on the same side.
+Implement provenance and branch state within existing ROM storage mechanisms and
+the verified capacity budget. This decision supersedes side-only provenance below
+for revised multi-contributor profiles; live integration remains pending.
+
 Unlike ability/color/cry/sprite (fresh re-roll each evolution, see below), each of the child's two
 type slots remembers *which parent side and which of that parent's own type slots* it came from
 at birth (`type1SourceParent`/`type1SourceSlot`, same for type2). On evolution, that type slot is

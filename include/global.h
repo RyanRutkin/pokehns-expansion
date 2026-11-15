@@ -360,6 +360,8 @@ struct BerserkGeneLineage
     struct BerserkGeneEvolutionTarget targets[MAX_FUSION_POTENTIAL_EVOLUTIONS];
     u8 targetCount;
     bool8 graphReady;
+    // Contributor (bits 0-2), native type slot (bit 3), target index + 1 (bits 4-7).
+    u8 typeSources[2];
 };
 
 struct SaveBlock3
