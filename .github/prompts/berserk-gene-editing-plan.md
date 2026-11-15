@@ -122,8 +122,10 @@ passed 17 of 20 tests. SaveBlock2 reports 3,892 bytes against its unchanged 3,88
 test pin. The facility partial-save and Mirror Thief partial-save tests fail party-count
 checks in that suite but pass when selected independently; their suite-only cause remains
 unresolved. No unrelated SaveBlock2 or Frontier behavior was changed to mask those results.
-Production linking and manual emulator validation remain outstanding. Milestone 3 remains
-open: persistent compact evolution state and live base-contributor breeding are not yet wired.
+Persistent compact evolution state, graph construction, contributor/numeric preparation, and
+weighted sticky-type selection have focused automated coverage. Production linking and manual
+emulator validation remain outstanding. Milestone 3 remains open because live profile creation
+and evolution still use the older method-based pipeline rather than the prepared lineage graph.
 
 Evolution-move availability specification (2026-11-13): after determining
 and pruning target species, collect requirements from every retained source route, alternative
@@ -1480,13 +1482,39 @@ profile store. Any later capacity work must use storage mechanisms already lever
 by this ROM. Automated builds/tests alone do not establish that manual
 validation has been completed.
 
+### Remaining gates to a manually testable MVP
+
+The remaining implementation work is grouped into three gates. Report progress against
+these gates when summarizing completed work, distinguishing implemented code, automated
+validation, and manual validation.
+
+1. **Live base-contributor breeding and profile construction (Milestone 3).** Replace the
+   method-based new-profile path with the prepared retained contributors and compact graph.
+   Wire projected numeric traits, weighted categorical donors, coordinated distinct sticky
+   type slots and persistent contributor/branch provenance, default naming from retained
+   contributors, and contributor-weighted move sources. Preserve the already-established
+   growth/EXP and nickname semantics. Verify ordinary and fusion-parent breeding, both
+   parent-share modes, egg/hatch behavior, and profile allocation/failure behavior.
+2. **Live evolution on the compact graph (Milestone 3).** Route evolution choice, preview,
+   commit, phase transitions, and move rebuilding through the compact target graph. Apply
+   first-stage contributor/target selection, pseudo-fusion composition, later-stage options,
+   native conditions, and stable sticky-type branch binding without mixing old and new profile
+   representations. Verify both stages, cancellation/commit behavior, evolution moves, and
+   save/reload of evolved fusions.
+3. **Integrated lifecycle validation and test handoff (Milestone 5).** Run the relevant
+   focused and broader regressions, production build, and non-headless checks; validate profile
+   cleanup/reuse, normal save/reload, Pyramid rollback, offline lifecycle, and the temporary
+   fusion-recording safeguard. Deliver a working test ROM and manual checklist, and distinguish
+   automated/emulator results from any visual, audio, or gameplay checks that still require
+   the user's manual validation.
+
 | Milestone | Status | Completion criteria |
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
 | 2. Remaining display/cry consumers | Complete (2026-11-12); manual visual/listening validation remains outstanding | Full-summary scene regression passed headless and non-headless; contests classified species-only by user decision. |
-| 3. Base-lineage breeding and rebreeding | Reopened (2026-11-12); implementation and validation pending | Derive new gene-bred profiles from retained base contributors, preserving the selected per-side limits and weighting; rebuild evolution options and verify traits, moves, evolution, and lifecycle behavior. |
+| 3. Base-lineage breeding and rebreeding | In progress: contributor, graph, numeric-trait, and sticky-type groundwork is tested; live profile/evolution integration remains | Complete gates 1-2 above; derive live profiles from retained base contributors, rebuild and consume compact evolution options, and verify traits, moves, evolution, naming, EXP, and lifecycle behavior. |
 | 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
-| 5. Final lifecycle validation and manual-testable checkpoint | In progress | Verify profile cleanup/reuse, normal save/reload, the temporary fusion-recording safeguard, and the offline feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. Link compatibility is deferred as noted below. |
+| 5. Final lifecycle validation and manual-testable checkpoint | Pending integrated Milestone 3 completion | Complete gate 3 above: verify profile cleanup/reuse, normal save/reload, the temporary fusion-recording safeguard, Pyramid rollback, and the offline feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. Link compatibility is deferred as noted below. |
 | Link compatibility | Deferred until after initial MVP | Complete and verify link restrictions or profile transfer, including coordinated cancellation and multiplayer testing. Until then, do not use fusion link actions. |
 | Profile capacity expansion | Not scheduled; existing storage methods only | Retain the eight-profile limit unless an audited design using storage mechanisms already leveraged by the ROM is approved. No new external-storage backend, including post-MVP. |
 | Fusion battle recording support | Deferred until after initial MVP | Enable reliable recording and playback with the fusion profiles captured at battle time. Until then, disable recording fusion battles while retaining ordinary battle recordings. |
