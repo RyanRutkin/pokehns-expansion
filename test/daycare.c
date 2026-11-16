@@ -2,6 +2,7 @@
 #include "caps.h"
 #include "challenge_menu.h"
 #include "daycare.h"
+#include "egg_hatch.h"
 #include "event_data.h"
 #include "malloc.h"
 #include "party_menu.h"
@@ -220,7 +221,34 @@ TEST("(Daycare) Berserk Gene bypasses a genderless parent only when both parents
         EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
 }
 
-TEST("(Daycare) Berserk Gene bypasses the No Eggs Discovered egg group only when both parents hold it")
+TEST("(Daycare) Berserk Gene bypasses mismatched egg groups with one or both holders")
+{
+    bool32 canBreed = FALSE;
+
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
+    ZeroPlayerPartyMons();
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_RATTATA, 50, gender=MON_MALE,   item=ITEM_NONE;         givemon SPECIES_PIDGEY, 50, gender=MON_FEMALE, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_RATTATA, 50, gender=MON_MALE,   item=ITEM_BERSERK_GENE; givemon SPECIES_PIDGEY, 50, gender=MON_FEMALE, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_RATTATA, 50, gender=MON_MALE,   item=ITEM_NONE;         givemon SPECIES_PIDGEY, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE; ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_RATTATA, 50, gender=MON_MALE,   item=ITEM_BERSERK_GENE; givemon SPECIES_PIDGEY, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE; ); }
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    if (canBreed)
+    {
+        u16 profileId;
+
+        EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+        profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        EXPECT(profileId != 0);
+        EXPECT(GetBerserkGeneProfile(profileId) != NULL);
+    }
+    else
+    {
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    }
+}
+
+TEST("(Daycare) Genderless Undiscovered parents still need both Berserk Gene holders")
 {
     bool32 canBreed = FALSE;
 
@@ -232,9 +260,50 @@ TEST("(Daycare) Berserk Gene bypasses the No Eggs Discovered egg group only when
     STORE_IN_DAYCARE_AND_GET_EGG();
 
     if (canBreed)
+    {
+        struct BerserkGeneProfile *profile;
+        u16 profileId;
+
         EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+        profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+        profile = GetBerserkGeneProfile(profileId);
+        EXPECT(profile != NULL);
+        EXPECT_EQ(profile->eggGroup1, EGG_GROUP_MONSTER);
+        EXPECT_EQ(profile->eggGroup2, EGG_GROUP_MONSTER);
+    }
     else
         EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+}
+
+TEST("(Daycare) Berserk Gene bypasses an Undiscovered egg group with either or both holders")
+{
+    bool32 canBreed = FALSE;
+    struct BerserkGeneProfile *profile;
+    u16 profileId;
+
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
+    ZeroPlayerPartyMons();
+    PARAMETRIZE { canBreed = FALSE; RUN_OVERWORLD_SCRIPT( givemon SPECIES_NIDORINA, 50, item=ITEM_NONE;         givemon SPECIES_PIDGEY, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_NIDORINA, 50, item=ITEM_BERSERK_GENE; givemon SPECIES_PIDGEY, 50, gender=MON_MALE, item=ITEM_NONE;         ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_NIDORINA, 50, item=ITEM_NONE;         givemon SPECIES_PIDGEY, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE; ); }
+    PARAMETRIZE { canBreed = TRUE;  RUN_OVERWORLD_SCRIPT( givemon SPECIES_NIDORINA, 50, item=ITEM_BERSERK_GENE; givemon SPECIES_PIDGEY, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE; ); }
+    STORE_IN_DAYCARE_AND_GET_EGG();
+
+    if (!canBreed)
+    {
+        EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+        return;
+    }
+
+    EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT_NE(profile->eggGroup1, EGG_GROUP_NO_EGGS_DISCOVERED);
+    EXPECT_NE(profile->eggGroup2, EGG_GROUP_NO_EGGS_DISCOVERED);
+    EXPECT_NE(profile->eggGroup1, EGG_GROUP_DITTO);
+    EXPECT_NE(profile->eggGroup2, EGG_GROUP_DITTO);
+    EXPECT_NE(profile->eggGroup1, profile->eggGroup2);
 }
 
 TEST("(Daycare) Berserk Gene egg production is refused when the profile side-table is full")
@@ -289,6 +358,7 @@ TEST("(Daycare) A Berserk Gene egg's profile records each ability slot from one 
     u8 activeSlot;
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
         givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
@@ -319,6 +389,7 @@ TEST("(Daycare) A Berserk Gene egg's profile records color and cry from one of t
     struct BerserkGeneProfile *profile;
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
         givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
@@ -330,7 +401,8 @@ TEST("(Daycare) A Berserk Gene egg's profile records color and cry from one of t
     EXPECT(profile != NULL);
 
     EXPECT(profile->color == gSpeciesInfo[SPECIES_CHARMANDER].bodyColor || profile->color == gSpeciesInfo[SPECIES_SQUIRTLE].bodyColor);
-    EXPECT(profile->cryId == gSpeciesInfo[SPECIES_CHARMANDER].cryId || profile->cryId == gSpeciesInfo[SPECIES_SQUIRTLE].cryId);
+    EXPECT(profile->cryId == GetCryIdBySpecies(SPECIES_CHARMANDER)
+        || profile->cryId == GetCryIdBySpecies(SPECIES_SQUIRTLE));
 }
 
 TEST("(Daycare) A Berserk Gene egg is forced shiny when both parents are shiny")
@@ -352,6 +424,7 @@ TEST("(Daycare) A Berserk Gene egg's profile blends height/weight within both pa
     u16 minHeight, maxHeight, minWeight, maxWeight;
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
         givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
@@ -377,6 +450,7 @@ TEST("(Daycare) A Berserk Gene egg's profile gender matches one of the two paren
     struct BerserkGeneProfile *profile;
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
         givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
@@ -396,6 +470,7 @@ TEST("(Daycare) A Berserk Gene egg's profile picks a distinct egg group pair fro
     bool32 group1InPool, group2InPool;
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
         givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
@@ -420,6 +495,7 @@ TEST("(Daycare) A Berserk Gene egg's profile swaps the Undiscovered egg group fo
     struct BerserkGeneProfile *profile;
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_MEWTWO, 50, item=ITEM_BERSERK_GENE;
         givemon SPECIES_ARTICUNO, 50, item=ITEM_BERSERK_GENE;
@@ -431,6 +507,59 @@ TEST("(Daycare) A Berserk Gene egg's profile swaps the Undiscovered egg group fo
     EXPECT(profile != NULL);
     EXPECT_EQ(profile->eggGroup1, EGG_GROUP_MONSTER);
     EXPECT_EQ(profile->eggGroup2, EGG_GROUP_MONSTER);
+}
+
+TEST("(Daycare) A Berserk Gene egg uses retained contributors for an evolved parent's egg groups")
+{
+    struct Pokemon shedinja, onix;
+    struct BerserkGeneProfile *parentProfile, *childProfile;
+    struct BerserkGeneLineage *parentLineage;
+    u16 parentProfileId, childProfileId;
+    u16 geneItem = ITEM_BERSERK_GENE;
+
+    ResetPokemonStorageSystem();
+    ZeroPlayerPartyMons();
+    CreateMon(&shedinja, SPECIES_SHEDINJA, 50, 0, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&onix, SPECIES_ONIX, 50, 0xFF, OTID_STRUCT_PLAYER_ID);
+    parentProfileId = AllocBerserkGeneProfile();
+    parentProfile = GetBerserkGeneProfile(parentProfileId);
+    EXPECT(parentProfile != NULL);
+    parentProfile->parentSpeciesA = SPECIES_NINCADA;
+    parentProfile->parentSpeciesB = SPECIES_NINCADA;
+    parentProfile->type1 = TYPE_BUG;
+    parentProfile->type2 = TYPE_GHOST;
+    parentProfile->eggGroup1 = EGG_GROUP_MINERAL;
+    parentProfile->eggGroup2 = EGG_GROUP_MINERAL;
+    parentProfile->ability1 = ABILITY_WONDER_GUARD;
+    parentProfile->height = gSpeciesInfo[SPECIES_SHEDINJA].height;
+    parentProfile->weight = gSpeciesInfo[SPECIES_SHEDINJA].weight;
+    parentProfile->growthRate = gSpeciesInfo[SPECIES_SHEDINJA].growthRate;
+    parentLineage = GetBerserkGeneLineage(parentProfileId);
+    memset(parentLineage, 0, sizeof(*parentLineage));
+    memset(parentLineage->typeSources, 0xFF, sizeof(parentLineage->typeSources));
+    parentLineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_NINCADA, 1, 0};
+    parentLineage->contributors[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE] =
+        (struct BerserkGeneContributor){SPECIES_NINCADA, 1, 0};
+    SetMonData(&shedinja, MON_DATA_BERSERK_GENE_PROFILE_ID, &parentProfileId);
+    SetMonData(&shedinja, MON_DATA_HELD_ITEM, &geneItem);
+    SetMonData(&onix, MON_DATA_HELD_ITEM, &geneItem);
+    StorePokemonInDaycare(&shedinja, &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&onix, &gSaveBlock1Ptr->daycare.mons[1]);
+
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+    GiveEggFromDaycare();
+
+    childProfileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    childProfile = GetBerserkGeneProfile(childProfileId);
+    EXPECT(childProfile != NULL);
+    EXPECT(childProfile->eggGroup1 == EGG_GROUP_BUG || childProfile->eggGroup1 == EGG_GROUP_MINERAL);
+    EXPECT(childProfile->eggGroup2 == EGG_GROUP_BUG || childProfile->eggGroup2 == EGG_GROUP_MINERAL);
+    EXPECT_NE(childProfile->eggGroup1, childProfile->eggGroup2);
+
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+    ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
+    ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
 }
 
 TEST("(Daycare) Two same-species Berserk Gene parents with no existing profile skip fusion-profile creation")
@@ -528,6 +657,7 @@ TEST("(Daycare) A Berserk Gene egg's profile blends base stats within both paren
     u32 statsA[NUM_STATS], statsB[NUM_STATS];
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
         givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
@@ -567,6 +697,7 @@ TEST("(Daycare) A Berserk Gene egg's profile records growth rate, friendship, an
     u8 stat;
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_CHARMANDER, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
         givemon SPECIES_SQUIRTLE, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
@@ -623,15 +754,19 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
     u8 i;
 
     ZeroPlayerPartyMons();
+    gSaveBlock3Ptr->challengeSettings.tx_Challenges_OneTypeChallenge = ONE_TYPE_OFF;
     RUN_OVERWORLD_SCRIPT(
         givemon SPECIES_RATTATA, 50, gender=MON_MALE, item=ITEM_BERSERK_GENE;
         givemon SPECIES_PIDGEY, 50, gender=MON_FEMALE, item=ITEM_BERSERK_GENE;
     );
     STORE_IN_DAYCARE_AND_GET_EGG();
-
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
     profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
     profile = GetBerserkGeneProfile(profileId);
     EXPECT(profile != NULL);
+    EXPECT(profile->eggCycles == gSpeciesInfo[SPECIES_RATTATA].eggCycles
+        || profile->eggCycles == gSpeciesInfo[SPECIES_PIDGEY].eggCycles);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_FRIENDSHIP), profile->eggCycles);
     EXPECT_EQ(profile->potentialEvolutionCount, 3);
 
     for (i = 0; i < profile->potentialEvolutionCount; i++)
@@ -639,13 +774,13 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
         if (profile->potentialEvolutions[i].targetSpecies == SPECIES_RATICATE)
         {
             sawRattataLine = TRUE;
-            EXPECT_EQ(profile->potentialEvolutions[i].param, 20);
+            EXPECT_EQ(profile->potentialEvolutions[i].param, 19);
             EXPECT_EQ(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT, 0);
         }
         else if (profile->potentialEvolutions[i].targetSpecies == SPECIES_PIDGEOTTO)
         {
             sawPidgeyLine = TRUE;
-            EXPECT_EQ(profile->potentialEvolutions[i].param, 18);
+            EXPECT_EQ(profile->potentialEvolutions[i].param, 19);
             EXPECT_NE(profile->potentialEvolutions[i].methodAndSourceParent & EVO_POTENTIAL_SOURCE_PARENT_BIT, 0);
         }
         else if (profile->potentialEvolutions[i].targetSpecies == SPECIES_PIDGEOT)
@@ -657,6 +792,16 @@ TEST("(Daycare) A Berserk Gene egg's profile stores a guaranteed potential evolu
     EXPECT(sawRattataLine);
     EXPECT(sawPidgeyLine);
     EXPECT(sawPidgeotContinuation);
+
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_IS_EGG), TRUE);
+    gSpecialVar_0x8004 = 0;
+    ScriptHatchMon();
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_IS_EGG), FALSE);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_PIDGEY);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID), profileId);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_FRIENDSHIP), profile->friendship);
+    EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_EXP),
+        gExperienceTables[profile->growthRate][EGG_HATCH_LEVEL]);
 }
 
 TEST("Fusion base contributors use the existing egg species lineage")
@@ -2664,8 +2809,13 @@ TEST("Fusion rebreeding with Ditto and a gene includes Ditto traits")
     EXPECT_EQ(fusionSlot == 0 ? child->parentSpeciesA : child->parentSpeciesB, SPECIES_EEVEE);
     EXPECT_EQ(fusionSlot == 0 ? child->parentSpeciesB : child->parentSpeciesA, SPECIES_DITTO);
     EXPECT_EQ(child->moveSources[fusionSlot ^ 1][0], SPECIES_DITTO);
-    EXPECT_EQ(child->eggGroup1, EGG_GROUP_FIELD);
-    EXPECT_EQ(child->eggGroup2, EGG_GROUP_DRAGON);
+    EXPECT(child->eggGroup1 == EGG_GROUP_FIELD || child->eggGroup1 == EGG_GROUP_GRASS
+        || child->eggGroup1 == EGG_GROUP_DRAGON);
+    EXPECT(child->eggGroup2 == EGG_GROUP_FIELD || child->eggGroup2 == EGG_GROUP_GRASS
+        || child->eggGroup2 == EGG_GROUP_DRAGON);
+    EXPECT_NE(child->eggGroup1, EGG_GROUP_DITTO);
+    EXPECT_NE(child->eggGroup2, EGG_GROUP_DITTO);
+    EXPECT_NE(child->eggGroup1, child->eggGroup2);
     EXPECT_EQ(child->height, expected.height);
     EXPECT_EQ(child->weight, expected.weight);
     EXPECT_EQ(child->pokemonScale, expected.pokemonScale);

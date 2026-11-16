@@ -1515,15 +1515,32 @@ validation, and manual validation.
    evolution-name preview regression (1); `git diff --check` passed. This remains partial Gate 1:
    friendship now also draws from weighted retained contributors; the 19-test `Fusion base
    contributors` and 11-test `Fusion rebreeding` selectors passed with that assertion included.
-   An uncommitted egg-group slice now chooses groups from weighted retained contributors,
-   normalizes Undiscovered to Monster, excludes Ditto, and tries to preserve distinct groups.
-   The production daycare object compiles, but this slice is not behaviorally validated: its
-   live-profile selector fails, and the independent `givemon [simple]` test also fails because
-   the scripted test fixture leaves the party empty in the current test run. Gender, growth
-   rate, and egg-cycle selection still retain their established breeding behavior.
+   Egg groups now choose from weighted retained contributors, normalize Undiscovered to
+   Monster, exclude Ditto, and prefer a distinct second group when one is available. Tests
+   cover pooled ordinary-parent groups, an evolved Shedinja parent whose retained Nincada
+   contributors change the available group, Undiscovered normalization, and Ditto exclusion
+   during fusion rebreeding. Scripted `givemon` fixtures explicitly set `ONE_TYPE_OFF`, since
+   test SaveBlock3 initialization zeroes the setting and zero is an active one-type challenge.
+   Validation passed: the three focused egg-group selectors (1 test each), `Fusion rebreeding`
+   (11), `Fusion base contributors` (19), `(Daycare) Rebreeding` (1), and `git diff --check`.
+   The broader `(Daycare) A Berserk Gene egg's profile` selector passes 9/9. The guaranteed-
+   evolution regression uses Rattata and Pidgey, whose ordinary egg groups do not overlap; a
+   Berserk Gene holder bypasses that overlap check. The regression verifies both parent evolution
+   lines, egg-cycle assignment, and that hatching preserves the profile, restores profile
+   friendship, and applies the profile growth rate. Compatibility regressions cover no holder
+   (incompatible), either single holder, and both holders for mismatched ordinary groups; a
+   separate Nidorina/Pidgey regression verifies one or both holders bypass Undiscovered and that
+   the child has breedable egg groups; the Mewtwo/Articuno case verifies the Monster fallback.
+   The special genderless-pair restriction still requires both holders. The profile-table-full
+   egg refusal regression passed. Egg-group,
+   `Fusion rebreeding` (11), `Fusion base contributors` (19), `(Daycare) Rebreeding` (1), and
+   broader live-profile coverage are green. Contributor move-source mapping remains deferred to
+   Gate 2 by user decision. Updated validation: `(Daycare) Berserk Gene bypasses` passed all 6
+   tests, including the Undiscovered one-holder cases, and `(Daycare) A Berserk Gene egg's
+   profile` passed all 9 tests.
    **User decision (2026-11-16):** defer contributor move-source mapping to Gate 2 and preserve
    existing phase-resolved sources until the compact graph can provide equivalent branch-aware
-   source selection. Broader egg/hatch/failure coverage remains.
+   source selection. Additional lifecycle edge cases and manual validation remain.
 2. **Live evolution on the compact graph (Milestone 3).** Route evolution choice, preview,
    commit, phase transitions, and move rebuilding through the compact target graph. Apply
    first-stage contributor/target selection, pseudo-fusion composition, later-stage options,
@@ -1995,8 +2012,11 @@ save-layout audit and a fresh build/size probe.
   - No female present and no Ditto present → both parents must hold the gene.
   - A genderless (non-Ditto) parent present → both parents must hold the gene.
   - A genderless parent paired with a Ditto → both parents must hold the gene.
+- A mismatch between otherwise breedable parents' egg groups is bypassed when at least one
+  parent holds Berserk Gene. This is separate from the Undiscovered-group restriction below.
 - `EGG_GROUP_NO_EGGS_DISCOVERED` (legendary/undiscovered) early-incompatibility check is
-  bypassed **only if both parents hold the Berserk Gene**.
+  bypassed if at least one parent holds the Berserk Gene. Genderless-pair rules still apply
+  independently and may require both parents to hold it.
 - **New: side-table-full check.** Before committing to producing a Berserk Gene egg, check
   whether `gBerserkGeneProfiles[]` has a free slot. If the table is completely full (no free slot
   to allocate for the prospective child), the daycare **refuses to produce that egg** and the

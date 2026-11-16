@@ -3574,10 +3574,9 @@ u8 GetDaycareCompatibilityScore(struct DayCare *daycare)
         eggGroups[i][1] = GetBoxMonEggGroup(&daycare->mons[i].mon, 1);
     }
 
-    // check unbreedable egg group
-    // Berserk Gene can bypass this, but only if both parents hold one.
+    // Berserk Gene can bypass the Undiscovered egg-group restriction if either parent holds one.
     if ((eggGroups[0][0] == EGG_GROUP_NO_EGGS_DISCOVERED || eggGroups[1][0] == EGG_GROUP_NO_EGGS_DISCOVERED)
-     && geneHolders < 2)
+     && geneHolders == 0)
         return PARENTS_INCOMPATIBLE;
     // two Ditto can't breed
     if (eggGroups[0][0] == EGG_GROUP_DITTO && eggGroups[1][0] == EGG_GROUP_DITTO)
@@ -3608,7 +3607,8 @@ u8 GetDaycareCompatibilityScore(struct DayCare *daycare)
             if (geneHolders < 2)
                 return PARENTS_INCOMPATIBLE;
         }
-        if (!EggGroupsOverlap(eggGroups[0], eggGroups[1]))
+        // A Berserk Gene can fuse otherwise incompatible egg groups.
+        if (!EggGroupsOverlap(eggGroups[0], eggGroups[1]) && geneHolders == 0)
             return PARENTS_INCOMPATIBLE;
 
         if (species[0] == species[1])
