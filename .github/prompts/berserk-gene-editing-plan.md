@@ -1515,10 +1515,15 @@ validation, and manual validation.
    evolution-name preview regression (1); `git diff --check` passed. This remains partial Gate 1:
    friendship now also draws from weighted retained contributors; the 19-test `Fusion base
    contributors` and 11-test `Fusion rebreeding` selectors passed with that assertion included.
-   Gender, egg groups, growth rate, and egg-cycle selection retain their established breeding
-   behavior. **User decision (2026-11-16):** defer contributor move-source mapping to Gate 2 and
-   preserve existing phase-resolved sources until the compact graph can provide equivalent
-   branch-aware source selection. Broader egg/hatch/failure coverage remains.
+   An uncommitted egg-group slice now chooses groups from weighted retained contributors,
+   normalizes Undiscovered to Monster, excludes Ditto, and tries to preserve distinct groups.
+   The production daycare object compiles, but this slice is not behaviorally validated: its
+   live-profile selector fails, and the independent `givemon [simple]` test also fails because
+   the scripted test fixture leaves the party empty in the current test run. Gender, growth
+   rate, and egg-cycle selection still retain their established breeding behavior.
+   **User decision (2026-11-16):** defer contributor move-source mapping to Gate 2 and preserve
+   existing phase-resolved sources until the compact graph can provide equivalent branch-aware
+   source selection. Broader egg/hatch/failure coverage remains.
 2. **Live evolution on the compact graph (Milestone 3).** Route evolution choice, preview,
    commit, phase transitions, and move rebuilding through the compact target graph. Apply
    first-stage contributor/target selection, pseudo-fusion composition, later-stage options,

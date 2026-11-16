@@ -922,6 +922,103 @@ static u8 ChooseBerserkGeneLineageContributor(const struct BerserkGeneLineage *l
         Random() % 100 < parentShareA ? 0 : 1);
 }
 
+static bool8 ChooseBerserkGeneLineageEggGroupFromSide(const struct BerserkGeneLineage *lineage,
+    u8 side, u8 excludedGroup, u8 *eggGroup)
+{
+    u32 total = 0, ticket;
+    u8 start, end, i, contributor = UINT8_MAX;
+
+    assertf(side < DAYCARE_MON_COUNT, "Invalid fusion egg-group contributor side")
+        return FALSE;
+    start = side * MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+    end = start + MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+    for (i = start; i < end; i++)
+    {
+        const struct BerserkGeneContributor *entry = &lineage->contributors[i];
+        u8 group1, group2;
+
+        assertf((entry->species == SPECIES_NONE && entry->weight == 0 && entry->age == 0)
+             || (entry->species != SPECIES_NONE && entry->species < NUM_SPECIES && entry->weight != 0),
+                "Invalid fusion egg-group contributor %d", i)
+            return FALSE;
+        if (entry->species == SPECIES_NONE || IS_DITTO(entry->species))
+            continue;
+        group1 = gSpeciesInfo[entry->species].eggGroups[0];
+        group2 = gSpeciesInfo[entry->species].eggGroups[1];
+        if (group1 == EGG_GROUP_NO_EGGS_DISCOVERED)
+            group1 = EGG_GROUP_MONSTER;
+        if (group2 == EGG_GROUP_NO_EGGS_DISCOVERED)
+            group2 = EGG_GROUP_MONSTER;
+        if (group1 != excludedGroup || group2 != excludedGroup)
+            total += entry->weight;
+    }
+    if (total == 0)
+        return FALSE;
+
+    ticket = Random32() % total;
+    for (i = start; i < end; i++)
+    {
+        const struct BerserkGeneContributor *entry = &lineage->contributors[i];
+        u8 group1, group2;
+
+        if (entry->species == SPECIES_NONE || IS_DITTO(entry->species))
+            continue;
+        group1 = gSpeciesInfo[entry->species].eggGroups[0];
+        group2 = gSpeciesInfo[entry->species].eggGroups[1];
+        if (group1 == EGG_GROUP_NO_EGGS_DISCOVERED)
+            group1 = EGG_GROUP_MONSTER;
+        if (group2 == EGG_GROUP_NO_EGGS_DISCOVERED)
+            group2 = EGG_GROUP_MONSTER;
+        if (group1 == excludedGroup && group2 == excludedGroup)
+            continue;
+        if (ticket < entry->weight)
+        {
+            contributor = i;
+            break;
+        }
+        ticket -= entry->weight;
+    }
+    assertf(contributor != UINT8_MAX, "Fusion egg-group contributor selection failed") {}
+    if (contributor == UINT8_MAX)
+        return FALSE;
+
+    {
+        u16 species = lineage->contributors[contributor].species;
+        u8 groups[2];
+        u8 count = 0;
+        u8 groupSlot;
+
+        for (groupSlot = 0; groupSlot < 2; groupSlot++)
+        {
+            u8 group = gSpeciesInfo[species].eggGroups[groupSlot];
+
+            if (group == EGG_GROUP_NO_EGGS_DISCOVERED)
+                group = EGG_GROUP_MONSTER;
+            if (group == excludedGroup || (count != 0 && groups[0] == group))
+                continue;
+            groups[count++] = group;
+        }
+        assertf(count != 0, "Fusion egg-group contributor has no eligible group") {}
+        if (count == 0)
+            return FALSE;
+        *eggGroup = groups[Random() % count];
+    }
+    return TRUE;
+}
+
+static bool8 ChooseBerserkGeneLineageEggGroup(const struct BerserkGeneLineage *lineage,
+    u8 parentShareA, u8 excludedGroup, u8 *eggGroup)
+{
+    u8 side;
+
+    assertf(parentShareA > 0 && parentShareA < 100, "Invalid fusion egg-group share")
+        return FALSE;
+    side = Random() % 100 < parentShareA ? 0 : 1;
+    if (ChooseBerserkGeneLineageEggGroupFromSide(lineage, side, excludedGroup, eggGroup))
+        return TRUE;
+    return ChooseBerserkGeneLineageEggGroupFromSide(lineage, side ^ 1, excludedGroup, eggGroup);
+}
+
 bool8 ChooseBerserkGeneLineageType(struct BerserkGeneLineage *lineage, u8 typeSlot,
     u8 parentShareA, enum Type *type)
 {
@@ -1419,6 +1516,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     enum Type lineageType1, lineageType2;
     u8 colorContributor, cryContributor, friendshipContributor;
     u8 abilityContributor, abilitySide, abilitySlot, evStat;
+    u8 lineageEggGroup1, lineageEggGroup2;
     u16 ability;
     u32 i;
 
@@ -2034,6 +2132,15 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     {
         FreeBerserkGeneProfile(profileId);
         return;
+    }
+    if (ChooseBerserkGeneLineageEggGroup(&preparedLineage, parentShareA,
+                                        UINT8_MAX, &lineageEggGroup1))
+    {
+        if (!ChooseBerserkGeneLineageEggGroup(&preparedLineage, parentShareA,
+                                             lineageEggGroup1, &lineageEggGroup2))
+            lineageEggGroup2 = lineageEggGroup1;
+        profile->eggGroup1 = lineageEggGroup1;
+        profile->eggGroup2 = lineageEggGroup2;
     }
     *GetBerserkGeneLineage(profileId) = preparedLineage;
     profile->type1 = lineageType1;
