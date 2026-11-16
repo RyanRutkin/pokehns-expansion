@@ -785,6 +785,86 @@ TEST("Fusion base contributors merge stored sides before pruning and bounded rou
     ClearBoxMonBerserkGeneProfile(&mon.box);
 }
 
+static u8 GetTestSpeciesEvYield(u16 species, u8 stat)
+{
+    switch (stat)
+    {
+    case STAT_HP:    return gSpeciesInfo[species].evYield_HP;
+    case STAT_ATK:   return gSpeciesInfo[species].evYield_Attack;
+    case STAT_DEF:   return gSpeciesInfo[species].evYield_Defense;
+    case STAT_SPEED: return gSpeciesInfo[species].evYield_Speed;
+    case STAT_SPATK: return gSpeciesInfo[species].evYield_SpAttack;
+    default:         return gSpeciesInfo[species].evYield_SpDefense;
+    }
+}
+
+static void SetTestBerserkGeneLineage(u16 profileId, u16 speciesA, u16 speciesB)
+{
+    struct BerserkGeneLineage *lineage = GetBerserkGeneLineage(profileId);
+
+    memset(lineage, 0, sizeof(*lineage));
+    lineage->contributors[0] = (struct BerserkGeneContributor){GetEggSpecies(speciesA), 1, 0};
+    lineage->contributors[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE] =
+        (struct BerserkGeneContributor){GetEggSpecies(speciesB), 1, 0};
+}
+
+static bool8 TestLineageHasAbility(const struct BerserkGeneLineage *lineage, u8 slot, u16 ability)
+{
+    u8 i;
+
+    if (ability == ABILITY_SAP_SIPPER)
+        return TRUE;
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+        if (lineage->contributors[i].species != SPECIES_NONE
+         && GetSpeciesAbility(lineage->contributors[i].species, slot) == ability)
+            return TRUE;
+    return FALSE;
+}
+
+static bool8 TestLineageHasColor(const struct BerserkGeneLineage *lineage, u8 color)
+{
+    u8 i;
+
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+        if (lineage->contributors[i].species != SPECIES_NONE
+         && gSpeciesInfo[lineage->contributors[i].species].bodyColor == color)
+            return TRUE;
+    return FALSE;
+}
+
+static bool8 TestLineageHasCry(const struct BerserkGeneLineage *lineage, u16 cryId)
+{
+    u8 i;
+
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+        if (lineage->contributors[i].species != SPECIES_NONE
+         && GetCryIdBySpecies(lineage->contributors[i].species) == cryId)
+            return TRUE;
+    return FALSE;
+}
+
+static bool8 TestLineageHasFriendship(const struct BerserkGeneLineage *lineage, u8 friendship)
+{
+    u8 i;
+
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+        if (lineage->contributors[i].species != SPECIES_NONE
+         && gSpeciesInfo[lineage->contributors[i].species].friendship == friendship)
+            return TRUE;
+    return FALSE;
+}
+
+static bool8 TestLineageHasEvYield(const struct BerserkGeneLineage *lineage, u8 stat, u8 yield)
+{
+    u8 i;
+
+    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+        if (lineage->contributors[i].species != SPECIES_NONE
+         && GetTestSpeciesEvYield(lineage->contributors[i].species, stat) == yield)
+            return TRUE;
+    return FALSE;
+}
+
 TEST("Fusion base contributors build offspring sides from evolved fusion parents")
 {
     struct Pokemon mon;
@@ -887,7 +967,9 @@ TEST("Fusion base contributors persist live lineage and numeric traits for evolv
     struct BerserkGeneNumericTraits expected;
     u16 profileId;
     u16 itemA, itemB;
+    enum Type resolvedType;
     u8 parentShareA = 62;
+    u8 typeSlot, contributorIndex, sourceSlot, abilitySlot;
     u8 stat;
 
     ASSUME(IsSpeciesEnabled(SPECIES_DRAGONITE));
@@ -925,6 +1007,43 @@ TEST("Fusion base contributors persist live lineage and numeric traits for evolv
     EXPECT_EQ(lineage->contributors[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE].species, SPECIES_APPLIN);
     EXPECT_EQ(lineage->contributors[1].species, SPECIES_NONE);
     EXPECT_EQ(lineage->contributors[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE + 1].species, SPECIES_NONE);
+    EXPECT(profile->color == gSpeciesInfo[SPECIES_DRATINI].bodyColor
+        || profile->color == gSpeciesInfo[SPECIES_APPLIN].bodyColor);
+    EXPECT(profile->cryId == GetCryIdBySpecies(SPECIES_DRATINI)
+        || profile->cryId == GetCryIdBySpecies(SPECIES_APPLIN));
+    EXPECT(profile->friendship == gSpeciesInfo[SPECIES_DRATINI].friendship
+        || profile->friendship == gSpeciesInfo[SPECIES_APPLIN].friendship);
+    for (abilitySlot = 0; abilitySlot < NUM_ABILITY_SLOTS; abilitySlot++)
+    {
+        u16 ability = abilitySlot == 0 ? profile->ability1
+                    : abilitySlot == 1 ? profile->ability2 : profile->abilityHidden;
+        EXPECT(ability != ABILITY_WONDER_GUARD);
+        EXPECT(ability == GetSpeciesAbility(SPECIES_DRATINI, abilitySlot)
+            || ability == GetSpeciesAbility(SPECIES_APPLIN, abilitySlot)
+            || ability == ABILITY_SAP_SIPPER);
+    }
+    for (stat = 0; stat < NUM_STATS; stat++)
+    {
+        u8 evYield = (profile->evYields >> (stat * 2)) & 3;
+        EXPECT(evYield == GetTestSpeciesEvYield(SPECIES_DRATINI, stat)
+            || evYield == GetTestSpeciesEvYield(SPECIES_APPLIN, stat));
+    }
+
+    EXPECT_NE(lineage->typeSources[0], BERSERK_GENE_TYPE_SOURCE_NONE);
+    EXPECT_NE(lineage->typeSources[1], BERSERK_GENE_TYPE_SOURCE_NONE);
+    EXPECT_EQ(lineage->typeSources[0] >> 4, 0); // No evolution branch binding at birth.
+    EXPECT_EQ(lineage->typeSources[1] >> 4, 0);
+    for (typeSlot = 0; typeSlot < 2; typeSlot++)
+    {
+        contributorIndex = lineage->typeSources[typeSlot] & 7;
+        sourceSlot = (lineage->typeSources[typeSlot] >> 3) & 1;
+        EXPECT(contributorIndex == 0
+            || contributorIndex == MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE);
+        EXPECT(ResolveBerserkGeneLineageType(lineage, typeSlot, &resolvedType));
+        EXPECT_EQ(typeSlot == 0 ? profile->type1 : profile->type2, resolvedType);
+        EXPECT_EQ(resolvedType, GetSpeciesType(lineage->contributors[contributorIndex].species, sourceSlot));
+    }
+    EXPECT_NE(profile->type1, profile->type2);
 
     EXPECT(GetBerserkGeneContributorNumericTraits(lineage, parentShareA, &expected));
     for (stat = 0; stat < NUM_STATS; stat++)
@@ -933,6 +1052,44 @@ TEST("Fusion base contributors persist live lineage and numeric traits for evolv
     EXPECT_EQ(profile->weight, expected.weight);
     EXPECT_EQ(profile->pokemonScale, expected.pokemonScale);
     EXPECT_EQ(profile->pokemonOffset, expected.pokemonOffset);
+
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+}
+
+TEST("Fusion base contributors safely retain mono-type when no distinct lineage type exists")
+{
+    struct Pokemon parentA, parentB;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneLineage *lineage;
+    enum Type type1, type2;
+    u16 profileId, geneItem = ITEM_BERSERK_GENE;
+
+    ASSUME(IsSpeciesEnabled(SPECIES_RATTATA));
+    ASSUME(IsSpeciesEnabled(SPECIES_SENTRET));
+    ZeroPlayerPartyMons();
+    CreateMon(&parentA, SPECIES_RATTATA, 50, 0, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&parentB, SPECIES_SENTRET, 50, 0xFF, OTID_STRUCT_PLAYER_ID);
+    SetMonData(&parentA, MON_DATA_HELD_ITEM, &geneItem);
+    SetMonData(&parentB, MON_DATA_HELD_ITEM, &geneItem);
+    StorePokemonInDaycare(&parentA, &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&parentB, &gSaveBlock1Ptr->daycare.mons[1]);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+    GiveEggFromDaycare();
+
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    EXPECT_NE(profileId, 0);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    lineage = GetBerserkGeneLineage(profileId);
+    EXPECT(lineage != NULL);
+    EXPECT_NE(lineage->typeSources[0], BERSERK_GENE_TYPE_SOURCE_NONE);
+    EXPECT_NE(lineage->typeSources[1], BERSERK_GENE_TYPE_SOURCE_NONE);
+    EXPECT(ResolveBerserkGeneLineageType(lineage, 0, &type1));
+    EXPECT(ResolveBerserkGeneLineageType(lineage, 1, &type2));
+    EXPECT_EQ(type1, TYPE_NORMAL);
+    EXPECT_EQ(type2, TYPE_NORMAL);
+    EXPECT_EQ(profile->type1, type1);
+    EXPECT_EQ(profile->type2, type2);
 
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
 }
@@ -2157,6 +2314,7 @@ TEST("(Daycare) Rebreeding preserves only the fusion parent's remaining saved li
     parentProfile->parentSpeciesB = SPECIES_APPLIN;
     parentProfile->type1 = TYPE_NORMAL;
     parentProfile->type2 = TYPE_GRASS;
+    SetTestBerserkGeneLineage(profileId, SPECIES_EEVEE, SPECIES_APPLIN);
     parentProfile->eggGroup1 = EGG_GROUP_FIELD;
     parentProfile->eggGroup2 = EGG_GROUP_FIELD;
     parentProfile->potentialEvolutions[0] = (struct FusionPotentialEvolution){SPECIES_JOLTEON, 20, EVO_LEVEL, 0};
@@ -2335,6 +2493,7 @@ TEST("Fusion growth breeding inherits stored parent curves and initializes egg E
     parentProfile->parentSpeciesB = SPECIES_APPLIN;
     parentProfile->eggGroup1 = parentProfile->eggGroup2 = EGG_GROUP_FIELD;
     parentProfile->growthRate = GROWTH_ERRATIC;
+    SetTestBerserkGeneLineage(profileId, SPECIES_EEVEE, SPECIES_APPLIN);
     SetMonData(&fusionParent, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     SetMonData(&fusionParent, MON_DATA_HELD_ITEM, &geneItem);
     StorePokemonInDaycare(&fusionParent, &gSaveBlock1Ptr->daycare.mons[parentSlot]);
@@ -2457,8 +2616,10 @@ TEST("Fusion rebreeding with Ditto and a gene includes Ditto traits")
 {
     struct Pokemon fusion, ditto;
     struct BerserkGeneProfile *parent, *child;
+    struct BerserkGeneLineage *childLineage;
+    struct BerserkGeneNumericTraits expected;
     u16 parentId, childId, geneItem = ITEM_BERSERK_GENE;
-    u8 fusionSlot = 0, geneSlot = 0, stat;
+    u8 fusionSlot = 0, geneSlot = 0, stat, parentShareA;
 
     PARAMETRIZE { fusionSlot = 0; geneSlot = 0; }
     PARAMETRIZE { fusionSlot = 0; geneSlot = 1; }
@@ -2482,6 +2643,7 @@ TEST("Fusion rebreeding with Ditto and a gene includes Ditto traits")
     parent->ability1 = ABILITY_OVERGROW;
     parent->height = 100;
     parent->growthRate = GROWTH_MEDIUM_FAST;
+    SetTestBerserkGeneLineage(parentId, SPECIES_EEVEE, SPECIES_APPLIN);
     for (stat = 0; stat < NUM_STATS; stat++)
         parent->baseStats[stat] = 100;
     SetMonData(&fusion, MON_DATA_BERSERK_GENE_PROFILE_ID, &parentId);
@@ -2496,14 +2658,20 @@ TEST("Fusion rebreeding with Ditto and a gene includes Ditto traits")
     childId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
     child = GetBerserkGeneProfile(childId);
     EXPECT(child != NULL);
+    childLineage = GetBerserkGeneLineage(childId);
+    parentShareA = geneSlot == 0 ? 62 : 38;
+    EXPECT(GetBerserkGeneContributorNumericTraits(childLineage, parentShareA, &expected));
     EXPECT_EQ(fusionSlot == 0 ? child->parentSpeciesA : child->parentSpeciesB, SPECIES_EEVEE);
     EXPECT_EQ(fusionSlot == 0 ? child->parentSpeciesB : child->parentSpeciesA, SPECIES_DITTO);
     EXPECT_EQ(child->moveSources[fusionSlot ^ 1][0], SPECIES_DITTO);
     EXPECT_EQ(child->eggGroup1, EGG_GROUP_FIELD);
     EXPECT_EQ(child->eggGroup2, EGG_GROUP_DRAGON);
-    EXPECT_EQ(child->height, geneSlot == fusionSlot
-        ? (100 * 62 + GetSpeciesHeight(SPECIES_DITTO) * 38 + 50) / 100
-        : (100 * 38 + GetSpeciesHeight(SPECIES_DITTO) * 62 + 50) / 100);
+    EXPECT_EQ(child->height, expected.height);
+    EXPECT_EQ(child->weight, expected.weight);
+    EXPECT_EQ(child->pokemonScale, expected.pokemonScale);
+    EXPECT_EQ(child->pokemonOffset, expected.pokemonOffset);
+    for (stat = 0; stat < NUM_STATS; stat++)
+        EXPECT_EQ(child->baseStats[stat], expected.baseStats[stat]);
     ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
     ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[fusionSlot].mon);
     ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
@@ -2746,15 +2914,16 @@ TEST("Fusion rebreeding eggs use projected initial and inherited moves")
     ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
 }
 
-TEST("Fusion rebreeding inherits effective parent traits and move sources")
+TEST("Fusion rebreeding projects retained parent traits and preserves move sources")
 {
     struct Pokemon fusionParent, otherParent;
     struct BerserkGeneProfile *parentProfile, *childProfile;
     struct BerserkGeneProfile savedParent;
+    struct BerserkGeneLineage *childLineage;
+    struct BerserkGeneNumericTraits expected;
     u16 profileId, childId, geneItem = ITEM_BERSERK_GENE;
-    u8 parentSlot = 0, holders = 1, trial, stat;
-    bool8 sawColor = FALSE, sawCry = FALSE, sawCycles = FALSE, sawFriendship = FALSE;
-    bool8 sawAbility[3] = {FALSE}, sawYield[NUM_STATS] = {FALSE};
+    u8 parentSlot = 0, holders = 1, trial, stat, abilitySlot, parentShareA;
+    bool8 sawCycles = FALSE;
 
     PARAMETRIZE { parentSlot = 0; holders = 1; }
     PARAMETRIZE { parentSlot = 1; holders = 1; }
@@ -2791,6 +2960,7 @@ TEST("Fusion rebreeding inherits effective parent traits and move sources")
         parentProfile->baseStats[stat] = 100 + stat;
         parentProfile->evYields |= 3 << (stat * 2);
     }
+    SetTestBerserkGeneLineage(profileId, SPECIES_EEVEE, SPECIES_APPLIN);
     savedParent = *parentProfile;
     SetMonData(&fusionParent, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     SetMonData(&fusionParent, MON_DATA_HELD_ITEM, &geneItem);
@@ -2802,43 +2972,42 @@ TEST("Fusion rebreeding inherits effective parent traits and move sources")
 
     for (trial = 0; trial < 64; trial++)
     {
-        u32 geneWeight = holders == 2 ? 50 : 62;
-        u32 otherWeight = 100 - geneWeight;
-
         GiveEggFromDaycare();
         childId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
         childProfile = GetBerserkGeneProfile(childId);
+        childLineage = GetBerserkGeneLineage(childId);
+        parentShareA = holders == 2 ? 50 : parentSlot == 0 ? 62 : 38;
         EXPECT(childProfile != NULL);
+        EXPECT(GetBerserkGeneContributorNumericTraits(childLineage, parentShareA, &expected));
         EXPECT_EQ(childProfile->moveSources[parentSlot][0], SPECIES_EEVEE);
         EXPECT_EQ(childProfile->moveSources[parentSlot][1], SPECIES_APPLIN);
         EXPECT_EQ(childProfile->moveSources[parentSlot ^ 1][0], SPECIES_RATTATA);
-        EXPECT_EQ(childProfile->height, (123 * geneWeight + GetSpeciesHeight(SPECIES_RATTATA) * otherWeight + 50) / 100);
-        EXPECT_EQ(childProfile->weight, (345 * geneWeight + GetSpeciesWeight(SPECIES_RATTATA) * otherWeight + 50) / 100);
-        EXPECT_EQ(childProfile->pokemonScale, (400 * geneWeight + gSpeciesInfo[SPECIES_RATTATA].pokemonScale * otherWeight + 50) / 100);
-        EXPECT_EQ(childProfile->pokemonOffset, (120 * geneWeight + gSpeciesInfo[SPECIES_RATTATA].pokemonOffset * otherWeight + 50) / 100);
+        EXPECT_EQ(childProfile->height, expected.height);
+        EXPECT_EQ(childProfile->weight, expected.weight);
+        EXPECT_EQ(childProfile->pokemonScale, expected.pokemonScale);
+        EXPECT_EQ(childProfile->pokemonOffset, expected.pokemonOffset);
         for (stat = 0; stat < NUM_STATS; stat++)
         {
             u8 yield = (childProfile->evYields >> (stat * 2)) & 3;
-            EXPECT_EQ(childProfile->baseStats[stat], ((100 + stat) * geneWeight + GetSpeciesBaseStat(SPECIES_RATTATA, stat) * otherWeight + 50) / 100);
-            sawYield[stat] |= yield == 3;
+            EXPECT_EQ(childProfile->baseStats[stat], expected.baseStats[stat]);
+            EXPECT(TestLineageHasEvYield(childLineage, stat, yield));
         }
-        sawAbility[0] |= childProfile->ability1 == ABILITY_OVERGROW;
-        sawAbility[1] |= childProfile->ability2 == ABILITY_BLAZE;
-        sawAbility[2] |= childProfile->abilityHidden == ABILITY_TORRENT;
-        sawColor |= childProfile->color == BODY_COLOR_GREEN;
-        sawCry |= childProfile->cryId == CRY_NONE;
+        for (abilitySlot = 0; abilitySlot < NUM_ABILITY_SLOTS; abilitySlot++)
+        {
+            u16 ability = abilitySlot == 0 ? childProfile->ability1
+                        : abilitySlot == 1 ? childProfile->ability2 : childProfile->abilityHidden;
+            EXPECT(TestLineageHasAbility(childLineage, abilitySlot, ability));
+        }
+        EXPECT(TestLineageHasColor(childLineage, childProfile->color));
+        EXPECT(TestLineageHasCry(childLineage, childProfile->cryId));
+        EXPECT(TestLineageHasFriendship(childLineage, childProfile->friendship));
         sawCycles |= childProfile->eggCycles == 73;
-        sawFriendship |= childProfile->friendship == 123;
         EXPECT_EQ(GetMonData(&gPlayerParty[0], MON_DATA_FRIENDSHIP), childProfile->eggCycles);
         EXPECT_EQ(memcmp(parentProfile, &savedParent, sizeof(savedParent)), 0);
         ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
         ZeroPlayerPartyMons();
     }
-    EXPECT(sawColor && sawCry && sawCycles && sawFriendship);
-    for (stat = 0; stat < NUM_STATS; stat++)
-        EXPECT(sawYield[stat]);
-    for (stat = 0; stat < 3; stat++)
-        EXPECT(sawAbility[stat]);
+    EXPECT(sawCycles);
     ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[parentSlot].mon);
     ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[0].mon);
     ZeroBoxMonData(&gSaveBlock1Ptr->daycare.mons[1].mon);
@@ -2849,10 +3018,11 @@ TEST("Fusion rebreeding combines two distinct effective profiles")
     struct Pokemon mons[2];
     struct BerserkGeneProfile *parents[2], *child;
     struct BerserkGeneProfile saved[2];
+    struct BerserkGeneLineage *childLineage;
+    struct BerserkGeneNumericTraits expected;
     const u16 species[2] = {SPECIES_EEVEE, SPECIES_RATTATA};
     u16 ids[2], geneItem = ITEM_BERSERK_GENE;
     u8 geneSlot = 0, i, stat, trial;
-    bool8 sawFirst = FALSE, sawSecond = FALSE;
 
     PARAMETRIZE { geneSlot = 0; }
     PARAMETRIZE { geneSlot = 1; }
@@ -2887,6 +3057,7 @@ TEST("Fusion rebreeding combines two distinct effective profiles")
             parents[i]->baseStats[stat] = i ? 100 + stat : 20 + stat;
             parents[i]->evYields |= (i ? 3 : 0) << (stat * 2);
         }
+        SetTestBerserkGeneLineage(ids[i], parents[i]->parentSpeciesA, parents[i]->parentSpeciesB);
         saved[i] = *parents[i];
         SetMonData(&mons[i], MON_DATA_BERSERK_GENE_PROFILE_ID, &ids[i]);
         if (i == geneSlot)
@@ -2896,35 +3067,34 @@ TEST("Fusion rebreeding combines two distinct effective profiles")
 
     for (trial = 0; trial < 64; trial++)
     {
-        u8 weight = geneSlot == 1 ? 62 : 38;
         GiveEggFromDaycare();
         child = GetBerserkGeneProfile(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
+        childLineage = GetBerserkGeneLineage(GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID));
         EXPECT(child != NULL);
-        EXPECT_EQ(child->height, weight);
-        EXPECT_EQ(child->weight, weight * 2);
-        EXPECT_EQ(child->pokemonScale, weight * 4);
-        EXPECT_EQ(child->pokemonOffset, (80 * weight + 50) / 100);
+        EXPECT(GetBerserkGeneContributorNumericTraits(childLineage, geneSlot == 0 ? 62 : 38, &expected));
+        EXPECT_EQ(child->height, expected.height);
+        EXPECT_EQ(child->weight, expected.weight);
+        EXPECT_EQ(child->pokemonScale, expected.pokemonScale);
+        EXPECT_EQ(child->pokemonOffset, expected.pokemonOffset);
         for (stat = 0; stat < NUM_STATS; stat++)
         {
             u8 yield = (child->evYields >> (stat * 2)) & 3;
-            EXPECT_EQ(child->baseStats[stat], 20 + stat + (80 * weight + 50) / 100);
-            EXPECT(yield == 0 || yield == 3);
+            EXPECT_EQ(child->baseStats[stat], expected.baseStats[stat]);
+            EXPECT(TestLineageHasEvYield(childLineage, stat, yield));
         }
-        EXPECT(child->ability1 == ABILITY_OVERGROW || child->ability1 == ABILITY_BLAZE);
-        EXPECT(child->ability2 == ABILITY_SWIFT_SWIM || child->ability2 == ABILITY_TORRENT);
-        EXPECT(child->abilityHidden == ABILITY_CHLOROPHYLL || child->abilityHidden == ABILITY_RAIN_DISH);
-        EXPECT(child->cryId == CRY_NONE || child->cryId == SPECIES_SQUIRTLE);
+        EXPECT(TestLineageHasAbility(childLineage, 0, child->ability1));
+        EXPECT(TestLineageHasAbility(childLineage, 1, child->ability2));
+        EXPECT(TestLineageHasAbility(childLineage, 2, child->abilityHidden));
+        EXPECT(TestLineageHasColor(childLineage, child->color));
+        EXPECT(TestLineageHasCry(childLineage, child->cryId));
+        EXPECT(TestLineageHasFriendship(childLineage, child->friendship));
         EXPECT(child->eggCycles == 0 || child->eggCycles == 72);
-        EXPECT(child->friendship == 0 || child->friendship == 120);
         EXPECT(child->growthRate == GROWTH_MEDIUM_FAST || child->growthRate == GROWTH_ERRATIC);
-        sawFirst |= child->color == BODY_COLOR_GREEN;
-        sawSecond |= child->color == BODY_COLOR_BLUE;
         for (i = 0; i < 2; i++)
             EXPECT_EQ(memcmp(parents[i], &saved[i], sizeof(saved[i])), 0);
         ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
         ZeroPlayerPartyMons();
     }
-    EXPECT(sawFirst && sawSecond);
     for (i = 0; i < 2; i++)
     {
         ClearBoxMonBerserkGeneProfile(&gSaveBlock1Ptr->daycare.mons[i].mon);
@@ -3016,6 +3186,7 @@ TEST("Fusion rebreeding keeps two parent move snapshots after profile reuse")
         profiles[i]->eggCycles = 20;
         for (stat = 0; stat < NUM_STATS; stat++)
             profiles[i]->baseStats[stat] = 50;
+        SetTestBerserkGeneLineage(ids[i], profiles[i]->parentSpeciesA, profiles[i]->parentSpeciesB);
         SetMonData(&parents[i], MON_DATA_BERSERK_GENE_PROFILE_ID, &ids[i]);
         SetMonData(&parents[i], MON_DATA_HELD_ITEM, &geneItem);
         StorePokemonInDaycare(&parents[i], &gSaveBlock1Ptr->daycare.mons[i]);
@@ -3076,6 +3247,7 @@ TEST("Fusion lineage rebreeding samples only retained multi-root descendants")
     parentProfile = GetBerserkGeneProfile(parentProfileId);
     parentProfile->parentSpeciesA = SPECIES_ODDISH;
     parentProfile->parentSpeciesB = SPECIES_RALTS;
+    SetTestBerserkGeneLineage(parentProfileId, SPECIES_ODDISH, SPECIES_RALTS);
     parentProfile->eggGroup1 = EGG_GROUP_FIELD;
     parentProfile->eggGroup2 = EGG_GROUP_FIELD;
     parentProfile->potentialEvolutionCount = MAX_FUSION_POTENTIAL_EVOLUTIONS;

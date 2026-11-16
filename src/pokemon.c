@@ -7656,12 +7656,28 @@ void UpdateBerserkGeneProfileAfterEvolution(struct Pokemon *mon, u16 targetSpeci
         CommitBerserkGeneProfileEvolution(mon, &prepared);
 }
 
-static void BuildBerserkGeneSideName(const struct BerserkGeneProfile *profile, bool8 parentB, u8 *name)
+static void BuildBerserkGeneSideName(const struct BerserkGeneProfile *profile,
+    const struct BerserkGeneLineage *lineage, bool8 parentB, u8 *name)
 {
     u16 sources[MAX_FUSION_POTENTIAL_EVOLUTIONS];
-    u8 count = GetBerserkGeneResolvedSources(profile, parentB, sources);
+    u8 count = 0;
     u8 offset = 0;
     u8 i;
+
+    if (lineage != NULL && lineage->graphReady
+     && !(profile->evolutionFlags & BERSERK_GENE_RESOLVED_MOVE_SOURCES))
+    {
+        u8 start = parentB ? MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE : 0;
+        u8 end = start + MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+
+        for (i = start; i < end; i++)
+        {
+            if (lineage->contributors[i].species != SPECIES_NONE)
+                sources[count++] = lineage->contributors[i].species;
+        }
+    }
+    if (count == 0)
+        count = GetBerserkGeneResolvedSources(profile, parentB, sources);
 
     for (i = 0; i < count; i++)
     {
@@ -7677,7 +7693,8 @@ static void BuildBerserkGeneSideName(const struct BerserkGeneProfile *profile, b
     name[offset] = EOS;
 }
 
-static const u8 *GetBerserkGeneDisplaySpeciesName(const struct BerserkGeneProfile *profile, u16 species)
+static const u8 *GetBerserkGeneDisplaySpeciesName(const struct BerserkGeneProfile *profile,
+    const struct BerserkGeneLineage *lineage, u16 species)
 {
     static u8 sDisplayName[POKEMON_NAME_BUFFER_SIZE];
 
@@ -7694,8 +7711,8 @@ static const u8 *GetBerserkGeneDisplaySpeciesName(const struct BerserkGeneProfil
         u8 leadingCount;
         u8 trailingCount;
 
-        BuildBerserkGeneSideName(profile, leadingParentB, leadingName);
-        BuildBerserkGeneSideName(profile, !leadingParentB, trailingName);
+        BuildBerserkGeneSideName(profile, lineage, leadingParentB, leadingName);
+        BuildBerserkGeneSideName(profile, lineage, !leadingParentB, trailingName);
         leadingLength = StringLength(leadingName);
         trailingLength = StringLength(trailingName);
         leadingCount = (leadingLength + 1) / 2;
@@ -7723,8 +7740,11 @@ const u8 *GetMonDisplaySpeciesName(struct Pokemon *mon)
 
 const u8 *GetBoxMonDisplaySpeciesName(struct BoxPokemon *mon)
 {
+    u16 profileId = GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+
     return GetBerserkGeneDisplaySpeciesName(
-        GetBerserkGeneProfile(GetBoxMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID)),
+        GetBerserkGeneProfile(profileId),
+        GetBerserkGeneLineage(profileId),
         GetBoxMonData(mon, MON_DATA_SPECIES));
 }
 
@@ -7735,7 +7755,8 @@ const u8 *GetMonEvolutionDisplaySpeciesName(struct Pokemon *mon, u16 targetSpeci
 
 const u8 *GetMonEvolutionDisplaySpeciesNameForChoice(struct Pokemon *mon, u16 targetSpecies, u8 choice)
 {
-    const struct BerserkGeneProfile *profile = GetBerserkGeneProfile(GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID));
+    u16 profileId = GetMonData(mon, MON_DATA_BERSERK_GENE_PROFILE_ID);
+    const struct BerserkGeneProfile *profile = GetBerserkGeneProfile(profileId);
 
     if (profile != NULL)
     {
@@ -7743,7 +7764,7 @@ const u8 *GetMonEvolutionDisplaySpeciesNameForChoice(struct Pokemon *mon, u16 ta
 
         // Share the live lineage transition, but leave trait rolls, mon data, and caches untouched.
         ApplyBerserkGeneProfileEvolution(&projectedProfile, targetSpecies, choice, FALSE, SPECIES_NONE);
-        return GetBerserkGeneDisplaySpeciesName(&projectedProfile, targetSpecies);
+        return GetBerserkGeneDisplaySpeciesName(&projectedProfile, GetBerserkGeneLineage(profileId), targetSpecies);
     }
     return GetSpeciesName(targetSpecies);
 }

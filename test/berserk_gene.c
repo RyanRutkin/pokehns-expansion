@@ -476,6 +476,30 @@ TEST("Fusion display name uses the stored parent priority")
     EXPECT(StringCompare(nameA, nameB) != 0);
 }
 
+TEST("Fusion default display name uses retained base contributors")
+{
+    struct Pokemon mon;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneLineage *lineage;
+    u16 profileId;
+
+    ResetPokemonStorageSystem();
+    CreateMon(&mon, SPECIES_DRAGONITE, 5, 0, OTID_STRUCT_PLAYER_ID);
+    profileId = AllocBerserkGeneProfile();
+    profile = GetBerserkGeneProfile(profileId);
+    profile->parentSpeciesA = SPECIES_DRAGONITE;
+    profile->parentSpeciesB = SPECIES_HYDRAPPLE;
+    lineage = GetBerserkGeneLineage(profileId);
+    lineage->graphReady = TRUE;
+    lineage->contributors[0] = (struct BerserkGeneContributor){SPECIES_DRATINI, 1, 0};
+    lineage->contributors[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE] =
+        (struct BerserkGeneContributor){SPECIES_APPLIN, 1, 0};
+    SetMonData(&mon, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
+
+    EXPECT_EQ(StringCompare(GetMonDisplaySpeciesName(&mon), COMPOUND_STRING("DRATLIN")), 0);
+    ClearBoxMonBerserkGeneProfile(&mon.box);
+}
+
 TEST("Fusion evolution name previews retain normal and completed-profile behavior")
 {
     struct Pokemon mon;

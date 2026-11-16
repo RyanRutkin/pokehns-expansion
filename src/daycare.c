@@ -881,44 +881,59 @@ bool8 SetBerserkGeneTypeContributor(struct BerserkGeneLineage *lineage, u8 typeS
     return TRUE;
 }
 
+static u8 ChooseBerserkGeneLineageContributorFromSide(const struct BerserkGeneLineage *lineage, u8 side)
+{
+    u32 ticket, total = 0;
+    u8 start, end, i;
+
+    assertf(side < 2, "Invalid fusion contributor side")
+        return UINT8_MAX;
+    start = side * MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+    end = start + MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+    for (i = start; i < end; i++)
+    {
+        const struct BerserkGeneContributor *entry = &lineage->contributors[i];
+        assertf((entry->species == SPECIES_NONE && entry->weight == 0 && entry->age == 0)
+             || (entry->species != SPECIES_NONE && entry->species < NUM_SPECIES && entry->weight != 0),
+                "Invalid fusion contributor %d", i)
+            return UINT8_MAX;
+        if (entry->species != SPECIES_NONE)
+            total += entry->weight;
+    }
+    assertf(total != 0, "Missing fusion parent contributors")
+        return UINT8_MAX;
+
+    ticket = Random32() % total;
+    for (i = start; i < end; i++)
+    {
+        if (ticket < lineage->contributors[i].weight)
+            return i;
+        ticket -= lineage->contributors[i].weight;
+    }
+    assertf(FALSE, "Fusion contributor selection failed") {}
+    return UINT8_MAX;
+}
+
+static u8 ChooseBerserkGeneLineageContributor(const struct BerserkGeneLineage *lineage, u8 parentShareA)
+{
+    assertf(parentShareA > 0 && parentShareA < 100, "Invalid fusion contributor share")
+        return UINT8_MAX;
+    return ChooseBerserkGeneLineageContributorFromSide(lineage,
+        Random() % 100 < parentShareA ? 0 : 1);
+}
+
 bool8 ChooseBerserkGeneLineageType(struct BerserkGeneLineage *lineage, u8 typeSlot,
     u8 parentShareA, enum Type *type)
 {
-    u32 totals[2] = {0};
-    u32 ticket, total;
-    u8 side, i, contributor = UINT8_MAX;
+    u8 i, contributor;
     u8 slots[2], slotCount = 1;
     enum Type candidateTypes[2];
 
     assertf(typeSlot < 2 && parentShareA > 0 && parentShareA < 100,
             "Invalid fusion type selection")
         return FALSE;
-    for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
-    {
-        const struct BerserkGeneContributor *entry = &lineage->contributors[i];
-        assertf((entry->species == SPECIES_NONE && entry->weight == 0 && entry->age == 0)
-             || (entry->species != SPECIES_NONE && entry->species < NUM_SPECIES && entry->weight != 0),
-                "Invalid fusion type candidate %d", i)
-            return FALSE;
-        if (entry->species != SPECIES_NONE)
-            totals[i / MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE] += entry->weight;
-    }
-    assertf(totals[0] != 0 && totals[1] != 0, "Missing fusion type parent contributors")
-        return FALSE;
-    side = Random() % 100 < parentShareA ? 0 : 1;
-    total = totals[side];
-    ticket = Random32() % total;
-    for (i = side * MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
-         i < (side + 1) * MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE; i++)
-    {
-        if (ticket < lineage->contributors[i].weight)
-        {
-            contributor = i;
-            break;
-        }
-        ticket -= lineage->contributors[i].weight;
-    }
-    assertf(contributor != UINT8_MAX, "Fusion type contributor selection failed")
+    contributor = ChooseBerserkGeneLineageContributor(lineage, parentShareA);
+    if (contributor == UINT8_MAX)
         return FALSE;
     candidateTypes[0] = GetSpeciesType(lineage->contributors[contributor].species, 0);
     candidateTypes[1] = GetSpeciesType(lineage->contributors[contributor].species, 1);
@@ -1395,11 +1410,16 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     u8 geneHolders = CountBerserkGeneHolders(daycare);
     u8 flags = 0;
     u8 parent, slot, chosenType, tries;
+    u8 parentShareA;
     u16 profileId;
     struct BerserkGeneProfile *profile;
     struct BerserkGeneProfile *parentProfiles[DAYCARE_MON_COUNT];
     struct BerserkGeneLineage preparedLineage;
     struct BerserkGeneNumericTraits numericTraits;
+    enum Type lineageType1, lineageType2;
+    u8 colorContributor, cryContributor, friendshipContributor;
+    u8 abilityContributor, abilitySide, abilitySlot, evStat;
+    u16 ability;
     u32 i;
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
@@ -1902,7 +1922,122 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
         FreeBerserkGeneProfile(profileId);
         return;
     }
+    parentShareA = geneHolders >= 2 ? 50 : DaycareMonHasBerserkGene(daycare, 1) ? 38 : 62;
+    colorContributor = ChooseBerserkGeneLineageContributor(&preparedLineage, parentShareA);
+    cryContributor = ChooseBerserkGeneLineageContributor(&preparedLineage, parentShareA);
+    if (colorContributor == UINT8_MAX || cryContributor == UINT8_MAX)
+    {
+        FreeBerserkGeneProfile(profileId);
+        return;
+    }
+    profile->color = gSpeciesInfo[preparedLineage.contributors[colorContributor].species].bodyColor;
+    profile->cryId = GetCryIdBySpecies(preparedLineage.contributors[cryContributor].species);
+    friendshipContributor = ChooseBerserkGeneLineageContributor(&preparedLineage, parentShareA);
+    if (friendshipContributor == UINT8_MAX)
+    {
+        FreeBerserkGeneProfile(profileId);
+        return;
+    }
+    profile->friendship = gSpeciesInfo[preparedLineage.contributors[friendshipContributor].species].friendship;
+    for (abilitySlot = 0; abilitySlot < NUM_ABILITY_SLOTS; abilitySlot++)
+    {
+        abilityContributor = ChooseBerserkGeneLineageContributor(&preparedLineage, parentShareA);
+        if (abilityContributor == UINT8_MAX)
+        {
+            FreeBerserkGeneProfile(profileId);
+            return;
+        }
+        abilitySide = abilityContributor / MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE;
+        ability = GetSpeciesAbility(preparedLineage.contributors[abilityContributor].species, abilitySlot);
+        if (ability == ABILITY_WONDER_GUARD)
+        {
+            abilityContributor = ChooseBerserkGeneLineageContributorFromSide(&preparedLineage, abilitySide ^ 1);
+            if (abilityContributor == UINT8_MAX)
+            {
+                FreeBerserkGeneProfile(profileId);
+                return;
+            }
+            ability = GetSpeciesAbility(preparedLineage.contributors[abilityContributor].species, abilitySlot);
+        }
+        if (ability == ABILITY_WONDER_GUARD)
+            ability = ABILITY_SAP_SIPPER;
+        if (abilitySlot == 0)
+            profile->ability1 = ability;
+        else if (abilitySlot == 1)
+            profile->ability2 = ability;
+        else
+            profile->abilityHidden = ability;
+    }
+    {
+        u16 evYields = 0;
+
+        for (evStat = 0; evStat < NUM_STATS; evStat++)
+        {
+            u8 evContributor = ChooseBerserkGeneLineageContributor(&preparedLineage, parentShareA);
+            u8 evValue;
+
+            if (evContributor == UINT8_MAX)
+            {
+                FreeBerserkGeneProfile(profileId);
+                return;
+            }
+            evValue = GetBreedingEvYield(NULL, preparedLineage.contributors[evContributor].species, evStat);
+            evYields |= (evValue & 0x3) << (evStat * 2);
+        }
+        profile->evYields = evYields;
+    }
+    if (!ChooseBerserkGeneLineageType(&preparedLineage, 0, parentShareA, &lineageType1))
+    {
+        FreeBerserkGeneProfile(profileId);
+        return;
+    }
+
+    // Keep distinct types where possible. Retry weighted lineage selection first, then use a
+    // deterministic retained-source fallback; if the entire lineage is mono-type, retain it.
+    for (tries = 0; tries < 10; tries++)
+    {
+        if (!ChooseBerserkGeneLineageType(&preparedLineage, 1, parentShareA, &lineageType2))
+        {
+            FreeBerserkGeneProfile(profileId);
+            return;
+        }
+        if (lineageType2 != lineageType1)
+            break;
+    }
+    if (lineageType2 == lineageType1)
+    {
+        for (i = 0; i < MAX_BERSERK_GENE_CONTRIBUTOR_CANDIDATES; i++)
+        {
+            const struct BerserkGeneContributor *contributor = &preparedLineage.contributors[i];
+            u8 sourceSlot;
+
+            if (contributor->species == SPECIES_NONE)
+                continue;
+            for (sourceSlot = 0; sourceSlot < 2; sourceSlot++)
+            {
+                if (GetSpeciesType(contributor->species, sourceSlot) == lineageType1)
+                    continue;
+                if (!SetBerserkGeneTypeContributor(&preparedLineage, 1, i, sourceSlot)
+                 || !ResolveBerserkGeneLineageType(&preparedLineage, 1, &lineageType2))
+                {
+                    FreeBerserkGeneProfile(profileId);
+                    return;
+                }
+                break;
+            }
+            if (lineageType2 != lineageType1)
+                break;
+        }
+    }
+    if (!ResolveBerserkGeneLineageType(&preparedLineage, 0, &lineageType1)
+     || !ResolveBerserkGeneLineageType(&preparedLineage, 1, &lineageType2))
+    {
+        FreeBerserkGeneProfile(profileId);
+        return;
+    }
     *GetBerserkGeneLineage(profileId) = preparedLineage;
+    profile->type1 = lineageType1;
+    profile->type2 = lineageType2;
     profile->height = numericTraits.height;
     profile->weight = numericTraits.weight;
     profile->pokemonScale = numericTraits.pokemonScale;
