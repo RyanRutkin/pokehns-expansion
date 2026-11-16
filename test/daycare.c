@@ -879,6 +879,64 @@ TEST("Fusion base contributors build offspring sides from evolved fusion parents
     }
 }
 
+TEST("Fusion base contributors persist live lineage and numeric traits for evolved ordinary parents")
+{
+    struct Pokemon parentA, parentB;
+    struct BerserkGeneProfile *profile;
+    struct BerserkGeneLineage *lineage;
+    struct BerserkGeneNumericTraits expected;
+    u16 profileId;
+    u16 itemA, itemB;
+    u8 parentShareA = 62;
+    u8 stat;
+
+    ASSUME(IsSpeciesEnabled(SPECIES_DRAGONITE));
+    ASSUME(IsSpeciesEnabled(SPECIES_HYDRAPPLE));
+    ZeroPlayerPartyMons();
+    PARAMETRIZE { parentShareA = 62; itemA = ITEM_BERSERK_GENE; itemB = ITEM_NONE; }
+    PARAMETRIZE { parentShareA = 38; itemA = ITEM_NONE; itemB = ITEM_BERSERK_GENE; }
+    PARAMETRIZE { parentShareA = 50; itemA = ITEM_BERSERK_GENE; itemB = ITEM_BERSERK_GENE; }
+    CreateMon(&parentA, SPECIES_DRAGONITE, 50, 0xFF, OTID_STRUCT_PLAYER_ID);
+    CreateMon(&parentB, SPECIES_HYDRAPPLE, 50, 0, OTID_STRUCT_PLAYER_ID);
+    EXPECT_EQ(GetMonGender(&parentA), MON_MALE);
+    EXPECT_EQ(GetMonGender(&parentB), MON_FEMALE);
+    SetMonData(&parentA, MON_DATA_HELD_ITEM, &itemA);
+    SetMonData(&parentB, MON_DATA_HELD_ITEM, &itemB);
+    StorePokemonInDaycare(&parentA, &gSaveBlock1Ptr->daycare.mons[0]);
+    StorePokemonInDaycare(&parentB, &gSaveBlock1Ptr->daycare.mons[1]);
+    EXPECT_NE(GetDaycareCompatibilityScore(&gSaveBlock1Ptr->daycare), PARENTS_INCOMPATIBLE);
+    GiveEggFromDaycare();
+
+    EXPECT_NE(GetMonData(&gPlayerParty[0], MON_DATA_SPECIES), SPECIES_NONE);
+    profileId = GetMonData(&gPlayerParty[0], MON_DATA_BERSERK_GENE_PROFILE_ID);
+    EXPECT_NE(profileId, 0);
+    profile = GetBerserkGeneProfile(profileId);
+    EXPECT(profile != NULL);
+    EXPECT_EQ(profile->parentSpeciesA, SPECIES_DRAGONITE);
+    EXPECT_EQ(profile->parentSpeciesB, SPECIES_HYDRAPPLE);
+    EXPECT_EQ((profile->inheritanceFlags & BERSERK_GENE_FLAG_GENE_HOLDER_WEIGHT) != 0,
+              parentShareA == 50);
+    EXPECT_EQ((profile->evolutionFlags & BERSERK_GENE_GENE_HOLDER_PARENT_B) != 0,
+              parentShareA == 38);
+    lineage = GetBerserkGeneLineage(profileId);
+    EXPECT(lineage != NULL);
+    EXPECT(lineage->graphReady);
+    EXPECT_EQ(lineage->contributors[0].species, SPECIES_DRATINI);
+    EXPECT_EQ(lineage->contributors[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE].species, SPECIES_APPLIN);
+    EXPECT_EQ(lineage->contributors[1].species, SPECIES_NONE);
+    EXPECT_EQ(lineage->contributors[MAX_BERSERK_GENE_CONTRIBUTORS_PER_SIDE + 1].species, SPECIES_NONE);
+
+    EXPECT(GetBerserkGeneContributorNumericTraits(lineage, parentShareA, &expected));
+    for (stat = 0; stat < NUM_STATS; stat++)
+        EXPECT_EQ(profile->baseStats[stat], expected.baseStats[stat]);
+    EXPECT_EQ(profile->height, expected.height);
+    EXPECT_EQ(profile->weight, expected.weight);
+    EXPECT_EQ(profile->pokemonScale, expected.pokemonScale);
+    EXPECT_EQ(profile->pokemonOffset, expected.pokemonOffset);
+
+    ClearBoxMonBerserkGeneProfile(&gPlayerParty[0].box);
+}
+
 TEST("Fusion base contributors project numeric stats with whole side normalization")
 {
     struct BerserkGeneLineage lineage = {0}, saved;

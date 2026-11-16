@@ -1495,6 +1495,12 @@ validation, and manual validation.
    contributors, and contributor-weighted move sources. Preserve the already-established
    growth/EXP and nickname semantics. Verify ordinary and fusion-parent breeding, both
    parent-share modes, egg/hatch behavior, and profile allocation/failure behavior.
+   **Checkpoint (2026-11-16):** New gene-bred profiles now persist the prepared contributor
+   lineage and use its projected base stats, height, weight, sprite scale, and offset. A focused
+   live-egg test covers evolved ordinary parents and 62/38, 38/62, and 50/50 shares. The exact
+   selector `make -k check BUILD=hns -j8 TESTS='Fusion base contributors persist live lineage and numeric traits for evolved ordinary parents'`
+   passed. This is only the first Gate 1 slice: categorical donors, sticky types/provenance,
+   naming, move sources, fusion-parent integration, and broader egg/hatch/failure coverage remain.
 2. **Live evolution on the compact graph (Milestone 3).** Route evolution choice, preview,
    commit, phase transitions, and move rebuilding through the compact target graph. Apply
    first-stage contributor/target selection, pseudo-fusion composition, later-stage options,
@@ -1512,7 +1518,7 @@ validation, and manual validation.
 | --- | --- | --- |
 | 1. Same-target evolution attribution | Complete (2026-11-10) | Exact choice passed from trigger through preview/scene preparation/commit; same-target condition/descendant regressions and real normal-scene success/cancellation tests pass. See checkpoint above. |
 | 2. Remaining display/cry consumers | Complete (2026-11-12); manual visual/listening validation remains outstanding | Full-summary scene regression passed headless and non-headless; contests classified species-only by user decision. |
-| 3. Base-lineage breeding and rebreeding | In progress: contributor, graph, numeric-trait, and sticky-type groundwork is tested; live profile/evolution integration remains | Complete gates 1-2 above; derive live profiles from retained base contributors, rebuild and consume compact evolution options, and verify traits, moves, evolution, naming, EXP, and lifecycle behavior. |
+| 3. Base-lineage breeding and rebreeding | In progress: prepared lineage and numeric projections now feed new gene-bred profiles; remaining Gate 1 integration and all Gate 2 live evolution work remain | Complete gates 1-2 above; derive live profiles from retained base contributors, rebuild and consume compact evolution options, and verify traits, moves, evolution, naming, EXP, and lifecycle behavior. |
 | 4. Old-save compatibility | Closed: not required (user decision, 2026-11-12) | No prior fusion profiles need support; do not add historical-save compatibility or migration code unless the user explicitly identifies a need. Normal save/reload validation remains in milestone 5. |
 | 5. Final lifecycle validation and manual-testable checkpoint | Pending integrated Milestone 3 completion | Complete gate 3 above: verify profile cleanup/reuse, normal save/reload, the temporary fusion-recording safeguard, Pyramid rollback, and the offline feature lifecycle; provide a working ROM and manual test checklist, record actual emulator/manual results and remaining limitations, and update documentation. Link compatibility is deferred as noted below. |
 | Link compatibility | Deferred until after initial MVP | Complete and verify link restrictions or profile transfer, including coordinated cancellation and multiplayer testing. Until then, do not use fusion link actions. |

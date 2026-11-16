@@ -90,16 +90,6 @@ static bool8 BerserkGeneShouldInheritFromParent(bool8 parentHasGene, u8 numGeneH
     return (Random() % 100) < chance;
 }
 
-// Weighted-average blend for numeric fields (height/weight/sprite scale/offset/base stats),
-// rounded to nearest. Same 62/38 (one holder) or 50/50 (two holders) weighting as the roll above.
-static s32 BerserkGeneBlendNumeric(s32 pGeneValue, s32 pOtherValue, u8 numGeneHolders)
-{
-    if (numGeneHolders >= 2)
-        return (pGeneValue + pOtherValue + 1) / 2;
-
-    return (pGeneValue * 62 + pOtherValue * 38 + 50) / 100;
-}
-
 static enum Ability GetBreedingAbility(struct BerserkGeneProfile *profile, u16 species, u8 slot)
 {
     if (profile == NULL)
@@ -1408,6 +1398,8 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     u16 profileId;
     struct BerserkGeneProfile *profile;
     struct BerserkGeneProfile *parentProfiles[DAYCARE_MON_COUNT];
+    struct BerserkGeneLineage preparedLineage;
+    struct BerserkGeneNumericTraits numericTraits;
     u32 i;
 
     for (i = 0; i < DAYCARE_MON_COUNT; i++)
@@ -1608,20 +1600,7 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     profile->eggCycles = parentProfiles[parent] != NULL ? parentProfiles[parent]->eggCycles : gSpeciesInfo[species[parent]].eggCycles;
     SetMonData(egg, MON_DATA_FRIENDSHIP, &profile->eggCycles);
 
-    // Step 8: size — height, weight, sprite scale, sprite offset, blended (not rolled).
-    {
-        u8 geneParent = DaycareMonHasBerserkGene(daycare, 0) ? 0 : 1;
-        u8 otherParent = geneParent ^ 1;
-
-        profile->height = BerserkGeneBlendNumeric(GetBoxMonHeight(&daycare->mons[geneParent].mon), GetBoxMonHeight(&daycare->mons[otherParent].mon), geneHolders);
-        profile->weight = BerserkGeneBlendNumeric(GetBoxMonWeight(&daycare->mons[geneParent].mon), GetBoxMonWeight(&daycare->mons[otherParent].mon), geneHolders);
-        profile->pokemonScale = BerserkGeneBlendNumeric(
-            parentProfiles[geneParent] != NULL ? parentProfiles[geneParent]->pokemonScale : gSpeciesInfo[species[geneParent]].pokemonScale,
-            parentProfiles[otherParent] != NULL ? parentProfiles[otherParent]->pokemonScale : gSpeciesInfo[species[otherParent]].pokemonScale, geneHolders);
-        profile->pokemonOffset = BerserkGeneBlendNumeric(
-            parentProfiles[geneParent] != NULL ? parentProfiles[geneParent]->pokemonOffset : gSpeciesInfo[species[geneParent]].pokemonOffset,
-            parentProfiles[otherParent] != NULL ? parentProfiles[otherParent]->pokemonOffset : gSpeciesInfo[species[otherParent]].pokemonOffset, geneHolders);
-    }
+    // Step 8: size — height, weight, sprite scale, and sprite offset from base contributors.
 
     // Step 9: gender — one binary roll, explicit override (decoupled from species genderRatio).
     parent = BerserkGeneShouldInheritFromParent(DaycareMonHasBerserkGene(daycare, 0), geneHolders) ? 0 : 1;
@@ -1717,15 +1696,6 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
             profile->eggGroup1 = slot1Group;
             profile->eggGroup2 = slot2Group;
         }
-    }
-
-    // Step 12: base stats — blended per-stat via BerserkGeneBlendNumeric (not independent rolls).
-    {
-        u8 geneParent = DaycareMonHasBerserkGene(daycare, 0) ? 0 : 1;
-        u8 otherParent = geneParent ^ 1;
-        for (i = 0; i < NUM_STATS; i++)
-            profile->baseStats[i] = BerserkGeneBlendNumeric(GetBoxMonBaseStat(&daycare->mons[geneParent].mon, i),
-                GetBoxMonBaseStat(&daycare->mons[otherParent].mon, i), geneHolders);
     }
 
     // Step 14: growth rate, EV yield (per stat), base friendship — independent binary rolls.
@@ -1926,6 +1896,18 @@ static void BuildBerserkGeneProfile(struct DayCare *daycare, struct Pokemon *egg
     }
 
     profile->inheritanceFlags = flags;
+    // Prepare after the legacy donor and evolution rolls so their RNG sequence is unchanged.
+    if (!PrepareBerserkGeneBreedingLineage(daycare, &preparedLineage, &numericTraits))
+    {
+        FreeBerserkGeneProfile(profileId);
+        return;
+    }
+    *GetBerserkGeneLineage(profileId) = preparedLineage;
+    profile->height = numericTraits.height;
+    profile->weight = numericTraits.weight;
+    profile->pokemonScale = numericTraits.pokemonScale;
+    profile->pokemonOffset = numericTraits.pokemonOffset;
+    memcpy(profile->baseStats, numericTraits.baseStats, sizeof(profile->baseStats));
     SetMonData(egg, MON_DATA_BERSERK_GENE_PROFILE_ID, &profileId);
     SetMonData(egg, MON_DATA_EXP, &gExperienceTables[profile->growthRate][EGG_HATCH_LEVEL]);
 }
